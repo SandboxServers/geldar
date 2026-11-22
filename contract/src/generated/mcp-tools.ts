@@ -151,67 +151,6 @@ export const mcpToolSchemas: Record<
               "type": "object",
               "properties": {
                 "do": {
-                  "const": "build"
-                },
-                "blueprint": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "name",
-                    "blocks"
-                  ],
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,63}$"
-                    },
-                    "blocks": {
-                      "type": "array",
-                      "maxItems": 512,
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "block",
-                          "dx",
-                          "dy",
-                          "dz"
-                        ],
-                        "properties": {
-                          "block": {
-                            "$ref": "#/$defs/ItemName"
-                          },
-                          "dx": {
-                            "type": "integer",
-                            "minimum": -256,
-                            "maximum": 256
-                          },
-                          "dy": {
-                            "type": "integer",
-                            "minimum": -256,
-                            "maximum": 256
-                          },
-                          "dz": {
-                            "type": "integer",
-                            "minimum": -256,
-                            "maximum": 256
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "required": [
-                "do",
-                "blueprint"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "do": {
                   "const": "attack"
                 },
                 "target": {

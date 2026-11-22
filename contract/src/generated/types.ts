@@ -2093,24 +2093,6 @@ export interface ActInput {
             at: Position | "feet";
           }
         | {
-            do: "build";
-            blueprint: {
-              name: string;
-              /**
-               * @maxItems 512
-               */
-              blocks: {
-                /**
-                 * An item ID without its namespace prefix, such as iron_ingot.
-                 */
-                block: string;
-                dx: number;
-                dy: number;
-                dz: number;
-              }[];
-            };
-          }
-        | {
             do: "attack";
             target: string;
           }
@@ -2291,24 +2273,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -2486,24 +2450,6 @@ export interface ActInput {
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -2687,24 +2633,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -2884,24 +2812,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -3079,24 +2989,6 @@ export interface ActInput {
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -3280,22 +3172,183 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -3477,24 +3530,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -3672,221 +3707,6 @@ export interface ActInput {
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -4070,22 +3890,183 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -4267,24 +4248,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -4464,24 +4427,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -4659,221 +4604,6 @@ export interface ActInput {
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -5057,22 +4787,183 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -5254,22 +5145,183 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -5451,24 +5503,6 @@ export interface ActInput {
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -5646,418 +5680,6 @@ export interface ActInput {
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -6710,24 +6332,6 @@ export type Thought = (
             at: Position | "feet";
           }
         | {
-            do: "build";
-            blueprint: {
-              name: string;
-              /**
-               * @maxItems 512
-               */
-              blocks: {
-                /**
-                 * An item ID without its namespace prefix, such as iron_ingot.
-                 */
-                block: string;
-                dx: number;
-                dy: number;
-                dz: number;
-              }[];
-            };
-          }
-        | {
             do: "attack";
             target: string;
           }
@@ -6908,24 +6512,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -7103,24 +6689,6 @@ export type Thought = (
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -7304,24 +6872,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -7501,24 +7051,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -7696,24 +7228,6 @@ export type Thought = (
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -7897,22 +7411,183 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -8094,24 +7769,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -8289,221 +7946,6 @@ export type Thought = (
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -8687,22 +8129,183 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -8884,24 +8487,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -9081,24 +8666,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -9276,221 +8843,6 @@ export type Thought = (
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -9674,22 +9026,183 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -9871,22 +9384,183 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
+              do: "attack";
+              target: string;
+            }
+          | {
+              do: "eat";
+            }
+          | {
+              do: "sleep";
+            }
+          | {
+              do: "unstick";
+            }
+          | {
+              do: "give";
+              to: string;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "write_sign";
+              text: string;
+            }
+          | ((
+              | {
+                  skill_id: unknown;
+                  [k: string]: unknown;
+                }
+              | {
+                  text: unknown;
+                  [k: string]: unknown;
+                }
+            ) & {
+              do: "write_book";
+              title: string;
+              skill_id?: string;
+              text?: string;
+            })
+          | {
+              do: "read_book";
+            }
+          | {
+              do: "use_skill";
+              name: string;
+              /**
+               * Skill arguments. The shape depends on the skill.
+               */
+              args: {
+                [k: string]: unknown;
               };
+            }
+          | {
+              do: "define_skill";
+              name: string;
+              description: string;
+              code: string;
+            }
+          | {
+              do: "offer";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "propose";
+              rule: string;
+              /**
+               * The proposed value. Any JSON value; the rule decides what is valid.
+               */
+              value:
+                | {
+                    [k: string]: unknown;
+                  }
+                | unknown[]
+                | string
+                | number
+                | boolean
+                | null;
+              reason: string;
+            }
+          | {
+              do: "vote";
+              proposal_id: string;
+              vote: "yes" | "no";
+            }
+          | {
+              do: "note";
+              text: string;
+            }
+          | {
+              do: "wait";
+              seconds: number;
+            }
+          | {
+              do: "open";
+              at: Position;
+            }
+          | {
+              do: "deposit";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "withdraw";
+              at: Position;
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "till";
+              at: Position1;
+            }
+          | {
+              do: "edit_sign";
+              at: Position2;
+              text: string;
+            }
+          | {
+              do: "use";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item?: string;
+              at?: Position3;
+              /**
+               * The name or name:id of an entity in the perception snapshot to click. Not with at.
+               */
+              entity?: string;
+            }
+          | BreakAction
+          | PlanAction
+        ),
+        (
+          | {
+              do: "goto";
+              /**
+               * A position, or the name of an agent.
+               */
+              target: Position | string;
+            }
+          | {
+              do: "mine";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              count: number;
+            }
+          | {
+              do: "craft";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              item: string;
+              count: number;
+            }
+          | {
+              do: "place";
+              /**
+               * An item ID without its namespace prefix, such as iron_ingot.
+               */
+              block: string;
+              /**
+               * A position, or feet for the block under the agent.
+               */
+              at: Position | "feet";
             }
           | {
               do: "attack";
@@ -10068,24 +9742,6 @@ export type Thought = (
               at: Position | "feet";
             }
           | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
               do: "attack";
               target: string;
             }
@@ -10263,418 +9919,6 @@ export type Thought = (
                * A position, or feet for the block under the agent.
                */
               at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
-            }
-          | {
-              do: "attack";
-              target: string;
-            }
-          | {
-              do: "eat";
-            }
-          | {
-              do: "sleep";
-            }
-          | {
-              do: "unstick";
-            }
-          | {
-              do: "give";
-              to: string;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "write_sign";
-              text: string;
-            }
-          | ((
-              | {
-                  skill_id: unknown;
-                  [k: string]: unknown;
-                }
-              | {
-                  text: unknown;
-                  [k: string]: unknown;
-                }
-            ) & {
-              do: "write_book";
-              title: string;
-              skill_id?: string;
-              text?: string;
-            })
-          | {
-              do: "read_book";
-            }
-          | {
-              do: "use_skill";
-              name: string;
-              /**
-               * Skill arguments. The shape depends on the skill.
-               */
-              args: {
-                [k: string]: unknown;
-              };
-            }
-          | {
-              do: "define_skill";
-              name: string;
-              description: string;
-              code: string;
-            }
-          | {
-              do: "offer";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "propose";
-              rule: string;
-              /**
-               * The proposed value. Any JSON value; the rule decides what is valid.
-               */
-              value:
-                | {
-                    [k: string]: unknown;
-                  }
-                | unknown[]
-                | string
-                | number
-                | boolean
-                | null;
-              reason: string;
-            }
-          | {
-              do: "vote";
-              proposal_id: string;
-              vote: "yes" | "no";
-            }
-          | {
-              do: "note";
-              text: string;
-            }
-          | {
-              do: "wait";
-              seconds: number;
-            }
-          | {
-              do: "open";
-              at: Position;
-            }
-          | {
-              do: "deposit";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "withdraw";
-              at: Position;
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "till";
-              at: Position1;
-            }
-          | {
-              do: "edit_sign";
-              at: Position2;
-              text: string;
-            }
-          | {
-              do: "use";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item?: string;
-              at?: Position3;
-              /**
-               * The name or name:id of an entity in the perception snapshot to click. Not with at.
-               */
-              entity?: string;
-            }
-          | BreakAction
-          | PlanAction
-        ),
-        (
-          | {
-              do: "goto";
-              /**
-               * A position, or the name of an agent.
-               */
-              target: Position | string;
-            }
-          | {
-              do: "mine";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              count: number;
-            }
-          | {
-              do: "craft";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              item: string;
-              count: number;
-            }
-          | {
-              do: "place";
-              /**
-               * An item ID without its namespace prefix, such as iron_ingot.
-               */
-              block: string;
-              /**
-               * A position, or feet for the block under the agent.
-               */
-              at: Position | "feet";
-            }
-          | {
-              do: "build";
-              blueprint: {
-                name: string;
-                /**
-                 * @maxItems 512
-                 */
-                blocks: {
-                  /**
-                   * An item ID without its namespace prefix, such as iron_ingot.
-                   */
-                  block: string;
-                  dx: number;
-                  dy: number;
-                  dz: number;
-                }[];
-              };
             }
           | {
               do: "attack";
@@ -14752,24 +13996,6 @@ export type Action =
        * A position, or feet for the block under the agent.
        */
       at: Position | "feet";
-    }
-  | {
-      do: "build";
-      blueprint: {
-        name: string;
-        /**
-         * @maxItems 512
-         */
-        blocks: {
-          /**
-           * An item ID without its namespace prefix, such as iron_ingot.
-           */
-          block: string;
-          dx: number;
-          dy: number;
-          dz: number;
-        }[];
-      };
     }
   | {
       do: "attack";

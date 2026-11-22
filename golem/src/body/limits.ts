@@ -66,7 +66,7 @@ export function blockOperationsDone(action: Action, run: ActionRun): number {
   return typeof mined === 'number' ? mined : 0;
 }
 
-/** How many block operations one action costs: `mine` its count, `place` one, `build` its blocks. */
+/** How many block operations one action costs: `mine` its count, `place` and `break` one. */
 export function blockOperationsOf(action: Action): number {
   switch (action.do) {
     case 'mine':
@@ -75,8 +75,6 @@ export function blockOperationsOf(action: Action): number {
       return 1;
     case 'break':
       return 1;
-    case 'build':
-      return action.blueprint.blocks.length;
     default:
       return 0;
   }

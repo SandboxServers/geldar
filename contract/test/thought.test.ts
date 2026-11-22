@@ -29,7 +29,6 @@ const appendixActions: Record<string, unknown>[] = [
   { do: 'mine', block: 'oak_log', count: 10 },
   { do: 'craft', item: 'stone_pickaxe', count: 1 },
   { do: 'place', block: 'torch', at: 'feet' },
-  { do: 'build', blueprint },
   { do: 'attack', target: 'zombie' },
   { do: 'eat' },
   { do: 'sleep' },
@@ -160,41 +159,8 @@ describe('validateThought', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('accepts a build of 512 blocks, the maximum', () => {
-    const blocks = Array.from({ length: 512 }, (_, i) => ({
-      block: 'oak_planks',
-      dx: i % 16,
-      dy: 0,
-      dz: Math.floor(i / 16),
-    }));
-    const result = validateThought(
-      withActions([{ do: 'build', blueprint: { name: 'big_shelter', blocks } }]),
-    );
-    expect(result.ok).toBe(true);
-  });
-
-  it('rejects a build of 513 blocks', () => {
-    const blocks = Array.from({ length: 513 }, () => ({
-      block: 'oak_planks',
-      dx: 0,
-      dy: 0,
-      dz: 0,
-    }));
-    const result = validateThought(
-      withActions([{ do: 'build', blueprint: { name: 'too_big', blocks } }]),
-    );
-    expect(result.ok).toBe(false);
-  });
-
-  it('rejects a build offset outside -256..256', () => {
-    const result = validateThought(
-      withActions([
-        {
-          do: 'build',
-          blueprint: { name: 'far_wall', blocks: [{ block: 'oak_planks', dx: 257, dy: 0, dz: 0 }] },
-        },
-      ]),
-    );
+  it('refuses the removed inline build action (BLD-26, decision 0427)', () => {
+    const result = validateThought(withActions([{ do: 'build', blueprint }]));
     expect(result.ok).toBe(false);
   });
 
