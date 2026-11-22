@@ -51,6 +51,8 @@ export interface StoredCell extends SeenCell {
 export interface FlushResult {
   written: number;
   failed: number;
+  /** UTF-8 bytes of the sections written (the seen flush bytes metric). */
+  bytes: number;
 }
 
 /** One cell as stored: local index, block name, last-seen tick, inherited flag (1 or 0). */
@@ -244,14 +246,16 @@ export class SeenStore {
 
   private async writeDirty(): Promise<FlushResult> {
     this.flushes++;
-    const result: FlushResult = { written: 0, failed: 0 };
+    const result: FlushResult = { written: 0, failed: 0, bytes: 0 };
     for (const [key, entry] of this.entries) {
       if (!entry.dirty) continue;
       const version = entry.version;
       try {
-        await this.kv.put(key, encodeEntry(entry));
+        const value = encodeEntry(entry);
+        await this.kv.put(key, value);
         if (entry.version === version) entry.dirty = false;
         result.written++;
+        result.bytes += Buffer.byteLength(value);
       } catch {
         result.failed++;
       }

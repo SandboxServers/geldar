@@ -202,7 +202,7 @@ export async function main(): Promise<void> {
     timeout: 5_000,
     ...golemNatsAuth(),
   });
-  const restartKv = await openRestartKv(natsUrl);
+  const restartKv = await openRestartKv(natsUrl, config.building);
   // Pushes only when GELDAR_TELEMETRY_URL is set; otherwise no timer and no request (decision 0088).
   const telemetry = startGolemTelemetry(process.env, {
     service: 'geldar-golem-adam',

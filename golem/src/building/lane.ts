@@ -56,6 +56,8 @@ export interface LaneDeps {
    * again on a later tick. A throw cancels the cell: the cursor stays and the lane keeps running.
    */
   beforeCell?: (now: number) => ThrottleVerdict;
+  /** Told each cell's code once it is counted (the plan cell metric, wire-lane). */
+  onCell?: (code: CellCode) => void;
 }
 
 /** Codes that leave the cell right: the cursor moves on. Every other code is skipped and recorded. */
@@ -254,6 +256,7 @@ export class PlanLane {
       }
       this.shortfall = null;
       this.count(code);
+      deps.onCell?.(code);
       if (!DONE.has(code)) {
         this.skipped.push({ at: [cell.at.x, cell.at.y, cell.at.z], code });
       }

@@ -24,8 +24,16 @@ export function surveyFrom(seen: SurveyAsk, now: () => number): (request: unknow
   return (request) => answerSurvey(seen, request, now(), true);
 }
 
-/** The survey reply, or a refusal: the building flag is off, or the request is outside the contract. */
-export type SurveyAnswer = SurveyReply | { error: 'invalid_input' | 'not_available' };
+/**
+ * The most cells one survey may read (review fix 2). The survey runs synchronously on the Body's event
+ * loop, so a box over this is refused whole rather than read: 32768 cells is a few ms of work.
+ */
+export const SURVEY_MAX_CELLS = 32768;
+
+/** The survey reply, or a refusal: the building flag is off, or the request is outside the contract or too big. */
+export type SurveyAnswer =
+  | SurveyReply
+  | { error: 'invalid_input' | 'not_available' | 'box_too_large' };
 
 /** The inclusive box that two corners span, whichever order they came in. */
 function boxOf(from: Corner, to: Corner): SurveyBox {
@@ -51,6 +59,11 @@ export function answerSurvey(
   const { box, layers } = request as { box: { from: Corner; to: Corner }; layers?: number };
   const bounds = boxOf(box.from, box.to);
   if (layers !== undefined) bounds.max.y = Math.min(bounds.max.y, bounds.min.y + layers - 1);
+  const cells =
+    (bounds.max.x - bounds.min.x + 1) *
+    (bounds.max.y - bounds.min.y + 1) *
+    (bounds.max.z - bounds.min.z + 1);
+  if (cells > SURVEY_MAX_CELLS) return { error: 'box_too_large' };
   const reply = seen.survey(bounds, nowTick);
   return { text: reply.text, truncated: reply.truncated };
 }

@@ -203,6 +203,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     editSign: config.editSign,
     use: config.use,
     swim: config.swim,
+    ...(env.metrics === undefined ? {} : { metrics: env.metrics }),
     building: config.building,
     agentId: config.lifeId,
     timeScale: config.timeScale,

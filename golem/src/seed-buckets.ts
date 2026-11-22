@@ -5,6 +5,7 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
+import { PLAN_BUCKET, SEEN_BUCKET } from './building/names.ts';
 import { type BucketCreator, ensureSkinsBucket, SKINS_BUCKET } from './ensure-skins-bucket.ts';
 import { golemNatsAuth } from './nats-credentials.ts';
 import { createRegistryBucket, REGISTRY_BUCKET } from './registry.ts';
@@ -21,12 +22,23 @@ export async function seedIdentityBuckets(kvm: SeedKvm): Promise<string[]> {
   return [REGISTRY_BUCKET, SKINS_BUCKET];
 }
 
+/**
+ * Creates the two building buckets (review fix 6) with the same plain create the Body uses at each
+ * start, so the settings match and a later Body start finds them. Stops at the first failure.
+ */
+export async function seedBuildingBuckets(kvm: SeedKvm): Promise<string[]> {
+  await kvm.create(PLAN_BUCKET);
+  await kvm.create(SEEN_BUCKET);
+  return [PLAN_BUCKET, SEEN_BUCKET];
+}
+
 async function main(): Promise<void> {
   const url = process.env.GELDAR_NATS_URL;
   if (!url) throw new Error('GELDAR_NATS_URL is not set');
   const nc = await connectNats({ servers: url, name: 'seed-identity-buckets', ...golemNatsAuth() });
   try {
-    const names = await seedIdentityBuckets(new Kvm(jetstream(nc)));
+    const kvm = new Kvm(jetstream(nc));
+    const names = [...(await seedIdentityBuckets(kvm)), ...(await seedBuildingBuckets(kvm))];
     console.log(`buckets ${names.join(', ')}: present`);
   } finally {
     await nc.close().catch(() => undefined);

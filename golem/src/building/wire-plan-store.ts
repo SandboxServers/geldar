@@ -96,6 +96,11 @@ export class PlanPersistence implements PlanQueueStore {
     }
   }
 
+  /** Writes the queued lane cursor now; a Body stop calls this so the last cursor is not lost. */
+  async flush(): Promise<void> {
+    await this.writer.flush();
+  }
+
   /** Queues the lane's cursor for a background save. Nothing is saved when no plan runs. */
   progressed(lane: QueueLane): void {
     const state = lane.checkpointState();
