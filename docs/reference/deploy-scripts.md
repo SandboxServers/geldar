@@ -27,7 +27,7 @@ These hold for every Colo script that sources `deploy/common.sh` (`colo-up`, `co
 | Every compose call merges `compose/colo.yml`, then `compose/nats-auth.yml`, then `deploy/compose.secrets.yml`; then `compose/colo-public.yml` when the public port is set, then `GELDAR_COLO_EXTRA_OVERLAY` when set. The secrets overlay comes after the NATS overlay so its paths win. | `common.sh` lines 10 to 15, 57 to 70 |
 | `DEPLOY_DRY_RUN=1` runs the read-only checks and prints each state-changing step as `dry-run, not run: ...`. | `common.sh` lines 25, 47 to 54 |
 | A refusal prints `colo: error: <reason>` and exits 1. | `common.sh` `die`, lines 34 to 37 |
-| Not every script checks the uid. `colo-up.sh`, `colo-rollback.sh`, `colo-cd.sh` and `colo-admin.sh` call `check_prereqs`, which refuses to run as uid 0 and refuses `GELDAR_SERVICE_UID` 0 or non-numeric. `colo-down.sh`, `colo-status.sh`, `colo-notice.sh` and `colo-public.sh` make no uid check. `gen-secrets.sh` has its own check: it runs as root or as the `GELDAR_SERVICE_UID` account and refuses any other. | `common.sh` `check_service_uid`, lines 115 to 122, called by `check_prereqs` (line 125); callers: `colo-up.sh` line 14, `colo-rollback.sh` line 12, `colo-cd.sh` line 300, `colo-admin.sh` line 278 (`grep -n check_prereqs deploy/*.sh`, 2026-11-16); `gen-secrets.sh` lines 18 to 26 |
+| Not every script checks the uid. `colo-up.sh`, `colo-rollback.sh`, `colo-cd.sh` and `colo-admin.sh` call `check_prereqs`, which refuses to run as uid 0 and refuses `GELDAR_SERVICE_UID` 0 or non-numeric. `colo-down.sh`, `colo-status.sh`, `colo-notice.sh` and `colo-public.sh` make no uid check. `gen-secrets.sh` has its own check: it runs as root or as the `GELDAR_SERVICE_UID` account and refuses any other. | `common.sh` `check_service_uid`, lines 115 to 122, called by `check_prereqs` (line 125); callers: `colo-up.sh` line 14, `colo-rollback.sh` line 12, `colo-cd.sh` line 303, `colo-admin.sh` line 278 (`grep -n check_prereqs deploy/*.sh`, 2026-11-16); `gen-secrets.sh` lines 18 to 26 |
 | No Colo script removes a volume or runs `down`. | decision 0084 item 3; `colo-down.sh` line 9 runs `stop`. `deploy/scratch/scratch.sh` does run `down -v`, on its own `scratch-<suffix>` project only (see [scratch stack](#scratch-stack)). |
 
 ## Script index
@@ -42,9 +42,9 @@ Re-derive with `git ls-files 'deploy/*.sh'` (18 scripts at 1b114276; a git paths
 | `deploy/colo-down.sh` | Stops the project; keeps everything | node | operator |
 | `deploy/colo-status.sh` | Read-only status: containers, ports, one stats sample | node | operator |
 | `deploy/colo-cd.sh` | Delta deploy of one main commit (CD-2a) | node, operator account, via the deploy entrypoint | `colo-deploy.yml` through the node's root-owned entrypoint |
-| `deploy/colo-cd-plan.sh` | Read-only delta between two releases | node | `colo-cd.sh` line 319 |
-| `deploy/colo-cd-verify.sh` | Image prefix and revision-label check; functions only | node | sourced by `colo-cd.sh` line 28 |
-| `deploy/colo-cd-players.sh` | Per-player host helpers; functions only | node | sourced by `colo-cd.sh` line 29 and `colo-cd-plan.sh` line 57 |
+| `deploy/colo-cd-plan.sh` | Read-only delta between two releases | node | `colo-cd.sh` line 322 |
+| `deploy/colo-cd-verify.sh` | Image prefix and revision-label check; functions only | node | sourced by `colo-cd.sh` line 31 |
+| `deploy/colo-cd-players.sh` | Per-player host helpers; functions only | node | sourced by `colo-cd.sh` line 32 and `colo-cd-plan.sh` line 57 |
 | `deploy/colo-notice.sh` | Publishes one maintenance notice | node | `colo-cd.sh` `notice`; operator |
 | `deploy/colo-admin.sh` | One admin subcommand in the one-shot admin container | node | `colo-up.sh`, `colo-cd.sh`, `colo-cd-players.sh`; operator |
 | `deploy/colo-public.sh` | Installs, switches and removes the public Caddy sites | node, account that can write the Caddyfile | operator |
@@ -98,7 +98,7 @@ Re-derive with `git grep -nE '^[a-z_0-9]+\(\) \{' -- deploy/common.sh` (26 funct
 | `check_merged_config` | Refuses a merged config that publishes 25565 or 25566, has an image not pinned by digest, or has a service with `build:` and no `image:` | none |
 | `fetch_bluemap`, `fetch_chunky`, `fetch_coreprotect` | Download the jar named in `plugins/<name>/<name>.lock.json` (https only; `file://` only with `GELDAR_DEPLOY_ALLOW_FILE_URL=1` in tests), check sha256 (and sha512 when the lock has one), store it under the state directory. A missing lock is skipped with a message. | writes `<state dir>/<name>/<name>.jar` (not in dry run) |
 | `check_lock_sha512` | Optional sha512 check of a downloaded jar | none |
-| `load_node_env`, `save_node_env`, `say_node_env`, `proxies_set` | Load, save (mode 0600, as data, never sourced) and print `GELDAR_GLASS_TRUSTED_PROXIES`, `GELDAR_MCP_TRUSTED_PROXIES`, `GELDAR_COLO_SUBNET`, `REGISTER_TRUSTED_PEERS` in `<state dir>/node.env` | writes `node.env` |
+| `load_node_env`, `save_node_env`, `say_node_env`, `proxies_set` | Load, save (mode 0600, as data, never sourced) and print `GELDAR_GLASS_TRUSTED_PROXIES`, `GELDAR_MCP_TRUSTED_PROXIES`, `GELDAR_COLO_SUBNET`, `REGISTER_TRUSTED_PEERS`, `REGISTER_KILL_SWITCH` in `<state dir>/node.env`. `REGISTER_KILL_SWITCH` must be exactly `true` or `false` (file or shell), otherwise the script dies before anything changes; a shell value wins over the file for that run but is never persisted: `save_node_env` re-reads the file's own `REGISTER_KILL_SWITCH` line and writes only that (an invalid file line dies on save too). `colo-status.sh` and `colo-public.sh` also load it and die on an invalid value. `colo-rollback.sh` does not load `node.env` (read in `colo-rollback.sh`: it sources only `common.sh`). So a rollback does not carry a persisted `false`: a register it recreates takes the compose default, sign-up closed. Node behaviour of that rollback is UNVERIFIED. | writes `node.env` |
 | `record_release` | Copies the current record to `previous.env` (when it differs) and the manifest to `current.env` before any pull. Refuses to deploy without a record. | writes `previous.env`, `current.env` |
 
 ## colo-up.sh
@@ -136,24 +136,24 @@ Tests: `deploy/test/colo-deploy.test.ts`, `colo-up-order.test.ts`.
 
 Applies only what changed between the installed release and a new one. Runs on the node as the operator account, never root (header, line 2).
 
-- **Invocation:** `colo-cd.sh [--dry-run] [<release.env path> <release sha> <export dir>]` (line 10). With no positional arguments it reads `GELDAR_RELEASE_MANIFEST`, `GELDAR_RELEASE_SHA` and the working directory, which is the git-less export the entrypoint made (lines 39 to 52).
-- **Environment (names only):** `COLO_CD_RELEASE_FILE` (the node's own manifest copy; default inside the state directory, line 32), `COLO_CD_ENV_FILE` (an operator env file sourced when present; default set at line 23), `GELDAR_COLO_ROOT` (the node's src extract; default at line 25), `COLO_CD_NOTICE_SECONDS` (default 30), `COLO_CD_PLAYER_WAIT` (default 60), `COLO_CD_PLAYER_SETTLE` (default 5), `COLO_CD_IMAGE_INSPECT` (test shim). It sets `PATH` and `HOME` when the environment is empty (lines 19 to 22).
-- **Preconditions:** an installed manifest at `COLO_CD_RELEASE_FILE`, and `<state dir>/release.commit` naming the commit the node runs (lines 303, 310 to 311). The sha must be 40 lowercase hex.
+- **Invocation:** `colo-cd.sh [--dry-run] [<release.env path> <release sha> <export dir>]` (line 11). With no positional arguments it reads `GELDAR_RELEASE_MANIFEST`, `GELDAR_RELEASE_SHA` and the working directory, which is the git-less export the entrypoint made (lines 38 to 54).
+- **Environment (names only):** `COLO_CD_RELEASE_FILE` (the node's own manifest copy; default inside the state directory, line 35), `COLO_CD_ENV_FILE` (an operator env file sourced when present; default set at line 24), `GELDAR_COLO_ROOT` (the node's src extract; default at line 26), `COLO_CD_NOTICE_SECONDS` (default 30), `COLO_CD_PLAYER_WAIT` (default 60), `COLO_CD_PLAYER_SETTLE` (default 5), `COLO_CD_IMAGE_INSPECT` (test shim). It sets `PATH` and `HOME` when the environment is empty (lines 18 to 23).
+- **Preconditions:** an installed manifest at `COLO_CD_RELEASE_FILE`, and `<state dir>/release.commit` naming the commit the node runs (lines 313 to 314). The sha must be 40 lowercase hex.
 - **Order:**
-  1. `verify_images` from `colo-cd-verify.sh`: before anything changes (line 315).
-  2. The delta from `colo-cd-plan.sh` (line 319). In dry run it prints the plan and exits 0 (lines 355 to 358).
+  1. `verify_images` from `colo-cd-verify.sh`: before anything changes (line 318).
+  2. The delta from `colo-cd-plan.sh` (line 322). In dry run it prints the plan and exits 0 (lines 364 to 366).
   3. Take the lock `<state dir>/cd.lock` (a second run is refused), re-run the config, secret and jar checks.
-  4. Back up the installed manifest as `.bak-<UTC>`, record `previous.env` and `current.env`, install the new manifest (lines 370 to 377).
+  4. Back up the installed manifest as `.bak-<UTC>`, record `previous.env` and `current.env`, install the new manifest (lines 377 to 384).
   5. Copy each changed file into the src extract, keeping `.bak-<UTC>` copies (`refresh_src`).
-  6. Pull each changed image in `admin eventsink register glass geldar-mcp golem-body` (line 70).
-  7. When `sql/` changed: write a `pg_dump` to `<state dir>/backups/pre-cd-<UTC>.sql`, then `colo-admin.sh migrate` (lines 389 to 398).
-  8. Restart each changed service in the order `eventsink register glass geldar-mcp golem-body` (line 69), one at a time with `up -d --no-deps --wait` and a health check. A `pause` maintenance notice and a wait of `COLO_CD_NOTICE_SECONDS` come before `golem-body` and `geldar-mcp`, a `back` notice after. `golem-body` is restarted only if it is already running (decision 0212). A body digest change recreates the running player hosts.
+  6. Pull each changed image in `admin eventsink register glass geldar-mcp golem-body` (line 73).
+  7. When `sql/` changed: write a `pg_dump` to `<state dir>/backups/pre-cd-<UTC>.sql`, then `colo-admin.sh migrate` (lines 400 to 404).
+  8. Restart each changed service in the order `eventsink register glass geldar-mcp golem-body` (line 72), one at a time with `up -d --no-deps --wait` and a health check. A `pause` maintenance notice and a wait of `COLO_CD_NOTICE_SECONDS` come before `golem-body` and `geldar-mcp`, a `back` notice after. `golem-body` is restarted only if it is already running (decision 0212). A body digest change recreates the running player hosts.
   9. Refresh each player host that is not current (`refresh_hosts`), one at a time.
   10. Write `<state dir>/release.commit`.
-- **Never restarts** Paper, Velocity, Caddy, Postgres or NATS; never starts the Mind; never reads or writes `REGISTER_KILL_SWITCH` (header, lines 7 to 9).
+- **Never restarts** Paper, Velocity, Caddy, Postgres or NATS; never starts the Mind. `REGISTER_KILL_SWITCH` is read from `node.env` (or the shell, which wins for that run) and printed just before the dry-run exit (line 362, after `verify_images`, the plan and the `release.commit` check); a run that dies before that prints no kill-switch line. A shell value is never written: the save writes back only the file's own valid line. An invalid value stops the run before anything changes. A persisted `false` takes effect only once a release with this change is deployed; before that the CD ignores the file line.
 - **Needs manual:** changes under `plugin/`, `compose/`, `deploy/caddy/` and NATS config are printed as `needs manual: ...` and not applied (`colo-cd-plan.sh` lines 76 to 93). `colo-deploy.yml` copies those lines into the job summary.
-- **Failure handling:** a failed pull, src refresh, dump or migration before any restart restores the previous manifest and exits 1 with nothing restarted (`abort_untouched`). A failed health check re-applies the previous release to every service already restarted with `--pull never`, recreates the player hosts when the body changed, and exits 1 (`rollback`, lines 233 to 258). Migrations are forward-only and not reversed. A failed player host refresh stops the loop, restores that host on its previous image when known, records the new commit, and exits 1 "needs manual" (lines 420 to 426).
-- **Log:** `<state dir>/cd.log`, UTC-stamped lines, no secrets or addresses (lines 79 to 84).
+- **Failure handling:** a failed pull, src refresh, dump or migration before any restart restores the previous manifest and exits 1 with nothing restarted (`abort_untouched`). A failed health check re-applies the previous release to every service already restarted with `--pull never`, recreates the player hosts when the body changed, and exits 1 (`rollback()`, from line 236). Migrations are forward-only and not reversed. A failed player host refresh stops the loop, restores that host on its previous image when known, records the new commit, and exits 1 "needs manual" (lines 225 and 433).
+- **Log:** `<state dir>/cd.log`, UTC-stamped lines, no secrets or addresses (line 60).
 - **Tests:** `deploy/test/colo-cd.test.ts`, `colo-cd-players.test.ts`, `colo-cd-verify.test.ts`, `literal-sweep.test.ts`.
 
 ### colo-cd-plan.sh
@@ -278,7 +278,7 @@ All under the state directory (`GELDAR_STATE_DIR`, default at `common.sh` line 1
 | `release.commit` | `colo-cd.sh` | The commit the node runs; must exist before the first CD run |
 | `cd.lock`, `cd.log` | `colo-cd.sh` | The run lock and the CD log |
 | `backups/pre-cd-<UTC>.sql` | `colo-cd.sh` | A database dump before migrations |
-| `node.env` | `save_node_env` | Trusted proxies, colo subnet, register peers (mode 0600) |
+| `node.env` | `save_node_env` | Trusted proxies, colo subnet, register peers, `REGISTER_KILL_SWITCH` only as the file's own valid line, never a shell value (mode 0600) |
 | `bluemap/`, `chunky/`, `coreprotect/` | `fetch_*` | Verified plugin jars |
 | `admin-tokens.override.yml`, `admin-skins.override.yml` | `colo-admin.sh` | Temporary mount overlays, removed on exit |
 | `<src extract>/<path>.bak-<UTC>` | `colo-cd.sh` | Copies of files the CD replaced (in `GELDAR_COLO_ROOT`) |
@@ -289,11 +289,11 @@ All under the state directory (`GELDAR_STATE_DIR`, default at `common.sh` line 1
 Each conflict is recorded, not resolved.
 
 1. **How many images the release holds.** `colo-images.yml` (manifest job, lines 383 to 452), `deploy/release.env.example` (seven keys) and `colo-cd-verify.sh` line 3 say seven. The `release.env.example` header (line 4) lists six names (no register). `deploy/README.md` "Not covered yet" says `colo-images` publishes five images.
-2. **The `release.commit` record.** `colo-cd.sh` lines 310 to 311 require `<state dir>/release.commit`, and `deploy/README.md` line 31 says so. `deploy/README.md` line 406 says "There is no `state/release.commit` record".
-3. **Is `colo-cd.sh` in the repo?** `docs/runbooks/colo-deploy.md` ("needs manual" section) says `deploy/colo-cd.sh` "is not in this repository yet" and its wording is unverified. The script is tracked at `1b114276` and prints `needs manual: ...` (line 336).
+2. **The `release.commit` record.** `colo-cd.sh` lines 313 to 314 require `<state dir>/release.commit`, and `deploy/README.md` line 31 says so. `deploy/README.md` line 406 says "There is no `state/release.commit` record".
+3. **Is `colo-cd.sh` in the repo?** `docs/runbooks/colo-deploy.md` ("needs manual" section) says `deploy/colo-cd.sh` "is not in this repository yet" and its wording is unverified. The script is tracked at `1b114276` and prints `needs manual: ...` (line 339).
 4. **Register secrets in the node overlay.** `deploy/compose.secrets.yml` lines 24 to 27 still name `register-github-secret` and `register-discord-secret`, which `compose/colo.yml` no longer declares; it names neither `register-ms-secret` nor `register-session-key` (`compose/colo.yml` sets their path from `GELDAR_SECRETS_DIR` itself, lines 735 to 738). `deploy/README.md` says the GitHub and Discord secrets are gone. Whether the merged config then lists the two stale names, and so whether `check_secrets` demands their files, is unverified: `docker compose config` was not run.
 5. **Restarting the shared Caddy.** Decision 0071 item 6 and `deploy/caddy/README.md` ("Never ... restart the container") say the shared Caddy is reloaded, never restarted. `colo-public.sh` has a `restart` mode that restarts it once with `GELDAR_PUBLIC_RESTART_OK=1`, citing an owner ruling (R39, admin API off) that is not a decision record.
-6. **Two manifest copies.** `colo-up.sh` and `colo-rollback.sh` read and write `GELDAR_RELEASE_FILE`; `colo-cd.sh` reads and writes `COLO_CD_RELEASE_FILE` in the state directory, because the operator account cannot read the root-owned one (`colo-cd.sh` lines 30 to 32). `deploy/README.md` lines 26 to 30 say to keep them in step by hand. All three scripts share `current.env` and `previous.env`, so a rollback after a CD run uses the CD's records.
+6. **Two manifest copies.** `colo-up.sh` and `colo-rollback.sh` read and write `GELDAR_RELEASE_FILE`; `colo-cd.sh` reads and writes `COLO_CD_RELEASE_FILE` in the state directory, because the operator account cannot read the root-owned one (`colo-cd.sh` line 35). `deploy/README.md` lines 26 to 30 say to keep them in step by hand. All three scripts share `current.env` and `previous.env`, so a rollback after a CD run uses the CD's records.
 
 ## Documentation debt
 
