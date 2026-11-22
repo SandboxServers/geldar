@@ -9,7 +9,6 @@ const STUBS = [
   'contendFor',
   'throttleWait',
   'progressSentence',
-  'loadSection',
   'surveyBox',
 ] as const;
 
