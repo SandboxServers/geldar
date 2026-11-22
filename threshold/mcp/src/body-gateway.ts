@@ -17,6 +17,14 @@ import { BodyUnavailable } from './ports.ts';
 import type { SeeRead } from './tools/see.ts';
 import type { ViewRead } from './tools/view.ts';
 
+/**
+ * Message names the building packets (BLD-S3b) reserve on the gateway. No method sends them yet: the
+ * survey and plan_check tools are hidden stubs, and plan_progress arrives as a Body event.
+ */
+export const SURVEY_MESSAGE = 'survey';
+export const PLAN_CHECK_MESSAGE = 'plan_check';
+export const PLAN_PROGRESS_EVENT = 'plan_progress';
+
 /** How long a `book` request waits for the Body's reply (the packet's 5 s). */
 export const BOOK_TIMEOUT_MS = 5_000;
 
