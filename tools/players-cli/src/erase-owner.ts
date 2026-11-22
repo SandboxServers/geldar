@@ -13,8 +13,20 @@
 // The registry key of each life is its username (lowercased), which must equal the Body's game_account.
 import { readFileSync } from 'node:fs';
 import { connectNats } from '@geldar/contract/nats';
-import { jetstream } from '@nats-io/jetstream';
+import { jetstream, jetstreamManager } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
+import {
+  type BuildingCount,
+  type BuildingFound,
+  type BuildingKvs,
+  CHECKPOINT_BUCKET_NAME,
+  findBuilding,
+  type ListingKvPort,
+  PLAN_BUCKET_NAME,
+  presentKeys,
+  purgeBuilding,
+  SEEN_BUCKET_NAME,
+} from './erase-building.ts';
 
 export const SKIN_BUCKET_NAME = 'geldar-skins';
 export const REGISTRY_BUCKET_NAME = 'geldar-life-registry';
@@ -34,7 +46,7 @@ export interface KvPort {
   purge(key: string): Promise<void>;
 }
 
-export interface ErasureKvs {
+export interface ErasureKvs extends BuildingKvs {
   skins: KvPort;
   registry: KvPort;
 }
@@ -56,6 +68,7 @@ export interface ErasureOutcome {
   reason?: string;
   skins: BucketCount;
   registry: BucketCount;
+  building: BuildingCount[];
   lines: string[];
 }
 
@@ -139,15 +152,6 @@ export function parseLivesFile(text: string): ErasureLife[] {
   });
 }
 
-/** Reads each key once; returns the keys that exist. */
-async function presentKeys(port: KvPort, keys: string[]): Promise<string[]> {
-  const found: string[] = [];
-  for (const key of keys) {
-    if ((await port.get(key)) !== null) found.push(key);
-  }
-  return found;
-}
-
 const FAILED_READ = 'could not read a bucket; nothing was changed';
 const FAILED_PURGE = 'a purge failed; run again to finish';
 
@@ -156,7 +160,11 @@ const FAILED_PURGE = 'a purge failed; run again to finish';
  * A second run finds nothing and purges nothing. Stops at the first purge error and reports it.
  */
 export async function runErasure(req: ErasureRequest, kvs: ErasureKvs): Promise<ErasureOutcome> {
-  const empty = { skins: { found: 0, purged: 0 }, registry: { found: 0, purged: 0 } };
+  const empty = {
+    skins: { found: 0, purged: 0 },
+    registry: { found: 0, purged: 0 },
+    building: [] as BuildingCount[],
+  };
   const refusal = refusalFor(req);
   if (refusal !== undefined) {
     return { status: 'refused', reason: refusal, ...empty, lines: [`refused: ${refusal}`] };
@@ -165,9 +173,11 @@ export async function runErasure(req: ErasureRequest, kvs: ErasureKvs): Promise<
   const registryKeys = [...new Set(req.lives.map((life) => registryKey(life.username)))];
   let skinFound: string[];
   let registryFound: string[];
+  let building: BuildingFound[];
   try {
     skinFound = await presentKeys(kvs.skins, skinKeys);
     registryFound = await presentKeys(kvs.registry, registryKeys);
+    building = await findBuilding(kvs, skinKeys);
   } catch {
     return { status: 'failed', reason: FAILED_READ, ...empty, lines: [FAILED_READ] };
   }
@@ -175,15 +185,21 @@ export async function runErasure(req: ErasureRequest, kvs: ErasureKvs): Promise<
     skins: { found: skinFound.length, purged: 0 },
     registry: { found: registryFound.length, purged: 0 },
   };
+  const buildingCounts = building.map((bucket) => bucket.count);
   const summary = (status: ErasureOutcome['status'], reason?: string): ErasureOutcome => {
     const lines = [
       `${SKIN_BUCKET_NAME}: ${counts.skins.found} of ${skinKeys.length} keys present, ${counts.skins.purged} purged`,
       `${REGISTRY_BUCKET_NAME}: ${counts.registry.found} of ${registryKeys.length} keys present, ${counts.registry.purged} purged`,
+      ...buildingCounts.map((c) =>
+        c.absent
+          ? `${c.name}: bucket absent, nothing to erase`
+          : `${c.name}: ${c.found} of ${c.candidates} keys present, ${c.purged} purged`,
+      ),
     ];
     if (reason !== undefined) lines.push(reason);
     return reason === undefined
-      ? { status, ...counts, lines }
-      : { status, reason, ...counts, lines };
+      ? { status, ...counts, building: buildingCounts, lines }
+      : { status, reason, ...counts, building: buildingCounts, lines };
   };
   if (!req.execute) {
     return summary(
@@ -200,6 +216,7 @@ export async function runErasure(req: ErasureRequest, kvs: ErasureKvs): Promise<
       await kvs.registry.purge(key);
       counts.registry.purged += 1;
     }
+    await purgeBuilding(building);
   } catch {
     return summary('failed', FAILED_PURGE);
   }
@@ -220,8 +237,19 @@ export async function openErasureKvs(
     const kvm = new Kvm(jetstream(nc));
     const skins = await kvm.open(SKIN_BUCKET_NAME);
     const registry = await kvm.open(REGISTRY_BUCKET_NAME);
+    // The building buckets exist only when the building flag was on at some start: a missing one is absent, not an error.
+    const streams = await existingStreams(nc);
+    const seen = streams.has(`KV_${SEEN_BUCKET_NAME}`)
+      ? asListingPort(await kvm.open(SEEN_BUCKET_NAME))
+      : undefined;
+    const plans = streams.has(`KV_${PLAN_BUCKET_NAME}`)
+      ? asListingPort(await kvm.open(PLAN_BUCKET_NAME))
+      : undefined;
+    const checkpoints = streams.has(`KV_${CHECKPOINT_BUCKET_NAME}`)
+      ? asPort(await kvm.open(CHECKPOINT_BUCKET_NAME))
+      : undefined;
     return {
-      kvs: { skins: asPort(skins), registry: asPort(registry) },
+      kvs: { skins: asPort(skins), registry: asPort(registry), seen, plans, checkpoints },
       close: () => nc.close().then(() => undefined),
     };
   } catch {
@@ -242,6 +270,26 @@ export function asPort(kv: KV): KvPort {
       await kv.purge(key);
     },
   };
+}
+
+/** Wraps a bucket that also lists its live keys (the seen and plan buckets). */
+export function asListingPort(kv: KV): ListingKvPort {
+  return {
+    ...asPort(kv),
+    async keys() {
+      const keys: string[] = [];
+      for await (const key of await kv.keys()) keys.push(key);
+      return keys;
+    },
+  };
+}
+
+/** The JetStream stream names. A KV bucket `b` is the stream `KV_b`, so a name missing here is a bucket never created. */
+async function existingStreams(nc: Parameters<typeof jetstreamManager>[0]): Promise<Set<string>> {
+  const jsm = await jetstreamManager(nc);
+  const names = new Set<string>();
+  for await (const name of jsm.streams.names()) names.add(name);
+  return names;
 }
 
 /** The process exit code for a run outcome: 1 for a failed or refused run, 0 for a dry run or a purge. */
