@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
 const STUBS = [
-  'putPlanChunk',
-  'readPlanChunk',
-  'deletePlan',
-  'saveCheckpoint',
   'doCell',
   'countMaterials',
   'standFor',
