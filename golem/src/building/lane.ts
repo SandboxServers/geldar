@@ -5,13 +5,15 @@
 import type { ActionContext } from '../actions/registry.ts';
 import { parseBlockRef } from './block-ref.ts';
 import type { CellCode, CellEnv, CellHandlers } from './cell-do.ts';
-import type { CellSource } from './cell-source.ts';
+import { type CellSource, forEachCellSliced, type YieldLoop, yieldToLoop } from './cell-source.ts';
 import { doCellAt } from './cell-stand.ts';
 import type { LaneStateName } from './lane-state.ts';
+import { LayerKeys } from './layer-keys.ts';
 import { countMaterials } from './materials.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
 import type { Cell } from './stand.ts';
 import type { ThrottleVerdict } from './throttle.ts';
+import { COUNT_SLICE } from './wire-expand.ts';
 
 /** World ticks one `step` may run before it returns; the Body loop calls again on a later tick. */
 export const SLICE_TICKS = 4;
@@ -49,16 +51,6 @@ export interface LanePlan {
   total: number;
   /** Index of the next cell to run; a restart passes the checkpoint's cursor. Default 0. */
   cursor?: number;
-}
-
-/** The keys of the plan's cells on one y layer, read from a fresh source. */
-function layerKeys(source: CellSource, y: number): Set<string> {
-  const keys = new Set<string>();
-  for (let i = 0; ; i++) {
-    const cell = source.at(i);
-    if (cell === undefined) return keys;
-    if (cell.at.y === y) keys.add(`${cell.at.x},${cell.at.y},${cell.at.z}`);
-  }
 }
 
 /** What `step` reads from the world: the cell env, the cell handlers and the world tick. */
@@ -100,8 +92,16 @@ export class PlanLane {
   private failed = false;
   /** Set while the cursor waits on missing materials; cleared when the cell is counted or the plan ends. */
   private shortfall: MaterialsShortfall | null = null;
-  /** The plan cells of one layer, read once per layer for the stand path (see `onPlan`). */
-  private layer: { planId: string; y: number; keys: Set<string> } | null = null;
+  /** The plan cells per y layer for scaffold removal (see `removalsFor`); cleared per plan start and end. */
+  private readonly layers = new LayerKeys();
+  /** Cells of the current plan read forward so far, up to the cursor (the resume fast-forward, see `prime`). */
+  private primed = 0;
+
+  private readonly yieldLoop: YieldLoop;
+
+  constructor(yieldLoop: YieldLoop = yieldToLoop) {
+    this.yieldLoop = yieldLoop;
+  }
 
   /**
    * Starts a plan from its cursor, with the counts and skipped cells a checkpoint saved (empty for
@@ -121,6 +121,8 @@ export class PlanLane {
     this.completed = false;
     this.failed = false;
     this.shortfall = null;
+    this.primed = 0;
+    this.layers.reset();
     return true;
   }
 
@@ -150,6 +152,8 @@ export class PlanLane {
     this.state = 'idle';
     this.failed = true;
     this.shortfall = null;
+    this.primed = 0;
+    this.layers.reset();
     this.inFlight?.abort();
   }
 
@@ -161,6 +165,7 @@ export class PlanLane {
     });
     this.gate = gate;
     try {
+      await this.prime();
       await this.slice(ctx, deps);
     } finally {
       open();
@@ -200,6 +205,8 @@ export class PlanLane {
     this.cursor = 0;
     this.counts = {};
     this.skipped = [];
+    this.primed = 0;
+    this.layers.reset();
     this.inFlight?.abort();
     await gate;
   }
@@ -238,6 +245,8 @@ export class PlanLane {
       const plan = this.plan;
       if (plan === null) return;
       const cell = plan.source.at(this.cursor);
+      // The source is read forward: `primed` tracks its read position, so a later prime never goes back.
+      this.primed = Math.max(this.primed, this.cursor + 1);
       if (cell === undefined) {
         this.plan = null;
         this.state = 'idle';
@@ -265,7 +274,7 @@ export class PlanLane {
           cell,
           deps.env,
           deps.handlers,
-          this.onPlan(plan),
+          (cells) => this.removalsFor(plan, cells),
         );
       } finally {
         ctx.signal.removeEventListener('abort', stop);
@@ -297,19 +306,37 @@ export class PlanLane {
   }
 
   /**
-   * Whether a cell is one the plan works, for scaffold removal. Reads the plan's layer of that cell
-   * from a fresh source and keeps only that layer's keys. A plan without `fresh` answers no.
+   * The cells among `cells` that the plan works, for scaffold removal: judged per y layer from a
+   * fresh source of the plan, in slices that yield. A plan without `fresh` answers none.
    */
-  private onPlan(plan: LanePlan): (c: Cell) => boolean {
-    return (c) => {
-      if (plan.fresh === undefined) return false;
-      let layer = this.layer;
-      if (layer === null || layer.planId !== plan.planId || layer.y !== c.y) {
-        layer = { planId: plan.planId, y: c.y, keys: layerKeys(plan.fresh(), c.y) };
-        this.layer = layer;
-      }
-      return layer.keys.has(`${c.x},${c.y},${c.z}`);
-    };
+  async removalsFor(plan: LanePlan, cells: readonly Cell[]): Promise<Cell[]> {
+    if (plan.fresh === undefined) return [];
+    return this.layers.onPlanOf(cells, plan.fresh, () => COUNT_SLICE, this.yieldLoop);
+  }
+
+  /**
+   * Reads the plan's cells up to the cursor in slices, yielding between them. A resume from a
+   * cursor N moves the source forward N cells here, not in one synchronous call inside a cell.
+   */
+  private async prime(): Promise<void> {
+    const plan = this.plan;
+    while (plan !== null && this.plan === plan && this.primed < this.cursor) {
+      const before = this.primed;
+      const to = Math.min(this.cursor, this.primed + COUNT_SLICE);
+      await forEachCellSliced(
+        plan.source,
+        this.primed,
+        to,
+        () => COUNT_SLICE,
+        (_cell, i) => {
+          this.primed = i + 1;
+        },
+      );
+      // A death or a new plan during the yield ends the walk: nothing past this slice is read.
+      // A source that ends before the cursor reads nothing more: the walk stops rather than spin.
+      if (this.primed === before) return;
+      if (this.primed < this.cursor && this.plan === plan) await this.yieldLoop();
+    }
   }
 
   /** The throttle's verdict for the next cell; a throw is `error` (the cell is cancelled). */

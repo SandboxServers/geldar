@@ -53,6 +53,36 @@ export function arrayCellSource(cells: readonly PlanCell[]): CellSource {
   return { at: (index) => cells[index] };
 }
 
+/** Yields to the event loop between slices of a cell walk. */
+export type YieldLoop = () => Promise<void>;
+
+export const yieldToLoop: YieldLoop = () => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * Reads the cells at indexes [from, to) in order (stopping early at the end of the source), `slice`
+ * cells at a time, and yields to the event loop between slices. Reads forward only, like `at`:
+ * `from` must not be behind the source's read position.
+ */
+export async function forEachCellSliced(
+  source: CellSource,
+  from: number,
+  to: number,
+  slice: () => number,
+  visit: (cell: PlanCell, index: number) => void,
+  yieldLoop: YieldLoop = yieldToLoop,
+): Promise<void> {
+  let i = from;
+  while (i < to) {
+    const end = Math.min(to, i + Math.max(1, slice()));
+    for (; i < end; i++) {
+      const cell = source.at(i);
+      if (cell === undefined) return;
+      visit(cell, i);
+    }
+    if (i < to) await yieldLoop();
+  }
+}
+
 /** Reads a source to its end into an array. Uses the source up: call it on a fresh one. */
 export function cellsOf(source: CellSource): PlanCell[] {
   const out: PlanCell[] = [];

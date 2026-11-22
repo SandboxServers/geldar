@@ -8,7 +8,15 @@
 import { errorText } from '../actions/outcome.ts';
 import type { ActionContext } from '../actions/registry.ts';
 import type { PlanCell } from './cell-do.ts';
-import { arrayCellSource, type CellSource, cellsOf, filteredCellSource } from './cell-source.ts';
+import {
+  arrayCellSource,
+  type CellSource,
+  cellsOf,
+  filteredCellSource,
+  forEachCellSliced,
+  type YieldLoop,
+  yieldToLoop,
+} from './cell-source.ts';
 import type { Contention } from './contention.ts';
 import type { LaneDeps, LanePlan, PlanLane } from './lane.ts';
 import type { SkippedCell } from './plan-checkpoint.ts';
@@ -81,6 +89,8 @@ export interface PlanQueueOptions {
   store?: PlanQueueStore;
   /** Cells counted between two yields to the event loop, read before each slice (TPS-aware). Default: COUNT_SLICE. */
   sliceFor?: () => number;
+  /** Yields to the event loop between slices of a plan walk. Default: setImmediate. */
+  yieldLoop?: YieldLoop;
 }
 
 interface Upload {
@@ -102,15 +112,35 @@ function cellKey(c: PlanCell): string {
   return `${c.at.x},${c.at.y},${c.at.z}`;
 }
 
-/** The keys of the first `count` cells of a source (the cells a lane has placed or passed). */
-function keysBefore(source: CellSource, count: number): Set<string> {
+/**
+ * The keys of the first `count` cells of a source (the cells a lane has placed or passed). Read in
+ * slices that yield to the event loop, so a replace at a late cursor does not stall the Body.
+ */
+async function keysBefore(
+  source: CellSource,
+  count: number,
+  slice: () => number,
+  yieldLoop: YieldLoop,
+): Promise<Set<string>> {
   const keys = new Set<string>();
-  for (let i = 0; i < count; i++) {
-    const cell = source.at(i);
-    if (cell === undefined) break;
-    keys.add(cellKey(cell));
-  }
+  await forEachCellSliced(
+    source,
+    0,
+    count,
+    slice,
+    (cell) => {
+      keys.add(cellKey(cell));
+    },
+    yieldLoop,
+  );
   return keys;
+}
+
+function changedWhileReplacing(planId: string): SubmitReply {
+  return {
+    kind: 'refused',
+    message: `plan ${planId} changed while it was replaced; send again`,
+  };
 }
 
 /** The plan queue of one life, in front of the plan lane. */
@@ -122,6 +152,7 @@ export class PlanQueue {
   private readonly pin: (body: PlanBody) => PlanBody;
   private readonly store: PlanQueueStore | null;
   private readonly sliceFor: () => number;
+  private readonly yieldLoop: YieldLoop;
   private readonly uploads = new Map<string, Upload>();
   private readonly waiting: Entry[] = [];
   private active: Entry | null = null;
@@ -134,6 +165,7 @@ export class PlanQueue {
     this.pin = options.pin ?? ((body) => body);
     this.store = options.store ?? null;
     this.sliceFor = options.sliceFor ?? (() => COUNT_SLICE);
+    this.yieldLoop = options.yieldLoop ?? yieldToLoop;
   }
 
   /** Takes one plan message. A final chunk is joined with its earlier chunks and then queued or replaced. */
@@ -236,6 +268,7 @@ export class PlanQueue {
         planId: entry.planId,
         chunks: entry.chunks,
         source: make(),
+        fresh: make,
         total,
         cursor,
       },
@@ -252,14 +285,15 @@ export class PlanQueue {
     chunks: number,
   ): Promise<SubmitReply> {
     // The origin is pinned first, so a stored body and the cells expanded from it agree after a restart.
-    const body = this.pin(raw);
-    const make = () => this.expand(body);
+    let body: PlanBody;
     let total: number;
     try {
-      total = await countPlanCells(make(), this.sliceFor);
+      body = this.pin(raw);
+      total = await countPlanCells(this.expand(body), this.sliceFor);
     } catch (error) {
       return { kind: 'refused', message: `plan ${planId} does not expand: ${errorText(error)}` };
     }
+    const make = () => this.expand(body);
     if (op === 'add') {
       if (this.isKnown(planId))
         return { kind: 'refused', message: `plan ${planId} already exists` };
@@ -268,15 +302,25 @@ export class PlanQueue {
       this.waiting.push({ planId, make, total, chunks: kept });
       return { kind: 'queued', cells: total, position: this.waiting.length };
     }
-    if (this.active?.planId === planId) {
+    if (this.active !== null && this.active.planId === planId) {
       // Known gap (B8-lazy6a): an active plan's replace still stores cells, because the rest of the plan
       // is the cells not yet placed, and a steps record cannot say which those are without the placed keys.
+      // The awaits let the lane move on: a placed cell that is read as rest is answered done_already.
+      // The replace is refused if the active plan changed meanwhile (replaced, cancelled or finished).
+      const entry = this.active;
       const cursor = this.lane.checkpointState()?.cursor ?? 0;
-      const placed = keysBefore(this.active.make(), cursor);
+      const placed = await keysBefore(entry.make(), cursor, this.sliceFor, this.yieldLoop);
       const rest = () => filteredCellSource(make(), (c) => !placed.has(cellKey(c)));
       const restTotal = await countPlanCells(rest(), this.sliceFor);
+      if (this.active !== entry) return changedWhileReplacing(planId);
       const kept = await this.keep(planId, () => ({ format: 1, cells: cellsOf(rest()) }), chunks);
       if (typeof kept !== 'number') return kept;
+      if (this.active !== entry) {
+        // The store took the rest after the plan had moved on: drop what it just kept.
+        if (!this.isKnown(planId)) await this.store?.dropped(planId);
+        return changedWhileReplacing(planId);
+      }
+      // No await between the check and the drop: the active plan is the one replaced.
       await this.dropActive();
       this.waiting.unshift({ planId, make: rest, total: restTotal, chunks: kept });
       return { kind: 'queued', cells: restTotal, position: 1 };
