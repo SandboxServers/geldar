@@ -12,6 +12,7 @@ export const FAIL_REASONS = [
   'missing_station',
   'needs_rescue',
   'not_possible',
+  'state_unachievable',
   'interrupted',
   'unsupported',
   'busy',

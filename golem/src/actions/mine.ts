@@ -3,8 +3,6 @@ import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import { digTicks, handNote, unbreakableReason } from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
-import { digSafetyRefusal } from './dig-safety.ts';
-import { feetCell } from './feet-cell.ts';
 import { cellFailure, cellOf, MINE_CELL_MESSAGE } from './mine-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -89,9 +87,6 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   const wanted = new Set<number>([info.id]);
   const start = snapshot(bot);
   const tried = new Set<string>();
-  // Set when a candidate was the block under the feet and was skipped: when nothing else is left
-  // in reach, the action fails as "would drop you".
-  let skippedFloor = false;
   // The refusal of the last candidate skipped as unsafe. A skipped candidate does not end the
   // action: the next nearest is tried. When none is left, the action fails with this refusal.
   let refused: string | null = null;
@@ -104,17 +99,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     const at = nextCandidate(bot, cell, wanted, tried);
     if (!at) {
       if (refused) return failed('not_possible', refused, { mined });
-      if (skippedFloor) return failed('not_possible', 'would drop you', { mined });
       if (cell !== null) return cellFailure(bot.blockAt(cell), mined);
       return failed('not_found', `no ${action.block} within ${SEARCH_DISTANCE} blocks`, { mined });
     }
     // Every pass adds a new cell to `tried`, so the loop ends within the blocks in range.
     tried.add(at.toString());
-    // Breaking the block under the feet would drop you: skip it and take the next nearest.
-    if (standsOn(bot, at)) {
-      skippedFloor = true;
-      continue;
-    }
 
     // Mineflayer's own dig reach comes first. A block in reach needs no walk, and a high block of
     // a trunk has no standing cell for the pathfinder to walk to.
@@ -122,11 +111,6 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (!(target && bot.canDigBlock(target))) {
       const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
       if (!reach.ok) return fromMove(bot, reach, mined);
-      // The walk ended on the block: skip it, as above.
-      if (standsOn(bot, at)) {
-        skippedFloor = true;
-        continue;
-      }
     }
     // An exact cell must be in dig reach after the walk; it is never swapped for a nearer block.
     if (cell !== null) {
@@ -145,12 +129,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // The fastest tool in the inventory; null when no item helps. A block that needs a tool
     // cannot be harvested without one of the listed tools.
     const tool = bot.pathfinder.bestHarvestTool(block);
-    // Any breakable block may be dug by hand; only an unbreakable or a dangerous one is refused.
-    const refusal =
-      unbreakableReason(block) ??
-      digSafetyRefusal({ bot, block, at, own: [feetCell(bot), feetCell(bot).offset(0, 1, 0)] });
+    // Any breakable block may be dug by hand; only an unbreakable one is refused. Falls, liquid and
+    // walled-in cells do not refuse a dig (decision 0428): deaths are part of the experiment.
+    const refusal = unbreakableReason(block);
     if (refusal) {
-      // Unsafe to dig here: skip it, as above, and try the next nearest block.
+      // Unbreakable here: skip it, as above, and try the next nearest block.
       refused = refusal;
       continue;
     }
@@ -168,11 +151,6 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
       const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
       if (!reach.ok) return fromMove(bot, reach, mined);
       if (signal.aborted) return abort(bot, mined);
-      // The retry walk ended on the block: skip it, as above, and dig nothing more here.
-      if (standsOn(bot, at)) {
-        skippedFloor = true;
-        continue;
-      }
       error = await digOnce(bot, block, signal);
     }
     if (error !== null) {
@@ -301,11 +279,6 @@ function nextCandidate(
     count: 1,
   });
   return found[0];
-}
-
-/** Whether the bot stands on the block at `at`: breaking it would drop you. */
-function standsOn(bot: Bot, at: Vec3): boolean {
-  return at.equals(feetCell(bot).offset(0, -1, 0));
 }
 
 /** The lowest air cell under `at`, where a drop from the block at `at` falls to. */

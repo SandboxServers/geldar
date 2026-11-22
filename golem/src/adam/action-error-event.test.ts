@@ -14,6 +14,7 @@ const EXPECTED: Record<FailReason, true> = {
   missing_station: true,
   needs_rescue: true,
   not_possible: true,
+  state_unachievable: true,
   interrupted: true,
   unsupported: true,
   busy: true,
