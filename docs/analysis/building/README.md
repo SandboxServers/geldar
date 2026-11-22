@@ -39,11 +39,11 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 
 | ID | Title | Wave (graph) | Size | Restarts | Depends | Status |
 |---|---|---|---|---|---|---|
-| BLD-S1 | Contract scaffold (absorbs 01, 02) | 0 | M | Y | none | Ready |
-| BLD-S2 | Validator and pure-library stubs (absorbs 03) | 0 | M | Y | S1 | BlockedDependency |
-| BLD-S3a | Body scaffold (stubs, hooks, flag) | 0 | M | Y | S1 | BlockedDependency |
-| BLD-S3b | MCP scaffold (stub tools, mapper) | 0 | S | Y | S1 | BlockedDependency |
-| BLD-S3c | Glass scaffold (registry stub) | 0 | S | Y | S1 | BlockedDependency |
+| BLD-S1 | Contract scaffold (absorbs 01, 02) | 0 | M | Y | none | Done |
+| BLD-S2 | Validator and pure-library stubs (absorbs 03) | 0 | M | Y | S1 | Done |
+| BLD-S3a | Body scaffold (stubs, hooks, flag) | 0 | M | Y | S1 | Done |
+| BLD-S3b | MCP scaffold (stub tools, mapper) | 0 | S | Y | S1 | Done |
+| BLD-S3c | Glass scaffold (registry stub) | 0 | S | Y | S1 | Done |
 | BLD-S4 | Docs scaffold | 0 | S | N | none | Ready |
 | BLD-04 | Plan expansion, geometry helpers, ordering | 1 | M | Y | S2 | BlockedDependency |
 | BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | BlockedDependency |
@@ -52,7 +52,7 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | BlockedDependency |
 | BLD-09 | Standing-position solver | 1 | M | Y | S3a | BlockedDependency |
 | BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | BlockedDependency |
-| BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Ready |
+| BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Done |
 | BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | BlockedDependency |
 | BLD-17 | Seen-block recorder | 1 | M | Y | S3a | BlockedDependency |
 | BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | BlockedDependency |
