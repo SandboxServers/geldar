@@ -62,6 +62,7 @@
   "validatePatrolDetail",
   "validatePlanAck",
   "validatePlanMessage",
+  "validatePlanProgressPayload",
   "validatePlanResultPayload",
   "validatePresenceRecord",
   "validateProficiencyLevelPayload",

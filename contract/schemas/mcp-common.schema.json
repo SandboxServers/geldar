@@ -61,7 +61,8 @@
             "gift_received",
             "property_broken",
             "fight_seen",
-            "container_taken"
+            "container_taken",
+            "plan_progress"
           ]
         },
         "actor": {

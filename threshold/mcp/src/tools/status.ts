@@ -1,5 +1,6 @@
-import type { StatusResult, UntrustedWorldText } from '@geldar/contract';
+import type { PlanProgressPayload, StatusResult, UntrustedWorldText } from '@geldar/contract';
 import { type ActMeter, processMeter } from '../budget/meter.ts';
+import { activePlanView } from '../play-view/active-plan.ts';
 import type { AgentProfiles, BodyGateway, BudgetLedger, DeathMarks, SleepMarks } from '../ports.ts';
 import { type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 
@@ -17,6 +18,8 @@ export interface StatusDeps {
   now: () => number;
   /** The act meter (decision 0149). Defaults to the process meter that `act` records into. */
   meter?: ActMeter;
+  /** The plan the Body reports for the life, or null when none runs (BLD-23). Absent counts as none. */
+  activePlan?: (lifeId: string) => PlanProgressPayload | null;
 }
 
 /**
@@ -32,7 +35,10 @@ export async function statusTool(deps: StatusDeps, call: ToolCall): Promise<Stat
   const totals = (deps.meter ?? processMeter).totalsOf(call.lifeId);
   const day = snapshot.world_time.day;
   const laws = deps.laws.slice(0, STATUS_LAW_LIMIT) as NonNullable<UntrustedWorldText['signs']>;
+  const plan = activePlanView(deps.activePlan?.(call.lifeId) ?? null);
   return {
+    // The active_plan block is left out when no plan runs, so a status with no plan is unchanged.
+    ...(plan === null ? {} : { active_plan: plan }),
     budget_remaining_thoughts: Math.floor(budget),
     spent_this_life: totals.spent,
     would_have_been_balance: Math.floor(budget) - totals.spent,

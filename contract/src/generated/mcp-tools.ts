@@ -34,7 +34,7 @@ export const mcpToolSchemas: Record<
         },
         "intent": {
           "$ref": "#/$defs/Intent",
-          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one exact item id you carry, such as oak_planks, not planks}. A shelter takes 25 blocks of that one kind, a wall 15, a pillar 3. Free-form build actions are not available. Other programs: explore walks up to `legs` (1–12) legs of `leg_blocks` (8–48) blocks each toward chunks you have not visited, avoiding water while `avoid_water` is true, and stops when nothing new is near or danger is close. farm harvests ripe crops within `radius` (4–24) blocks, at most `max_cells` (1–32), and replants when `replant` is true; it never touches a crop that is not yours, and never tills. patrol walks a `route` of 2 to 8 block positions {x, y, z} `laps` (1–5) times, back to the start when `loop` is true."
+          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one exact item id you carry, such as oak_planks, not planks}. A shelter takes 25 blocks of that one kind, a wall 15, a pillar 3. The verbs break and plan are separate from intents: break removes one block you can see and reach; plan adds, replaces or cancels a building plan that the Body works through at its own pace beside your intent. Other programs: explore walks up to `legs` (1–12) legs of `leg_blocks` (8–48) blocks each toward chunks you have not visited, avoiding water while `avoid_water` is true, and stops when nothing new is near or danger is close. farm harvests ripe crops within `radius` (4–24) blocks, at most `max_cells` (1–32), and replants when `replant` is true; it never touches a crop that is not yours, and never tills. patrol walks a `route` of 2 to 8 block positions {x, y, z} `laps` (1–5) times, back to the start when `loop` is true."
         },
         "actions": {
           "type": "array",
@@ -3308,7 +3308,8 @@ export const mcpToolSchemas: Record<
                 "gift_received",
                 "property_broken",
                 "fight_seen",
-                "container_taken"
+                "container_taken",
+                "plan_progress"
               ]
             },
             "actor": {
@@ -4220,7 +4221,8 @@ export const mcpToolSchemas: Record<
                 "gift_received",
                 "property_broken",
                 "fight_seen",
-                "container_taken"
+                "container_taken",
+                "plan_progress"
               ]
             },
             "actor": {
