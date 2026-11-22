@@ -24,6 +24,8 @@ export interface RegisterConfig {
   readonly natsPasswordUnreadable: boolean;
   /** Registration is off while this is true. The default is true (decision 0135 item 5). */
   readonly killSwitch: boolean;
+  /** REGISTER_REQUIRE_MC_OWNERSHIP: only the exact string 'true' turns the Minecraft Java check on for NEW sign-ups. */
+  readonly requireMcOwnership: boolean;
   readonly publicUrl: string;
   /** The MCP base shown on the onboarding page. Empty unless REGISTER_MCP_PUBLIC_URL is set; then it wins. */
   readonly mcpPublicUrl: string;
@@ -174,6 +176,7 @@ export function loadConfig(
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^[a-z][a-z0-9-]{0,31}$/.test(s)),
+    requireMcOwnership: env.REGISTER_REQUIRE_MC_OWNERSHIP === 'true',
     signInPerMinute: intOf(env.REGISTER_SIGNIN_PER_MINUTE, 10, 'REGISTER_SIGNIN_PER_MINUTE'),
     ownerPerMinute: intOf(env.REGISTER_OWNER_PER_MINUTE, 6, 'REGISTER_OWNER_PER_MINUTE'),
     trustedPeers: trustedPeerList(env.REGISTER_TRUSTED_PEERS ?? '127.0.0.1'),

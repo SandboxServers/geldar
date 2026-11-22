@@ -19,7 +19,7 @@ export const CONTACT_ADDRESS = 'abuse@sandboxservers.games';
 export const LEGAL_VERSION_STAMP = 'Version 1, effective 2026-11-11, approved by the owner';
 const FOOTER = `<footer><p>Contact and abuse reports: ${CONTACT_ADDRESS}</p><p><a href="/register/terms">Terms of Use (${LEGAL_VERSION_STAMP})</a></p></footer>`;
 
-const page = (title: string, body: string): string =>
+export const page = (title: string, body: string): string =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body>${body}${FOOTER}</body></html>`;
 
 /** Sign-up needs the consent box (C7-08): a new owner is refused without it. */

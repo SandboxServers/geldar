@@ -12,6 +12,23 @@ const env = {
 };
 const read = (p: string) => (p === 'm' ? 'ms-secret\n' : 'x'.repeat(32));
 
+describe('loadConfig REGISTER_REQUIRE_MC_OWNERSHIP', () => {
+  it('is off unless the value is exactly the string true', () => {
+    expect(loadConfig(env, read).requireMcOwnership).toBe(false);
+    for (const v of ['', 'false', '0', '1', 'TRUE', 'True', ' true', 'true ', 'yes', 'on']) {
+      expect(
+        loadConfig({ ...env, REGISTER_REQUIRE_MC_OWNERSHIP: v }, read).requireMcOwnership,
+      ).toBe(false);
+    }
+  });
+
+  it('turns on only for the exact value true', () => {
+    expect(
+      loadConfig({ ...env, REGISTER_REQUIRE_MC_OWNERSHIP: 'true' }, read).requireMcOwnership,
+    ).toBe(true);
+  });
+});
+
 describe('loadConfig', () => {
   it('defaults the kill switch on and the sign-in and owner limits to 10 and 6 a minute (R41)', () => {
     const c = loadConfig(env, read);

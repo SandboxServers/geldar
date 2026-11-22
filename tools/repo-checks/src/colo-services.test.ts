@@ -568,6 +568,8 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
     expect(vars.REGISTER_MS_CLIENT_ID).toBe(`\${REGISTER_MS_CLIENT_ID:-}`);
     expect(vars.REGISTER_MS_CLIENT_SECRET_FILE).toBe('/run/secrets/register-ms-secret');
     expect(vars.REGISTER_SESSION_KEY_FILE).toBe('/run/secrets/register-session-key');
+    // The MC ownership gate is forwarded and off by default: an unset value is the empty string, never true.
+    expect(vars.REGISTER_REQUIRE_MC_OWNERSHIP).toBe(`\${REGISTER_REQUIRE_MC_OWNERSHIP:-}`);
     expect(vars.REGISTER_PUBLIC_URL).toBe(
       `\${REGISTER_PUBLIC_URL:-https://register.example.invalid}`,
     );

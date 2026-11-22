@@ -9,6 +9,14 @@ import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
+import { gamepassSignedInPage, ownershipRefusedPage } from './mc-ownership-pages.ts';
+import {
+  decideOwnership,
+  isRefusal,
+  type OwnershipCheck,
+  recordErrorLabel,
+  UNRECORDED_REFUSAL,
+} from './mc-signup-gate.ts';
 import {
   mcpBaseFor,
   ONBOARDING_CSP,
@@ -150,19 +158,44 @@ export class Account {
     identity: Identity,
     res: ServerResponse,
     consent = false,
+    verify?: OwnershipCheck,
   ): Promise<void> => {
     const { store, sessions, config, now, log } = this.deps;
+    // The Minecraft Java check (NEW sign-ups only, flag on) can wait on Xbox and Mojang for about 40 s, so it runs
+    // before the lock: existing owners and admins never queue behind it. The owner lookup is repeated inside the lock.
+    const needsCheck =
+      config.requireMcOwnership && consent && !(await store.findOwner(identity.identityHash));
+    const verdict = needsCheck ? await decideOwnership(verify, identity.provider, log) : undefined;
+    // Set inside the lock only when this sign-up created the owner: the Game Pass hint is shown once, on that page.
+    let newHint: string | undefined;
     const outcome = await this.serial(async () => {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
       if (found) return found.ownerId;
       // Sign-up needs the consent box (C7-08): no owner row without it.
       if (!consent) return 'consent' as const;
+      // The gate's verdict for a NEW sign-up. It is only ever set when the flag is on (flag off: never).
+      if (verdict && isRefusal(verdict)) return { refused: verdict };
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
-      await store.createOwner(identity, ownerId, TERMS_VERSION);
+      if (!config.requireMcOwnership) {
+        await store.createOwner(identity, ownerId, TERMS_VERSION);
+        return ownerId;
+      }
+      // The answer is written in the owner's own transaction: a refused or failed record commits nothing.
+      try {
+        await store.createOwner(identity, ownerId, TERMS_VERSION, true);
+      } catch (error) {
+        log(`sign-up ownership record failed; owner write rolled back ${recordErrorLabel(error)}`);
+        return { refused: UNRECORDED_REFUSAL };
+      }
+      newHint = verdict?.status === 'owns_via_gamepass' ? verdict.hint : undefined;
       return ownerId;
     });
     const clearState = `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;
+    if (typeof outcome === 'object') {
+      log(`sign-up refused provider=${identity.provider} reason=ownership`);
+      return html(res, 403, ownershipRefusedPage(outcome.refused), { 'set-cookie': clearState });
+    }
     if (outcome === 'banned') {
       log(`sign-in refused provider=${identity.provider} reason=banned`);
       return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });
@@ -183,20 +216,25 @@ export class Account {
       lastSeenMs: nowMs,
       expiresMs: slideExpiry(nowMs, nowMs),
     });
+    const cookies = [
+      clearState,
+      ...LEGACY_CLEARS,
+      sessionCookie(id, SESSION_CAP_MS / 1000),
+      kinoCookieHeader(
+        signKinoSession(config.sessionKey, {
+          identityHash: identity.identityHash,
+          expiresAt: nowMs + KINO_COOKIE_TTL_MS,
+        }),
+        KINO_COOKIE_TTL_MS / 1000,
+      ),
+    ];
+    if (newHint !== undefined) {
+      // A new Game Pass owner gets the launcher hint on a page; the same cookies as the plain redirect below.
+      return html(res, 200, gamepassSignedInPage(newHint), { 'set-cookie': cookies });
+    }
     res.writeHead(302, {
       location: `${BASE}/account`,
-      'set-cookie': [
-        clearState,
-        ...LEGACY_CLEARS,
-        sessionCookie(id, SESSION_CAP_MS / 1000),
-        kinoCookieHeader(
-          signKinoSession(config.sessionKey, {
-            identityHash: identity.identityHash,
-            expiresAt: nowMs + KINO_COOKIE_TTL_MS,
-          }),
-          KINO_COOKIE_TTL_MS / 1000,
-        ),
-      ],
+      'set-cookie': cookies,
       ...SECURITY_HEADERS,
     });
     res.end();

@@ -422,6 +422,8 @@ services:
       # Microsoft (Entra) sign-in only (config.ts). The client id is a deploy value; the client secret is an owner-provided file.
       REGISTER_MS_CLIENT_ID: "${REGISTER_MS_CLIENT_ID:-}"
       REGISTER_MS_CLIENT_SECRET_FILE: /run/secrets/register-ms-secret
+      # The Minecraft Java ownership gate for NEW sign-ups. Empty (the default) is off; only the exact value true turns it on.
+      REGISTER_REQUIRE_MC_OWNERSHIP: "${REGISTER_REQUIRE_MC_OWNERSHIP:-}"
       # The key the gk_session cookie is signed with. Glass reads the same file (compose/colo-kino-session.yml).
       REGISTER_SESSION_KEY_FILE: /run/secrets/register-session-key
       REGISTER_PEPPER_FILE: /run/secrets/register-pepper
