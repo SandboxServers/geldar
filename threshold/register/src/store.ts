@@ -37,16 +37,17 @@ export interface MintRequest {
 export interface Store {
   /** The owner behind an identity hash, or null when the identity never registered. */
   findOwner(identityHash: string): Promise<OwnerRecord | null>;
-  /** Writes the owner, its identity and the consent row (C7-08) in one transaction; all or nothing. */
+  /**
+   * Writes the owner, its identity and the consent row (C7-08) in one transaction; all or nothing. When ownsJava is
+   * given, the one-time Minecraft Java answer (register_mc_ownership_record, 0068) is written in the same transaction,
+   * and a refused record throws, so the owner is never committed without its answer.
+   */
   createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
     termsVersion: string,
+    ownsJava?: boolean,
   ): Promise<void>;
-  /** Records the one-time Minecraft Java answer through register_mc_ownership_record (0068). Optional: absent means the gate fails closed. */
-  recordMcOwnership?(identityHash: string, ownsJava: boolean): Promise<boolean>;
-  /** Removes an account (register_account_delete). Optional: used only to undo a sign-up whose ownership record failed. */
-  eraseAccount?(identityHash: string): Promise<boolean>;
   listPlayers(identityHash: string): Promise<PlayerRow[]>;
   /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */
   createPlayer(

@@ -4,7 +4,6 @@
  * check, a throw, or a record that did not land. Logs carry the outcome and the failure code only.
  */
 import { FAILURE_MESSAGES, type OwnershipResult } from './mc-ownership.ts';
-import type { Store } from './store.ts';
 
 /** Runs the Xbox and Mojang chain once for the access token held in this closure. */
 export type OwnershipCheck = () => Promise<OwnershipResult>;
@@ -39,28 +38,4 @@ export async function decideOwnership(
 
 export function isRefusal(result: OwnershipResult): result is OwnershipRefusal {
   return result.status === 'failed' || result.status === 'not_owned';
-}
-
-/**
- * Records the one-time answer for the new account. A false or a throw removes the account, so the next sign-in
- * cannot skip the check. If the removal fails too, that is logged (the account then needs an operator).
- */
-export async function recordOwnership(
-  store: Store,
-  identityHash: string,
-  log: (line: string) => void,
-): Promise<boolean> {
-  try {
-    if (store.recordMcOwnership && (await store.recordMcOwnership(identityHash, true))) return true;
-  } catch {
-    log('sign-up ownership record threw');
-  }
-  log('sign-up ownership record not stored; undoing the sign-up');
-  try {
-    if (!store.eraseAccount || !(await store.eraseAccount(identityHash)))
-      log('sign-up undo did not remove the account');
-  } catch {
-    log('sign-up undo threw');
-  }
-  return false;
 }

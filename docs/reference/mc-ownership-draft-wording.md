@@ -17,6 +17,6 @@ When you sign up, we check once whether your Microsoft account owns Minecraft: J
 ## Points for the owner to decide
 
 1. Whether a Game Pass account (no Java purchase) is admitted. The code admits it. The launcher hint is not shown yet: the sign-up page has no place for it in this change, so it is an open item to close before the flag is enabled. The owner may choose to refuse Game Pass instead.
-2. Whether the three stored fields are the right minimum. The code stores the yes or no answer, the check time and no profile identifier yet (no profile lookup exists).
+2. Whether the three stored fields are the right minimum. The code stores only a yes (a refused sign-up stores nothing), the check time and no profile identifier yet (no profile lookup exists).
 3. Whether the paragraph above goes into the live privacy notice as a new version. A new version needs a new terms version bump; this draft does not do that.
 4. Bedrock accounts are not verified by this check. The register does not claim to check Bedrock.

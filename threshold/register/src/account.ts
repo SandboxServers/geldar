@@ -14,7 +14,6 @@ import {
   decideOwnership,
   isRefusal,
   type OwnershipCheck,
-  recordOwnership,
   UNRECORDED_REFUSAL,
 } from './mc-signup-gate.ts';
 import {
@@ -175,9 +174,17 @@ export class Account {
       // The gate's verdict for a NEW sign-up. It is only ever set when the flag is on (flag off: never).
       if (verdict && isRefusal(verdict)) return { refused: verdict };
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
-      await store.createOwner(identity, ownerId, TERMS_VERSION);
-      if (config.requireMcOwnership && !(await recordOwnership(store, identity.identityHash, log)))
+      if (!config.requireMcOwnership) {
+        await store.createOwner(identity, ownerId, TERMS_VERSION);
+        return ownerId;
+      }
+      // The answer is written in the owner's own transaction: a refused or failed record commits nothing.
+      try {
+        await store.createOwner(identity, ownerId, TERMS_VERSION, true);
+      } catch {
+        log('sign-up ownership record not stored; nothing was written');
         return { refused: UNRECORDED_REFUSAL };
+      }
       return ownerId;
     });
     const clearState = `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;

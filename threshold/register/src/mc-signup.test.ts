@@ -40,11 +40,16 @@ function fakeStore(
   owner: { ownerId: string; banned: boolean } | null = null,
   record: () => Promise<boolean> = async () => true,
 ) {
+  // Models the Pg store: with an answer the record runs inside the owner's transaction, and a refusal or a throw
+  // from it means nothing is written (the owner is rolled back).
   return {
     findOwner: vi.fn(async () => owner),
-    createOwner: vi.fn(async () => undefined),
-    recordMcOwnership: vi.fn(record),
-    eraseAccount: vi.fn(async () => true),
+    createOwner: vi.fn(
+      async (_identity: unknown, _ownerId: unknown, _terms: unknown, ownsJava?: boolean) => {
+        if (ownsJava === undefined) return;
+        if ((await record()) !== true) throw new Error('ownership record refused');
+      },
+    ),
   };
 }
 
@@ -83,7 +88,7 @@ describe('flag off', () => {
     expect(res.status).toBe(302);
     expect(verify).not.toHaveBeenCalled();
     expect(store.createOwner).toHaveBeenCalledOnce();
-    expect(store.recordMcOwnership).not.toHaveBeenCalled();
+    expect(store.createOwner.mock.calls[0]?.[3]).toBeUndefined();
   });
 
   it('keeps the old scope and adds XboxLive.signin only when the gate is on', () => {
@@ -105,7 +110,7 @@ describe('flag on, new sign-up', () => {
     const res = await signUp(account, owns);
     expect(res.status).toBe(302);
     expect(store.createOwner).toHaveBeenCalledOnce();
-    expect(store.recordMcOwnership).toHaveBeenCalledWith('a'.repeat(64), true);
+    expect(store.createOwner.mock.calls[0]?.[3]).toBe(true);
     expect(lines).toContain('sign-up ownership outcome=owns provider=microsoft');
   });
 
@@ -190,26 +195,34 @@ describe('flag on, new sign-up', () => {
     expect(store.createOwner).not.toHaveBeenCalled();
   });
 
-  it('undoes the sign-up and refuses when the record is refused', async () => {
+  it('refuses and creates no session when the record is refused', async () => {
     const store = fakeStore(null, async () => false);
     const { account, lines, sessions } = harness(true, store);
     const res = await signUp(account, owns);
     expect(res.status).toBe(403);
-    expect(store.createOwner).toHaveBeenCalledOnce();
-    expect(store.eraseAccount).toHaveBeenCalledWith('a'.repeat(64));
+    expect(res.body).toContain('Sign-up could not be completed');
+    expect(store.createOwner).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.any(String),
+      true,
+    );
     expect(sessions.create).not.toHaveBeenCalled();
-    expect(lines).toContain('sign-up ownership record not stored; undoing the sign-up');
+    expect(res.headers['set-cookie']).toContain('Max-Age=0');
+    expect(lines).toContain('sign-up ownership record not stored; nothing was written');
   });
 
-  it('undoes the sign-up and refuses when the record throws', async () => {
+  it('refuses and creates no session when the record throws (the owner write is rolled back)', async () => {
     const store = fakeStore(null, async () => {
       throw new Error('db down');
     });
-    const { account, lines } = harness(true, store);
+    const { account, lines, sessions } = harness(true, store);
     const res = await signUp(account, owns);
     expect(res.status).toBe(403);
-    expect(store.eraseAccount).toHaveBeenCalledOnce();
-    expect(lines).toContain('sign-up ownership record threw');
+    expect(res.body).toContain('Sign-up could not be completed');
+    expect(sessions.create).not.toHaveBeenCalled();
+    expect(lines).toContain('sign-up ownership record not stored; nothing was written');
+    expect(lines.join('\n')).not.toContain('db down');
   });
 
   it('refuses without consent before the check runs', async () => {

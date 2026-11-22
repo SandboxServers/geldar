@@ -230,7 +230,7 @@ Names only. A `*_FILE` variable names a mounted secret file; the secret's value 
 | Name | Default in code | Set in `compose/colo.yml` | Meaning |
 |---|---|---|---|
 | `REGISTER_KILL_SWITCH` | on | yes, default `true` | Off only when exactly `false` |
-| `REGISTER_REQUIRE_MC_OWNERSHIP` | off | no, default off | On only when exactly `true`: NEW sign-ups must own Minecraft: Java Edition (see the draft wording note) |
+| `REGISTER_REQUIRE_MC_OWNERSHIP` | off | yes, default off | On only when exactly `true`: NEW sign-ups must own Minecraft: Java Edition (see the draft wording note) |
 | `REGISTER_PUBLIC_URL` | required, `https://` | yes (deploy value) | Base for the redirect URI and the Origin check |
 | `REGISTER_MCP_PUBLIC_URL` | empty | yes (deploy value) | MCP address on the onboarding page |
 | `REGISTER_HOST`, `REGISTER_PORT` | `127.0.0.1`, `8090` | yes | Listen address |
