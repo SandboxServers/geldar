@@ -100,6 +100,7 @@ const SPEC_TOOLS = [
   'sleep',
   'journal',
   'status',
+  'survey',
 ];
 /** Covered by mcp-play.test.ts (checked below). */
 const COVERED_ELSEWHERE = ['look', 'wait', 'act', 'say'];

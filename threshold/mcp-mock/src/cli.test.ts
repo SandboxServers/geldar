@@ -83,7 +83,7 @@ describe('cli', () => {
         requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } },
       }),
     );
-    expect((await client.listTools()).tools).toHaveLength(16);
+    expect((await client.listTools()).tools).toHaveLength(17);
     await client.close();
     expect(stderr()).not.toContain(TOKEN);
   }, 30_000);

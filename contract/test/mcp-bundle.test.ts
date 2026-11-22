@@ -169,6 +169,7 @@ describe('bundled tool schemas', () => {
       'see',
       'sleep',
       'status',
+      'survey',
       'use_skill',
       'view',
       'vote',
