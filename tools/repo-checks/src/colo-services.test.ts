@@ -105,9 +105,7 @@ describe('compose/colo.yml: the Body service (C1-03)', () => {
   });
 
   it('caps each service with its own budget, no swap, a pids limit and log rotation (decision 0082)', () => {
-    const budgets: [Service, string, string, string][] = [
-      [body, 'GOLEM_BODY', '1', '2048m'],
-    ];
+    const budgets: [Service, string, string, string][] = [[body, 'GOLEM_BODY', '1', '2048m']];
     for (const [service, name, cpus, memory] of budgets) {
       expect(service.deploy).toEqual({
         resources: {
@@ -239,7 +237,11 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
   });
 
   it('has no Mind in the colo file and no animus in the deploy scripts (decision 0430)', () => {
-    expect(Object.values(colo.services).filter((s) => s.profiles?.includes('mind'))).toEqual([]);
+    expect(
+      Object.values(colo.services).filter(
+        (s) => Array.isArray(s.profiles) && s.profiles.includes('mind'),
+      ),
+    ).toEqual([]);
     const up = readFileSync(`${ROOT}deploy/colo-up.sh`, 'utf8');
     expect(up).not.toMatch(/--profile mind|animus/);
     const status = readFileSync(`${ROOT}deploy/colo-status.sh`, 'utf8');
