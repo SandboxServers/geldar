@@ -17,5 +17,6 @@ export * from './seen/recorder.ts';
 export * from './seen/section.ts';
 export * from './seen/store.ts';
 export * from './seen/survey.ts';
+export type { Cell } from './stand.ts';
 export * from './stand.ts';
 export * from './throttle.ts';

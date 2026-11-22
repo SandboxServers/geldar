@@ -9,15 +9,13 @@ const STUBS = [
   'contendFor',
   'throttleWait',
   'progressSentence',
-  'recordSeen',
-  'sectionOf',
   'loadSection',
   'surveyBox',
 ] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
   it.each(STUBS)('%s is exported and refuses with not_implemented', (name) => {
-    const stub = building[name] as unknown as () => unknown;
+    const stub = (building as Record<string, unknown>)[name] as () => unknown;
     expect(() => stub()).toThrow(`not_implemented: ${name}`);
   });
 
