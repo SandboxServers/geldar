@@ -43,6 +43,8 @@ describe('monitor frame', () => {
     expect(r.querySelector('.ch')?.textContent).toBe('CH 3');
     expect(r.querySelector('.name')?.textContent).toBe(HOSTILE);
     expect(r.querySelector('img')).toBeNull();
+    for (const el of [r, ...r.querySelectorAll('*')])
+      for (const attr of el.attributes) expect(attr.value).not.toContain(HOSTILE);
     expect(r.querySelector('.mode')?.textContent).toBe('Chase');
     expect(r.querySelector('.live')?.textContent).toBe('Live');
     f.setLive(false);
@@ -53,13 +55,15 @@ describe('monitor frame', () => {
   it('marks the pressed mode and the active and featured states', () => {
     const f = mod.buildMonitor(() => undefined);
     f.setMode('orbit');
-    const pressed = [...f.root.querySelectorAll('[aria-pressed="true"]')].map((b) => b.textContent);
+    const pressed = [...f.controls.querySelectorAll('[aria-pressed="true"]')].map(
+      (b) => b.textContent,
+    );
     expect(pressed).toEqual(['Orbit']);
     f.setActive(true);
     f.setFeatured(true);
     expect(f.root.classList.contains('active')).toBe(true);
     expect(
-      f.root.querySelector('[aria-label="Solo this monitor"]')?.getAttribute('aria-pressed'),
+      f.controls.querySelector('[aria-label="Solo this monitor"]')?.getAttribute('aria-pressed'),
     ).toBe('true');
   });
 
@@ -67,7 +71,7 @@ describe('monitor frame', () => {
     const seen: MonitorAction[] = [];
     const f = mod.buildMonitor((a) => seen.push(a));
     const click = (label: string): void =>
-      (f.root.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click();
+      (f.controls.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click();
     for (const l of [
       'Chase camera',
       'Free camera',
@@ -81,7 +85,9 @@ describe('monitor frame', () => {
       'Choose an agent',
       'Solo this monitor',
       'Show feed details',
-      'Close this monitor',
+      'Near',
+      'Medium',
+      'Far',
     ])
       click(l);
     expect(seen).toEqual([
@@ -97,15 +103,31 @@ describe('monitor frame', () => {
       { kind: 'guide' },
       { kind: 'solo' },
       { kind: 'info' },
-      { kind: 'close' },
+      { kind: 'zoom-level', level: 0 },
+      { kind: 'zoom-level', level: 1 },
+      { kind: 'zoom-level', level: 2 },
     ]);
+  });
+
+  it('shows the selected Chase distance and hides the presets in Orbit and Free', () => {
+    const f = mod.buildMonitor(() => undefined);
+    f.setMode('follow');
+    f.setZoom(1);
+    expect(f.root.querySelector('.mode')?.textContent).toBe('Chase · medium');
+    const zoom = f.controls.querySelector('[aria-label="Chase distance"]') as HTMLElement;
+    expect(zoom.hidden).toBe(false);
+    expect(zoom.querySelector('[aria-pressed="true"]')?.textContent).toBe('Medium');
+    f.setMode('orbit');
+    f.setZoom(null);
+    expect(zoom.hidden).toBe(true);
+    expect(f.root.querySelector('.mode')?.textContent).toBe('Orbit');
   });
 
   it('folds the status line behind the details button', () => {
     const f = mod.buildMonitor(() => undefined);
     f.setStatus('connected | chunks 3 | entities 1 | atlas ready (9)');
     const status = f.root.querySelector('.status') as HTMLElement;
-    const btn = f.root.querySelector('[aria-label="Show feed details"]') as HTMLElement;
+    const btn = f.controls.querySelector('[aria-label="Show feed details"]') as HTMLElement;
     expect(status.hidden).toBe(true);
     expect(btn.getAttribute('aria-expanded')).toBe('false');
     f.toggleInfo();
@@ -125,12 +147,14 @@ describe('monitor frame', () => {
 
   it('says "Tuning in to" until the server names the agent, as text', () => {
     const f = mod.buildMonitor(() => undefined);
+    f.setChannel(2);
     f.setLabel(HOSTILE, true);
     expect(f.root.querySelector('.name')?.textContent).toBe(`Tuning in to ${HOSTILE}`);
     expect(f.root.querySelector('img')).toBeNull();
     f.setLabel('Moss');
     expect(f.root.querySelector('.name')?.textContent).toBe('Moss');
-    expect(f.root.getAttribute('aria-label')).toBe('Monitor: Moss');
+    expect(f.root.getAttribute('aria-labelledby')).toBe('monitor-channel-2 monitor-name-2');
+    expect(f.root.getAttribute('aria-label')).toBeNull();
   });
 
   it('keeps a notice up with its Try again button until cleared', () => {
@@ -150,108 +174,112 @@ describe('monitor frame', () => {
 
   it('builds an empty slot that asks to tune in', () => {
     let tuned = 0;
-    const slot = mod.buildEmptySlot(() => tuned++);
-    expect(slot.textContent).toContain('No signal');
+    const slot = mod.buildEmptySlot(() => tuned++, 4);
+    expect(slot.textContent).toBe('CH 4no channel');
+    expect(slot.querySelector('button')?.getAttribute('aria-label')).toContain('No signal');
     (slot.querySelector('button') as HTMLButtonElement).click();
     expect(tuned).toBe(1);
   });
 });
 
 describe('channel guide', () => {
-  function dialog(): HTMLDialogElement {
-    const d = document.createElement('dialog') as HTMLDialogElement;
-    const caption = document.createElement('p');
-    caption.className = 'guide-caption';
-    const list = document.createElement('ul');
-    list.className = 'guide-list';
-    d.append(caption, list);
-    document.body.appendChild(d);
-    // happy-dom's dialog: make showModal and close plain toggles.
+  function setup(narrow = true) {
+    const view = document.createElement('div');
+    view.innerHTML = `
+      <button id="trigger" disabled>Channels</button>
+      <section hidden><div class="guide-content">
+        <button class="guide-close">Close</button>
+        <p class="guide-caption"></p>
+        <ul class="guide-list"></ul>
+      </div></section>
+      <dialog></dialog>`;
+    document.body.appendChild(view);
+    const d = view.querySelector('dialog') as HTMLDialogElement;
+    const inline = view.querySelector('section') as HTMLElement;
+    const trigger = view.querySelector('button') as HTMLButtonElement;
+    const media = new EventTarget() as MediaQueryList;
+    Object.defineProperty(media, 'matches', { value: narrow, writable: true });
+    // happy-dom does not provide native dismissal or focus restoration.
     d.showModal = () => d.setAttribute('open', '');
-    d.close = () => d.removeAttribute('open');
-    return d;
-  }
-
-  it('lists agents as text, says which channels carry them, and tunes or opens on a click', () => {
-    const d = dialog();
+    d.close = () => {
+      d.removeAttribute('open');
+      d.dispatchEvent(new win.Event('close') as unknown as Event);
+    };
     const calls: string[] = [];
-    const g = new guideMod.ChannelGuide(
+    const guide = new guideMod.ChannelGuide(
       d,
+      inline,
+      trigger,
+      media,
       [
         { id: 'ag_a', label: HOSTILE },
         { id: 'ag_b', label: 'Moss' },
       ],
-      { tune: (id) => calls.push(`tune ${id}`), watchNew: (id) => calls.push(`new ${id}`) },
+      {
+        tune: (id) => calls.push(`tune ${id}`),
+        watchNew: (id, channel) => calls.push(`new ${id} ${channel ?? 'next'}`),
+      },
     );
-    g.open({ onAir: new Map([['ag_b', [1, 3]]]), activeChannel: 2, canOpen: false }, (id) => id);
-    expect(d.querySelector('.guide-caption')?.textContent).toBe('Choose an agent for CH 2.');
-    const items = [...d.querySelectorAll('li')] as HTMLElement[];
-    const [first, second] = items as [HTMLElement, HTMLElement];
-    expect(first.querySelector('.label')?.textContent).toBe(HOSTILE);
-    expect(d.querySelector('img')).toBeNull();
-    expect(second.querySelector('.onair')?.textContent).toBe('On CH 1, CH 3');
-    expect((second.querySelector('.add') as HTMLButtonElement).disabled).toBe(true);
-    (second.querySelector('.tune') as HTMLButtonElement).click();
+    return { d, inline, trigger, guide, calls, media };
+  }
+
+  it('shows permitted labels as text with a sigil and a live channel note', () => {
+    const { inline, guide, calls } = setup(false);
+    guide.update({ onAir: new Map([['ag_b', [1, 3]]]), activeChannel: 2, canOpen: false });
+    expect(inline.hidden).toBe(false);
+    expect(inline.querySelector('.guide-caption')?.textContent).toBe(
+      'Pick an agent for CH 2. Four monitors at most.',
+    );
+    const [first, second] = [...inline.querySelectorAll('li')];
+    expect(first?.querySelector('.label')?.textContent).toBe(HOSTILE);
+    expect(first?.querySelector('canvas.sigil-roster')?.getAttribute('aria-hidden')).toBe('true');
+    expect(first?.querySelector('.onair')?.textContent).toBe('available');
+    expect(second?.querySelector('.onair')?.textContent).toBe('on CH 1, CH 3');
+    expect(inline.querySelector('img')).toBeNull();
+    for (const el of inline.querySelectorAll('*'))
+      for (const attr of el.attributes) expect(attr.value).not.toContain(HOSTILE);
+    expect(second?.querySelector<HTMLButtonElement>('.add')?.disabled).toBe(true);
+    second?.querySelector<HTMLButtonElement>('.tune')?.click();
     expect(calls).toEqual(['tune ag_b']);
-    expect(g.isOpen).toBe(false);
-    g.open({ onAir: new Map(), activeChannel: null, canOpen: true }, (id) => id);
-    expect(d.querySelector('.guide-caption')?.textContent).toBe(
-      'Choose an agent to watch on a new monitor.',
-    );
-    (first.querySelector('.add') as HTMLButtonElement).click();
-    expect(calls).toEqual(['tune ag_b', 'new ag_a']);
+    expect(guide.isOpen).toBe(false);
   });
 
-  it('from an empty slot, a choice fills a new monitor instead of retuning the active one', () => {
-    const d = dialog();
-    const calls: string[] = [];
-    const g = new guideMod.ChannelGuide(d, [{ id: 'ag_a', label: 'Ember' }], {
-      tune: (id) => calls.push(`tune ${id}`),
-      watchNew: (id) => calls.push(`new ${id}`),
-    });
-    g.open({ onAir: new Map(), activeChannel: 1, canOpen: true, newMonitor: true }, (id) => id);
-    expect(d.querySelector('.guide-caption')?.textContent).toBe(
-      'Choose an agent to watch on a new monitor.',
+  it('fills the numbered vacancy and retains the ordinary tune and New monitor actions', () => {
+    const { inline, guide, calls } = setup(false);
+    guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+    guide.open(4);
+    expect(inline.querySelector('.guide-caption')?.textContent).toBe(
+      'Pick an agent for CH 4. Four monitors at most.',
     );
-    (d.querySelector('.tune') as HTMLButtonElement).click();
-    expect(calls).toEqual(['new ag_a']);
-    // The ordinary Channels button still retunes the active monitor.
-    g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
-    (d.querySelector('.tune') as HTMLButtonElement).click();
-    expect(calls).toEqual(['new ag_a', 'tune ag_a']);
+    (inline.querySelector('.tune') as HTMLButtonElement).click();
+    (inline.querySelector('.tune') as HTMLButtonElement).click();
+    (inline.querySelector('.add') as HTMLButtonElement).click();
+    expect(calls).toEqual(['new ag_a 4', 'tune ag_a', 'new ag_a next']);
   });
 
-  it('fetches no skin face until the guide is first opened, and each face once', () => {
-    const g0 = globalThis as Record<string, unknown>;
-    const real = g0.Image;
-    let made = 0;
-    g0.Image = class {
-      onload: (() => void) | null = null;
-      src = '';
-      width = 0;
-      constructor() {
-        made++;
-      }
-    };
-    try {
-      const d = dialog();
-      const g = new guideMod.ChannelGuide(
-        d,
-        [
-          { id: 'ag_a', label: 'Ember' },
-          { id: 'ag_b', label: 'Moss' },
-        ],
-        { tune: () => undefined, watchNew: () => undefined },
-      );
-      expect(made).toBe(0);
-      g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
-      expect(made).toBe(2);
-      g.close();
-      g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
-      expect(made).toBe(2);
-    } finally {
-      g0.Image = real;
-    }
+  it('opens the phone sheet, closes from its button and restores the trigger', () => {
+    const { d, inline, trigger, guide } = setup();
+    guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+    expect(inline.querySelector('.guide-content')).toBeNull();
+    expect(inline.hidden).toBe(true);
+    guide.open(undefined, trigger);
+    expect(guide.isOpen).toBe(true);
+    expect(document.activeElement).toBe(d.querySelector('.tune'));
+    (d.querySelector('.guide-close') as HTMLButtonElement).click();
+    expect(guide.isOpen).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('moves the same rows to the wide pane when unfolded and dismisses the modal', () => {
+    const { d, inline, trigger, guide, media } = setup();
+    guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+    guide.open(undefined, trigger);
+    const tune = d.querySelector('.tune');
+    Object.defineProperty(media, 'matches', { value: false });
+    media.dispatchEvent(new Event('change'));
+    expect(guide.isOpen).toBe(false);
+    expect(inline.querySelector('.tune')).toBe(tune);
+    expect(document.activeElement).toBe(tune);
   });
 });
 

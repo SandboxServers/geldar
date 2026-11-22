@@ -186,10 +186,8 @@ describe('status line and page layout', () => {
     const css = readFileSync(join(import.meta.dirname, '../../web/kino/kino.css'), 'utf8');
     expect(html).toContain('href="./kino.css"');
     expect(css).toMatch(/#bar \{[^}]*flex-wrap: wrap/);
-    expect(css).toMatch(/\.controls \{[^}]*flex-wrap: wrap/);
-    const touch = /@media \(hover: none\) \{([^@]*)\}/.exec(css)?.[1] ?? '';
-    expect(touch).toMatch(/\.group button \{[^}]*height: 44px/);
-    expect(touch).toMatch(/#bar button \{[^}]*min-height: 44px/);
+    expect(css).toMatch(/\.camera-segments \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\nbutton \{[^}]*min-height: 44px;[^}]*min-width: 44px;/);
     expect(html).toContain('id="status"');
     expect(css).not.toMatch(/#bar \{[^}]*position: fixed/);
   });

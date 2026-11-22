@@ -4,7 +4,7 @@
 //
 //   node glass/test/kino-preview/server.ts [port] [web-dir]     # default 8789, glass/web/kino
 //
-// The page's real CSP is not applied here (the preview's textures are served by this server).
+// This preview can serve the shared Glass fonts, tab stylesheet and sigil renderer.
 
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -13,6 +13,8 @@ import { stripTypeScriptTypes } from 'node:module';
 import { join, relative, resolve } from 'node:path';
 import type { Duplex } from 'node:stream';
 import type { KinoFeed } from '../../../contract/src/generated/types.ts';
+import { kinoCsp } from '../../src/kino/wiring.ts';
+import { STATIC_FILES } from '../../src/static-files.ts';
 import { AGENTS, entityPositions, sectionMessages, skinPng, texturesJson } from './world.ts';
 
 const HERE = import.meta.dirname;
@@ -170,6 +172,21 @@ function feed(socket: Duplex, key: string): void {
 
 export function startPreview(port: number, webDir: string): Server {
   const files = loadWeb(webDir);
+  for (const [path, file] of STATIC_FILES) {
+    if (
+      path.startsWith('/js/fonts/') ||
+      ['/js/fonts.css', '/js/roster.css', '/js/render-sigil.ts'].includes(path)
+    )
+      files.set(path, file);
+  }
+  const page = files.get('/kino/')?.body;
+  const importMap =
+    typeof page === 'string'
+      ? /<script type="importmap">([\s\S]*?)<\/script>/.exec(page)?.[1]
+      : undefined;
+  const csp = kinoCsp(
+    importMap === undefined ? [] : [createHash('sha256').update(importMap).digest('base64')],
+  );
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (path === '/' || path === '/kino')
@@ -186,6 +203,7 @@ export function startPreview(port: number, webDir: string): Server {
     }
     const f = files.get(path);
     if (!f) return void res.writeHead(404).end();
+    if (path === '/kino/') res.setHeader('Content-Security-Policy', csp);
     res.writeHead(200, { 'Content-Type': f.type, 'Cache-Control': 'no-store' });
     res.end(f.body);
   });

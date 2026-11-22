@@ -90,11 +90,11 @@ describe('wall layouts', () => {
     ).toEqual([1, 2, 3, 4]);
   });
 
-  it('Wall on a phone: one column, one empty slot, the empty row short', () => {
+  it('Wall on a phone: the same two-by-two wall with all four slots', () => {
     const p = planWall({ ids: [1], active: 1, layout: 'wall', cap: 4, narrow: true });
-    expect(p.columns).toBe('repeat(1, minmax(0, 1fr))');
-    expect(p.cells.map((c) => c.id)).toEqual([1, null]);
-    expect(p.rows).toBe('minmax(16rem, 1fr) 7rem');
+    expect(p.columns).toBe('repeat(2, minmax(0, 1fr))');
+    expect(p.cells.map((c) => c.id)).toEqual([1, null, null, null]);
+    expect(p.rows).toBe('repeat(2, minmax(0, 1fr))');
   });
 
   it('an empty wall still shows a monitor to tune', () => {
