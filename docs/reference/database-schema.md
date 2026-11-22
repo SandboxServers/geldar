@@ -26,7 +26,7 @@ For how to add a migration, see [add-a-migration](../runbooks/add-a-migration.md
 | A live database is migrated by `tools/migrate` (`--dry-run` lists, a plain run applies each pending file in its own transaction, under an advisory lock) and recorded in `schema_migrations` | `sql/README.md` "Runner" |
 | Each migration from 0003 on inserts its own `schema_migrations` row; 0002 inserts `0001` and `0002` | `sql/README.md`; `sql/0002_sovereign_mcp.sql` line 11 |
 | `tools/migrate --set-role-password <role> --password-file <file>` sets a role's password and lets it log in; migrations create roles NOLOGIN | `sql/README.md`; 0002, 0005 headers |
-| CI applies every `sql/[0-9]*.sql` with `psql -v ON_ERROR_STOP=1`, then runs the 23 files in `sql/test/` | `.github/workflows/ci.yml` lines 136 to 178 |
+| CI applies every `sql/[0-9]*.sql` with `psql -v ON_ERROR_STOP=1`, then runs the 27 files in `sql/test/` | `.github/workflows/ci.yml` (the psql step list) |
 | A deviation from spec Appendix D is marked in the file by a comment starting `differs from spec Appendix D` | `sql/README.md` |
 
 Re-derive the migration list and the gaps:
@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-21 at the mc-sql fix 2 commit this prints 49 numbers from 0001 to 0068. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
 
 ## Migrations
 
@@ -88,6 +88,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067.
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
 | 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
 | 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG signature, sha256 and the 32768-byte cap checked; a banned owner is refused; one pending per agent; the lock: 3 rejects of the owner within 30 days (decided_at), held until the operator sets `skin_uploads.lock_cleared_at` (0031 column); 1 hour after a reject per agent; 3 a day per agent; admin exempt from the rate rules and the lock; audit `skin.upload` with the hashed owner id) and `register_skin_status`, both SECURITY DEFINER; `register_account_delete` recreated from 0053 (which also deletes turn_records) with the `skin_uploads` delete added | C7-13a, decision 0172 |
+| 0068 | `0068_mc_ownership.sql` | `mcp_identities` gets `owns_java`, `mc_checked_at`, `mc_profile_uuid` (NULL = not checked; the pair CHECK; the profile id is 32 lowercase hex); `register_mc_ownership_record` (SECURITY DEFINER, one-time record of the sign-up Minecraft ownership answer; callable only by `geldar_register`, caller-only: the new-sign-ups-only rule is enforced in the register service layer, decided by the owner; the audit row holds the action `mc.ownership`, outcome `recorded` and an empty detail, never the answer); `register_account_delete` recreated from 0067 (the ban tombstone clears the three columns); `register_owner_export` recreated from 0065 (`identity.mc_ownership`) | mc-sql (owner-approved design) |
 
 ## Tables
 
@@ -137,7 +138,7 @@ Schema `archive` exists for copies of dead agents' tables; 0001 creates it and g
 
 | Table | Created | Key | Columns | Changed by | Grants |
 |---|---|---|---|---|---|
-| `mcp_identities` | 0008 | `identity_hash` (32 bytes, HMAC-SHA256 of provider and provider id; no email or raw id column) | `provider` (`github`, `discord`; 0014 adds `microsoft`), `owner_id` (unique), `created_at`, `banned_at` | 0014 provider check; 0039 `owner_id` nullable | `geldar_mcp`: SELECT `owner_id`, `banned_at` |
+| `mcp_identities` | 0008 | `identity_hash` (32 bytes, HMAC-SHA256 of provider and provider id; no email or raw id column) | `provider` (`github`, `discord`; 0014 adds `microsoft`), `owner_id` (unique), `created_at`, `banned_at`, `owns_java`, `mc_checked_at`, `mc_profile_uuid` (0068; NULL = not checked: every existing owner, and an identity before its one-time sign-up check) | 0014 provider check; 0039 `owner_id` nullable; 0068 CHECK: `owns_java` and `mc_checked_at` are NULL together, `mc_profile_uuid` is NULL or 32 lowercase hex; the three are NULL on the ban tombstone | `geldar_mcp`: SELECT `owner_id`, `banned_at` |
 | `register_sessions` | 0021 | `session_hash` (SHA-256 of the cookie id) | `owner_id`, `identity_hash`, `signed_in_ms`, `last_seen_ms`, `expires_ms` | none | `geldar_register`: SELECT, INSERT, UPDATE, DELETE |
 | `register_consents` | 0022 | `(identity_hash, terms_version)` | `accepted_at` | none | `geldar_register`: INSERT |
 | `register_audit` | 0025 | `id` | `at`, `actor` (1 to 64), `action` (1 to 64), `target` (1 to 128), `outcome` (1 to 32), `admin`, `detail` (at most 256) | none | `geldar_register`: SELECT, INSERT, sequence; `geldar_supervisor`: INSERT, sequence |
@@ -195,7 +196,7 @@ How a node sets each role's password is outside this page (D8; see [secrets-by-r
 
 | Role | EXECUTE on |
 |---|---|
-| `geldar_register` | `register_mint_token`, `register_renew_token`, `register_revoke_tokens`, `register_token_info`, `register_create_owner`, `register_create_player`, `register_retire_player`, `register_find_owner`, `register_list_players`, `register_count_new_owners`, `register_set_public_camera`, `register_set_thoughts_delayed_public`, `register_is_admin`, `register_owner_key_resolve`, `register_mint_owner_key`, `register_revoke_owner_key`, `register_list_owner_keys`, `register_session_mint_owner_key`, `register_session_list_owner_keys`, `register_session_revoke_owner_key`, `register_owner_list_players`, `register_owner_get_player`, `register_account_delete`, `sheet_erase_life`, `register_roster_add`, `register_owner_export`, `register_skin_submit`, `register_skin_status` |
+| `geldar_register` | `register_mint_token`, `register_renew_token`, `register_revoke_tokens`, `register_token_info`, `register_create_owner`, `register_create_player`, `register_retire_player`, `register_find_owner`, `register_list_players`, `register_count_new_owners`, `register_set_public_camera`, `register_set_thoughts_delayed_public`, `register_is_admin`, `register_owner_key_resolve`, `register_mint_owner_key`, `register_revoke_owner_key`, `register_list_owner_keys`, `register_session_mint_owner_key`, `register_session_list_owner_keys`, `register_session_revoke_owner_key`, `register_owner_list_players`, `register_owner_get_player`, `register_account_delete`, `sheet_erase_life`, `register_roster_add`, `register_owner_export`, `register_skin_submit`, `register_skin_status`, `register_mc_ownership_record` |
 | `geldar_glass` | `glass_owner_agents`, `glass_journal_page`, `glass_journal_after`, `kino_viewer`, `kino_agent_scope`, `kino_agent_list`, `kino_audit_record`, `kino_audit_purge` |
 | `geldar_supervisor` | `supervisor_is_admin`, `supervisor_player_display_name` |
 | `geldar_helper` | `supervisor_player_display_name`, `supervisor_player_life_id` |
@@ -239,16 +240,17 @@ git grep -nE '^GRANT EXECUTE|^\s+GRANT EXECUTE' -- 'sql/*.sql'
 | `operator_set_player_flags(TEXT, BOOLEAN, BOOLEAN)` | 0034 | operator sets a player's two flags; returns `ok`, `unknown-player`, `retired-player`, `no-flags` or `too-soon`; one audit row per call |
 | `register_session_mint_owner_key(...)`, `register_session_list_owner_keys(BYTEA)`, `register_session_revoke_owner_key(BYTEA, TEXT)` | 0035 | owner API keys by cookie session |
 | `register_owner_list_players(TEXT)`, `register_owner_get_player(TEXT, TEXT)` | 0036 | owner's players by owner id |
-| `register_account_delete(BYTEA)` | 0039, 0040, 0053, 0067 | account deletion ([below](#data-retention-and-erasure)) |
+| `register_account_delete(BYTEA)` | 0039, 0040, 0053, 0067, 0068 | account deletion ([below](#data-retention-and-erasure)) |
 | `register_skin_submit(BYTEA, TEXT, BYTEA, BYTEA)` | 0067 | owner skin upload, held as `pending` (decision 0172); refused for a banned owner, a foreign agent, a bad PNG or sha256, and by the pending, lock, wait and daily rules |
 | `register_skin_status(BYTEA, TEXT)` | 0067 | the newest skin upload of the owner's agent: status and reason code only, no bytes |
+| `register_mc_ownership_record(BYTEA, BOOLEAN, TEXT)` | 0068 | records the one-time sign-up Minecraft ownership answer on the identity; returns false and writes nothing for a NULL answer, a malformed profile id, an unknown or tombstoned identity, or an identity already checked; one `mc.ownership` audit row per recorded answer (outcome `recorded`, empty detail, actor the hashed owner id; the audit never carries the answer). Callable by `geldar_register` only. Caller-only: the new-sign-ups-only rule is enforced in the register service layer, not in SQL (decided by the owner); a stored answer is final |
 | `character_sheet_group_valid(JSONB, TEXT[])`, `character_sheet_valid(JSONB)` | 0050 | shape check of `agents.character_sheet` |
 | `agents_sheet_immutable()` | 0050 | trigger: the first non-NULL sheet is the baseline; a change raises |
 | `proficiency_monotonic()` | 0050 | trigger: `xp` and `level` never decrease |
 | `sheet_append_only()` | 0051 | trigger: refuses UPDATE and TRUNCATE, and DELETE unless the transaction names the row's life in `geldar.erase_life` |
 | `sheet_erase_life(TEXT)` | 0051 | erases one life's rows from `rolls`, `decisions`, `xp_evidence`, `character_sheet_adoptions`, `proficiency`, `proficiency_outbox` |
 | `register_roster_add(BYTEA, TEXT)` | 0061 | writes the roster row for a new agent; one audit row per success |
-| `register_owner_export(BYTEA)` | 0062, 0065 | the owner's own rows as one JSON document (`geldar-owner-export/1`) |
+| `register_owner_export(BYTEA)` | 0062, 0065, 0068 | the owner's own rows as one JSON document (`geldar-owner-export/1`) |
 | `managed_life_id(TEXT)` | 0063 | `ag_` plus the first 12 hex digits of SHA-256 of a host key; granted to no one |
 | `supervisor_player_life_id(TEXT, TEXT)` | 0063 | the life id of a live roster player, or NULL |
 | `player_host_config(TEXT)` | 0063 | a managed Body's `display_name`, `harness`, `model`, `character_sheet`, or NULL |
@@ -286,15 +288,15 @@ Re-derive: `git grep -nE 'CREATE TRIGGER' -- 'sql/*.sql'`.
 | Sheet tables | erased by `sheet_erase_life` for every life of a deleted owner account, alive or dead | 0052 comments; decisions 0262, 0282 |
 | `turn_records` | not append-only, but erased by account deletion by `life_id` (`register_account_delete`, 0053; kept by 0067). Nothing writes the table yet | 0060 header; 0062 and 0065 (`not_included`: "erasure is deferred to GX-05c"); decision 0185 open questions; [privacy-and-data-retention](../security/privacy-and-data-retention.md#gaps) gap 4 |
 
-### Account deletion (`register_account_delete`, 0040, 0053, 0067)
+### Account deletion (`register_account_delete`, 0040, 0053, 0067, 0068)
 
-The current body (0067: the 0053 body with one statement added, which replaced 0040) runs in one transaction with `lock_timeout` 3 s. For every life of the owner, dead or alive, it calls `sheet_erase_life` and deletes the life's rows from `mcp_sleep_marks`, `mcp_budget`, `mcp_life_deaths`, `mcp_death_events`, `actions`, `intents`, `skill_runs`, `memories`, `goals`, `skill_library`, `relationships` (both sides), `ledger`, `votes`, `events` (by `agent_id` or `thinker_id`), `mcp_journal`, `thoughts`, `receipts`, `suppressed_wakeups` and `turn_records`. For the owner it deletes tokens, `mcp_players`, `owner_api_keys`, `mcp_roster`, `body_ops`, `skin_uploads`, and for the identity `register_sessions`, `register_consents`, `kino_admins` and its `kino_audit` rows; then the identity (or, when banned, keeps it as a tombstone with `owner_id` NULL) and the owner. It keeps the `agents` rows without the owner link, the ban tombstone, the `register_audit` row (random erasure actor) and the shared world objects `skills.author`, `books.author`, `proposals.proposer` and `laws` (0040 header and body, lines 67 to 144). It erases `turn_records` by `life_id` (0053; 0067 keeps that statement) and, for the owner, the `skin_uploads` rows, pending and decided, with their PNG bytes (0067, decision 0172 point 7). The `geldar-skins` KV key is not removed by the function. The procedure for operators is the [account-deletion runbook](../runbooks/account-deletion.md).
+The current body (0067: the 0053 body with one statement added, which replaced 0040) runs in one transaction with `lock_timeout` 3 s. For every life of the owner, dead or alive, it calls `sheet_erase_life` and deletes the life's rows from `mcp_sleep_marks`, `mcp_budget`, `mcp_life_deaths`, `mcp_death_events`, `actions`, `intents`, `skill_runs`, `memories`, `goals`, `skill_library`, `relationships` (both sides), `ledger`, `votes`, `events` (by `agent_id` or `thinker_id`), `mcp_journal`, `thoughts`, `receipts`, `suppressed_wakeups` and `turn_records`. For the owner it deletes tokens, `mcp_players`, `owner_api_keys`, `mcp_roster`, `body_ops`, `skin_uploads`, and for the identity `register_sessions`, `register_consents`, `kino_admins` and its `kino_audit` rows; then the identity (or, when banned, keeps it as a tombstone with `owner_id` NULL, and from 0068 with `owns_java`, `mc_checked_at` and `mc_profile_uuid` NULL) and the owner. It keeps the `agents` rows without the owner link, the ban tombstone, the `register_audit` row (random erasure actor) and the shared world objects `skills.author`, `books.author`, `proposals.proposer` and `laws` (0040 header and body, lines 67 to 144). It erases `turn_records` by `life_id` (0053; 0067 keeps that statement) and, for the owner, the `skin_uploads` rows, pending and decided, with their PNG bytes (0067, decision 0172 point 7). The `geldar-skins` KV key is not removed by the function. The procedure for operators is the [account-deletion runbook](../runbooks/account-deletion.md).
 
 0040 depends at call time on `sheet_erase_life` (0051): without 0051 every deletion fails and rolls back (0040 header).
 
-### Owner export (`register_owner_export`, 0065)
+### Owner export (`register_owner_export`, 0065, 0068)
 
-Returns one JSON document (`geldar-owner-export/1`) of the owner's own rows, or NULL. Per-table caps: 20000 rows and 3000000 bytes of text for `thoughts` and `mcp_journal`; list caps players 150, tokens 150, roster 100, `body_ops` 500, consents 100, lives 50. It leaves out token hashes, the owner id, identity hashes, and the `thoughts` columns `model_input`, `snapshot`, `raw_output` and `provider_usage`; `turn_records` is named under `not_included`. One `register_audit` row per successful call (0065 header).
+Returns one JSON document (`geldar-owner-export/1`) of the owner's own rows, or NULL. Per-table caps: 20000 rows and 3000000 bytes of text for `thoughts` and `mcp_journal`; list caps players 150, tokens 150, roster 100, `body_ops` 500, consents 100, lives 50. It leaves out token hashes, the owner id, identity hashes, and the `thoughts` columns `model_input`, `snapshot`, `raw_output` and `provider_usage`; `turn_records` is named under `not_included`. One `register_audit` row per successful call (0065 header). From 0068 the identity object lists `mc_ownership`: `owns_java`, `checked_at` and `mc_profile_uuid`, each JSON null when the identity was not checked.
 
 ## Conflicts and open points
 

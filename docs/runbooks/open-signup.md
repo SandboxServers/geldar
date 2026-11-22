@@ -118,6 +118,7 @@ Deploy values the operator sets in the node env. Compose reads them; their compo
 - `REGISTER_KILL_SWITCH`: must be `true` in this section. Default `true`; only the exact value `false` opens sign-up (step 27).
 - `GELDAR_REGISTER_IMAGE`: the register image from the release manifest (`current.env`, written by `deploy/colo-cd.sh` and swapped by `colo-rollback.sh`; the order of the two `--env-file` arguments in item 4 is the owner's node rule, UNVERIFIED in the repo). It must be pinned by digest and present on the node before any `up`.
 - `GELDAR_COLO_REGISTER_CPUS` and `GELDAR_COLO_REGISTER_MEM`: optional; compose defaults apply if unset.
+- `REGISTER_REQUIRE_MC_OWNERSHIP`: default empty, which is off. Only the exact value `true` turns on the Minecraft Java ownership check for new sign-ups. Keep it off until the owner has an approved Mojang app id; Section 7 has the rules.
 - `REGISTER_NATS_URL`, `REGISTER_NATS_USER`, `REGISTER_NATS_PASSWORD_FILE`: added by card C7-03b2 (pending C7-03b2). Compose does not set them yet, so the register service runs with NATS off, and setting them on the node does nothing until C7-03b2 merges. Only the register service gets these.
 
 Compose sets these names itself. Do not set them on the node: `REGISTER_HOST`, `REGISTER_PORT`, `REGISTER_SHARD`, `REGISTER_MS_CLIENT_SECRET_FILE`, `REGISTER_SESSION_KEY_FILE`, `REGISTER_PEPPER_FILE`, `REGISTER_TOKEN_PEPPER_FILE`, `REGISTER_DB_PASSWORD_FILE`.
@@ -257,6 +258,47 @@ Removal: the wrapper has no remove command. Removing a seeded row needs the owne
 | BODY-HOST | Managed flag off; stop the helper unit; the cards BH-1 to BH-5 give the rest |
 | NATS | Restore the backup by `cat`, check the sha, SIGHUP, read the logs (see [nats-auth-inplace.md](nats-auth-inplace.md)) |
 | Entra app | The shared app is reused: remove the env value and the secret file; never delete the shared app |
+
+## Section 7: Minecraft Java ownership gate (flag, default off)
+
+Decision 0395 (row 0395 in the decisions README). The gate checks that a NEW Microsoft sign-up owns Minecraft: Java Edition. It does not check Bedrock. This section does not state that any node has the flag on or off; the node status is UNKNOWN until an operator reads it (read only, see verify).
+
+Rules:
+
+- The flag stays OFF until the owner has an approved Mojang app id for the Azure app. Without that approval, `api.minecraftservices.com` returns 403, and with the flag on the register service refuses every new sign-up with the page "ownership check is not available yet". Existing owners are never affected.
+- The owner files the Mojang review form at `aka.ms/mce-reviewappid`. This repo does not claim that the form was filed or approved. An open question for the form is whether a website qualifies.
+- The flag is `REGISTER_REQUIRE_MC_OWNERSHIP` in the node env. Only the exact string `true` enables it. `True`, `1`, `yes` and an empty value are all off. Compose forwards it from `compose/colo.yml`, empty by default. The register service reads it at start.
+- The gate runs only in the account creation path. It never runs for an existing owner's later sign-in.
+- Tokens from the check are discarded at once. Only three fields are stored: `owns_java`, `checked_at` and the Minecraft profile UUID when it exists (the current code writes NULL). The owner export lists them and account deletion erases them.
+
+Enable (only with the owner's go and a written Mojang approval):
+
+1. Confirm the approval is in the owner's hands. Do not enable on a guess.
+2. Set `REGISTER_REQUIRE_MC_OWNERSHIP` in the node env to exactly `true`. Check the name with `grep -c`, and print no other value.
+3. Recreate the register service only, with the Section 2 item 4 command (`--no-deps` stays). Which kill switch value that command needs depends on the state of sign-up:
+   - (a) Sign-up still closed (the kill switch is at its default `true`): run the Section 2 item 4 command unchanged, with no `REGISTER_KILL_SWITCH` on the command line.
+   - (b) Sign-up already open (Section 4 step 27 was done): run the same command with `REGISTER_KILL_SWITCH=false` set on the command line, as in Section 4 step 27. Omitting it re-closes sign-up, because the command then gets the default `true` (the re-flip rule in Section 4). Never put `REGISTER_KILL_SWITCH` in an env file.
+   - In both cases this step changes only the Minecraft flag, not the kill switch state.
+4. Re-flip rule: every change of the flag value (on to off, or off to on) needs its own register-only recreate and the verify steps below. Turning it off again is always safe: it erases nothing and restores the flag-off sign-up path. Do not flip while sign-up is open without the owner's go.
+
+Entra app steps (shared app, names only, no values). The app is the one in Section 1; never create or delete it:
+
+1. Open the shared app in the portal and check its sign-in audience and redirect URI, as Section 1 items 1 and 2 say.
+2. Check the API permissions list for the Xbox Live delegated permission `XboxLive.signin`. Whether this permission must be declared for personal accounts is UNVERIFIED. The source is community reports only (a Microsoft Q&A thread describes a hobbyist getting a 403 on the scope), not an official Microsoft or Mojang document. Do not add it unless the portal or an official Microsoft page says so. Record only the result and the date in the change log.
+3. The scope is requested by the code only when the flag is on, so the app change, if any, does not change sign-in while the flag is off.
+4. Do not rotate the client secret for this change. Do not change the client id. Never send either in chat.
+
+Verify safely (read only, no sign-in):
+
+1. `docker inspect` of exactly `geldar-colo-register-1`: check the env names and the flag value (`true` or empty). Never match containers by a pattern.
+2. The register log lines for the gate carry an outcome and a code only. No token, gamertag, XUID or entitlement text may appear in them. If one does, stop and report.
+3. Do not test with a real personal account unless the owner gives the go for that account. A test account needs the owner's go too.
+4. Record failure: the owner row and the ownership record are written in one transaction, so a failed record rolls the new account back and refuses the sign-up. The log line `sign-up ownership record failed; owner write rolled back` marks each such refusal. Check for it after every flag change and report a burst to the owner. Owners created before the flag was on have no ownership record; that is expected.
+
+Rollback:
+
+- Remove the env value (or set it to anything other than the exact `true`), then recreate the register service only, with the same kill switch case as Section 7 step 3: (a) with sign-up closed, the Section 2 item 4 command unchanged; (b) with sign-up open, that command with `REGISTER_KILL_SWITCH=false` on the command line. Omitting it in case (b) re-closes sign-up. Existing accounts are not touched. Sign-ups return to the flag-off path.
+- A failed check refuses the sign-up. It never erases an account, and it never admits one.
 
 ## Pending (as first written; the "Merged on `main`" bullet lists what has merged since)
 

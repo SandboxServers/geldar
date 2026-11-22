@@ -39,6 +39,7 @@ export class PgStore implements Store, SessionStore {
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
     termsVersion: string,
+    ownsJava?: boolean,
   ): Promise<void> {
     // One transaction (C7-08): the owner and identity (0011) and the consent row (0022) commit together
     // or not at all. The role has no direct insert on owners or identities.
@@ -55,6 +56,14 @@ export class PgStore implements Store, SessionStore {
         'INSERT INTO register_consents (identity_hash, terms_version) VALUES ($1, $2)',
         [hex(identity.identityHash), termsVersion],
       );
+      // The Minecraft Java answer (0068) is written in this transaction too: a refused record rolls the owner back.
+      if (ownsJava !== undefined) {
+        const r = await client.query('SELECT register_mc_ownership_record($1, $2, NULL) AS ok', [
+          hex(identity.identityHash),
+          ownsJava,
+        ]);
+        if (r.rows[0]?.ok !== true) throw new Error('ownership record refused');
+      }
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);

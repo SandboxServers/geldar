@@ -264,6 +264,41 @@ describe('PgStore error mapping', () => {
     expect(sql).toContain('ROLLBACK');
     expect(sql).not.toContain('COMMIT');
   });
+
+  it('with ownsJava the Minecraft answer is written inside the owner transaction, before COMMIT', async () => {
+    const { store, sql } = ownerStore(() => undefined);
+    await store.createOwner(owner, 'reg-1', 'draft-1', true);
+    expect(sql.map((text) => text.split(' ')[0])).toEqual([
+      'BEGIN',
+      'SELECT',
+      'INSERT',
+      'SELECT',
+      'COMMIT',
+      'RELEASE',
+    ]);
+    expect(sql[3]).toContain('register_mc_ownership_record');
+  });
+
+  it('a refused Minecraft answer throws and rolls the owner back: nothing commits', async () => {
+    const { store, sql } = ownerStore(() => undefined, false);
+    await expect(store.createOwner(owner, 'reg-1', 'draft-1', true)).rejects.toThrow(
+      'ownership record refused',
+    );
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+    expect(sql.at(-1)).toBe('RELEASE');
+  });
+
+  it('a throwing Minecraft answer rolls the owner back and rethrows: nothing commits', async () => {
+    const { store, sql } = ownerStore((text) =>
+      text.includes('register_mc_ownership_record') ? { code: '42501' } : undefined,
+    );
+    await expect(store.createOwner(owner, 'reg-1', 'draft-1', true)).rejects.toMatchObject({
+      code: '42501',
+    });
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+  });
 });
 
 describe('PgStore listPlayers flags (F3)', () => {
@@ -365,13 +400,17 @@ const owner = { identityHash: 'ab'.repeat(32), provider: 'github', display: 'd' 
  * A PgStore whose pool hands out one client. `failOn` gives the error for a statement, or
  * undefined to let it succeed. Every statement, including BEGIN, COMMIT, ROLLBACK, is kept.
  */
-function ownerStore(failOn: (text: string) => unknown): { store: PgStore; sql: string[] } {
+function ownerStore(
+  failOn: (text: string) => unknown,
+  recordOk = true,
+): { store: PgStore; sql: string[] } {
   const sql: string[] = [];
   const client = {
     query: async (text: string) => {
       sql.push(text);
       const error = failOn(text);
       if (error !== undefined) throw error;
+      if (text.includes('register_mc_ownership_record')) return { rows: [{ ok: recordOk }] };
       return { rows: [] };
     },
     release: () => {

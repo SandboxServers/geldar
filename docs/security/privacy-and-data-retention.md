@@ -35,6 +35,7 @@ A summary by kind of data. The table-by-table record, with grants and erasure ru
 | Data | What is kept | Where | Evidence |
 |---|---|---|---|
 | Sign-in identity | Identity hash: HMAC-SHA256 under the identity pepper of `microsoft:` plus the provider subject. The subject, email, name and provider token are not stored | `mcp_identities` | `threshold/register/src/identity.ts`; `threshold/register/src/server.ts` lines 210 to 213; `sql/0008_register_identities.sql` |
+| Minecraft ownership (sign-up check, 0068) | `owns_java` (true or false, the answer of the one-time check), `mc_checked_at` (when it was recorded) and `mc_profile_uuid` (32 lowercase hex, when the check returned one). NULL on existing owners (not checked). No token, gamertag, XUID, email or entitlement is stored. The answer is not written to the audit: the `mc.ownership` audit row holds only the action, outcome `recorded` and an empty detail. The three columns are cleared with the owner link on a ban tombstone and erased with the identity row on account deletion; the owner export lists them under `identity.mc_ownership` | `mcp_identities` | `sql/0068_mc_ownership.sql`; `sql/test/check-schema-mc-ownership.sql` |
 | Owner record | Owner id (`reg-` plus 24 hex characters of the identity hash), the `display` column, player cap, admin flag | `mcp_owners` | [register service](../reference/register-service.md), sign-in table; `sql/0002_sovereign_mcp.sql`, 0025 |
 | Display | The literal string `microsoft` on every sign-up, not a name | `mcp_owners.display` | `threshold/register/src/server.ts` line 213 |
 | Consent | Identity hash, terms version, time accepted | `register_consents` | `sql/0022_register_consents.sql`; decision [0155](../decisions/0155-legal-text-v1-approved-and-contact-published.md) item 3 |
@@ -98,7 +99,7 @@ An owner deletes the account from the account page or the API. One transaction, 
 
 **Removed** (decisions [0171](../decisions/0171-account-erasure-rule.md) item 1 and [0262](../decisions/0262-account-deletion-erases-dead-lives-too.md) items 1, 2 and 4; `sql/0040_account_deletion_all_lives.sql` header):
 
-- the identity, unless banned; the owner; owner keys; sessions; consent rows; the Kino admin row;
+- the identity, unless banned; the Minecraft ownership columns (`owns_java`, `mc_checked_at`, `mc_profile_uuid`, 0068) of a banned identity, which are cleared; the owner; owner keys; sessions; consent rows; the Kino admin row;
 - the owner's players, roster rows, body operations and every player token;
 - for every life of the owner, dead or alive: character sheet rows (decision [0282](../decisions/0282-sheet-erasure-covers-dead-lives.md)), sleep marks, budget, death records, journal, thoughts, receipts, suppressed wakeups, actions, intents, skill runs, memories, goals, skill library, relationships on both sides, ledger, votes and events;
 - the identity's own `kino_audit` rows.

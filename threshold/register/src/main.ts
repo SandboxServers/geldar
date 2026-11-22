@@ -4,7 +4,7 @@ import { dbUrl } from './db-url.ts';
 import { productionBodyWiring } from './nats-body.ts';
 import { PgStore } from './pg-store.ts';
 import { productionApi } from './production-api.ts';
-import { microsoftProvider } from './providers.ts';
+import { providersFor } from './providers.ts';
 import { createRegisterServer } from './server.ts';
 import { mountOwnerApi } from './skin-wiring.ts';
 
@@ -31,7 +31,7 @@ const server = createRegisterServer({
   config,
   store,
   sessions: store,
-  providers: { microsoft: microsoftProvider(config.microsoft) },
+  providers: providersFor(config),
   fetch: (url, init) => fetch(url, init),
   now: () => Date.now(),
   log,

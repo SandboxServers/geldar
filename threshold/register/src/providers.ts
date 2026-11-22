@@ -1,4 +1,4 @@
-import type { ProviderCredentials } from './config.ts';
+import type { ProviderCredentials, RegisterConfig } from './config.ts';
 import type { ProviderName } from './identity.ts';
 import { challengeOf } from './pkce.ts';
 
@@ -7,6 +7,13 @@ export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 /** What the provider says about an account. Only the stable subject: no email, no name. */
 export interface Profile {
   readonly id: string;
+  /** Set only when the ownership gate is on: the Microsoft access token, handed once to the check and never stored. */
+  readonly accessToken?: string;
+}
+
+export interface MicrosoftOptions {
+  /** Adds scope XboxLive.signin and keeps the access token for the ownership check. Off: exactly the old flow. */
+  readonly requireMcOwnership?: boolean;
 }
 
 export interface Provider {
@@ -39,7 +46,25 @@ function claimsOf(idToken: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-export function microsoftProvider(creds: ProviderCredentials): Provider {
+/**
+ * The providers the server runs, built from one config: the gate flag reaches the Microsoft provider only here.
+ * main.ts calls this and nothing else, so the scope and the token keep to one switch.
+ */
+export function providersFor(config: Pick<RegisterConfig, 'microsoft' | 'requireMcOwnership'>): {
+  readonly microsoft: Provider;
+} {
+  return {
+    microsoft: microsoftProvider(config.microsoft, {
+      requireMcOwnership: config.requireMcOwnership,
+    }),
+  };
+}
+
+export function microsoftProvider(
+  creds: ProviderCredentials,
+  options: MicrosoftOptions = {},
+): Provider {
+  const ownership = options.requireMcOwnership === true;
   return {
     name: 'microsoft',
     authorizeUrl(redirectUri, state, verifier) {
@@ -47,7 +72,7 @@ export function microsoftProvider(creds: ProviderCredentials): Provider {
         response_type: 'code',
         client_id: creds.clientId,
         redirect_uri: redirectUri,
-        scope: 'openid',
+        scope: ownership ? 'openid XboxLive.signin' : 'openid',
         response_mode: 'query',
         state,
         code_challenge: challengeOf(verifier),
@@ -69,13 +94,18 @@ export function microsoftProvider(creds: ProviderCredentials): Provider {
         }).toString(),
       });
       if (!res.ok) throw new Error(`provider status ${res.status}`);
-      const claims = claimsOf(((await res.json()) as Record<string, unknown>).id_token);
+      const body = (await res.json()) as Record<string, unknown>;
+      const claims = claimsOf(body.id_token);
       if (claims.aud !== creds.clientId) throw new Error('id token audience');
       if (claims.tid !== CONSUMERS_TENANT) throw new Error('id token tenant');
       // The identity key is the subject, never the email.
       const sub = claims.sub;
       if (typeof sub !== 'string' || sub === '') throw new Error('id token has no subject');
-      return { id: sub };
+      if (!ownership) return { id: sub };
+      // With the gate on, a missing token is passed on as absent: the check then fails closed.
+      return typeof body.access_token === 'string'
+        ? { id: sub, accessToken: body.access_token }
+        : { id: sub };
     },
   };
 }

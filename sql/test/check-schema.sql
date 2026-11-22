@@ -394,8 +394,9 @@ BEGIN
   -- mcp_identities has no column for an email, a raw provider id or a token.
   IF (SELECT array_agg(column_name::text ORDER BY column_name) FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'mcp_identities')
-     IS DISTINCT FROM ARRAY['banned_at', 'created_at', 'identity_hash', 'owner_id', 'provider'] THEN
-    RAISE EXCEPTION 'schema check: mcp_identities must have exactly its five columns';
+     IS DISTINCT FROM ARRAY['banned_at', 'created_at', 'identity_hash', 'mc_checked_at', 'mc_profile_uuid', 'owner_id',
+                            'owns_java', 'provider'] THEN
+    RAISE EXCEPTION 'schema check: mcp_identities must have exactly its eight columns (0068 adds the three Minecraft ownership columns)';
   END IF;
 
   -- the register role cannot read thoughts or events
@@ -603,7 +604,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
              WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 27
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 28
      OR has_function_privilege('geldar_supervisor', 'register_is_admin(text)', 'EXECUTE')
      OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
      OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN

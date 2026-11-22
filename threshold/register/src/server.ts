@@ -6,6 +6,8 @@ import type { ApiDeps } from './api/route.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import { type Identity, identityHash } from './identity.ts';
+import { checkJavaOwnership } from './mc-ownership.ts';
+import type { OwnershipCheck } from './mc-signup-gate.ts';
 import {
   BASE,
   HOME_PAGE,
@@ -38,6 +40,7 @@ export interface RegisterDeps {
     identity: Identity,
     res: ServerResponse,
     consent: boolean,
+    verify?: OwnershipCheck,
   ) => Promise<void> | void;
   /** The owner API (C7-04a): keys, agent loader, audit sink, audit-lost callback, admin flag, extra routes. */
   readonly api?: Partial<
@@ -213,7 +216,11 @@ export function createRegisterServer(deps: RegisterDeps): Server {
         display: 'microsoft',
       };
       log(`signed in provider=${provider.name}`);
-      if (onSignedIn) await onSignedIn(identity, res, consent);
+      // The token is held only by this closure, for the one check that a NEW sign-up runs (flag off: no closure).
+      const verify = config.requireMcOwnership
+        ? () => checkJavaOwnership(profile.accessToken ?? '', deps.fetch)
+        : undefined;
+      if (onSignedIn) await onSignedIn(identity, res, consent, verify);
       else send(res, 200, SIGNED_IN_PAGE, clear);
     } catch {
       log(`callback refused provider=${provider.name} reason=provider`);

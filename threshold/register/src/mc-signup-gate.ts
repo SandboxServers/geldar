@@ -1,0 +1,51 @@
+/**
+ * The Minecraft Java gate for NEW sign-ups (REGISTER_REQUIRE_MC_OWNERSHIP). Existing owners never reach it, and
+ * admins hold an owner row, so they never reach it either. Every outcome that is not a pass is a refusal: a missing
+ * check, a throw, or a record that did not land. Logs carry the outcome and the failure code only.
+ */
+import { FAILURE_MESSAGES, type OwnershipResult } from './mc-ownership.ts';
+
+/** Runs the Xbox and Mojang chain once for the access token held in this closure. */
+export type OwnershipCheck = () => Promise<OwnershipResult>;
+
+/** A sign-up the check did not admit: a failure or a Bedrock-only account. */
+export type OwnershipRefusal = Extract<OwnershipResult, { status: 'failed' | 'not_owned' }>;
+
+/** The refusal for any check that could not give an answer, and for an answer that could not be stored. */
+export const UNRECORDED_REFUSAL: OwnershipRefusal = {
+  status: 'failed',
+  code: 'unknown',
+  message: FAILURE_MESSAGES.unknown,
+};
+const UNKNOWN: OwnershipRefusal = UNRECORDED_REFUSAL;
+
+/** The verdict for one sign-up. No check or a throwing check is a failure, so nothing is admitted without an answer. */
+export async function decideOwnership(
+  verify: OwnershipCheck | undefined,
+  provider: string,
+  log: (line: string) => void,
+): Promise<OwnershipResult> {
+  let result: OwnershipResult;
+  try {
+    result = verify ? await verify() : UNKNOWN;
+  } catch {
+    result = UNKNOWN;
+  }
+  const code = result.status === 'failed' ? ` code=${result.code}` : '';
+  log(`sign-up ownership outcome=${result.status}${code} provider=${provider}`);
+  return result;
+}
+
+export function isRefusal(result: OwnershipResult): result is OwnershipRefusal {
+  return result.status === 'failed' || result.status === 'not_owned';
+}
+
+/**
+ * The log label for a failed record write: the error's class name and a string code (a SQLSTATE), never its message.
+ * A database outage and a refused record then read differently in the log.
+ */
+export function recordErrorLabel(error: unknown): string {
+  if (!(error instanceof Error)) return 'error=unknown';
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? `error=${error.name} code=${code}` : `error=${error.name}`;
+}

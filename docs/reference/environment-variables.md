@@ -129,6 +129,7 @@ Plus the shared NATS, Postgres and telemetry names.
 | Name | Meaning | Evidence |
 |---|---|---|
 | `REGISTER_KILL_SWITCH` | Sign-in is off unless this is exactly `false`. Read at start. | `compose/colo.yml` line 411 |
+| `REGISTER_REQUIRE_MC_OWNERSHIP` | Off unless this is exactly `true`. When on, a NEW Microsoft sign-up must own Minecraft: Java Edition (the flow adds scope `XboxLive.signin`). Read at start. Forwarded by `compose/colo.yml` (empty by default, so off). | `threshold/register/src/config.ts` |
 | `REGISTER_PUBLIC_URL` | The register's public URL; a deploy value. | `compose/colo.yml` line 413 |
 | `REGISTER_MCP_PUBLIC_URL` | The MCP URL shown on the onboarding page. | `.env.example` lines 34 to 38 |
 | `REGISTER_HOST`, `REGISTER_PORT` | Listen address and port. | `threshold/register/.env.example` |
