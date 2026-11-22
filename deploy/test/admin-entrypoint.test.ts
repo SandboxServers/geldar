@@ -164,6 +164,10 @@ describe('admin.sh owner-admin and player-flags dispatch (C7-12, C7-14, C7-14b)'
       ['player-flags', 'ag-jo-01', '--public-camera', 'on'],
       [CLI, 'player', 'flags', 'ag-jo-01', '--public-camera', 'on'],
     ],
+    [
+      ['player-set-owner', 'ag-ranger-01', 'bob'],
+      [CLI, 'player', 'set-owner', 'ag-ranger-01', 'bob'],
+    ],
   ])('passes %j to the mcp-tokens CLI with the arguments unchanged', (args, expected) => {
     const fx = fixture();
     const r = run(fx, args);

@@ -19,6 +19,7 @@ import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './own
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 import { parsePlayerFlags, setPlayerFlags } from './player-flags.ts';
+import { parseSetOwner, setPlayerOwner } from './player-owner.ts';
 import {
   addPlayer,
   loadSovereignShard,
@@ -86,6 +87,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   player pause|resume|retire <id>
   player flags <id> --public-camera on|off --thoughts-delayed-public on|off
                                         set a flag (at least one; a thoughts change waits 10 seconds)
+  player set-owner <player_id> <owner_id>  move a player, its roster name and its life to another owner (one transaction)
   roster add|remove <name> --owner <o> [--max N]
                                         add or remove a Minecraft name an owner may run agents as (N 1 to 4, default 1)
   roster list [--owner <o>]             list the roster
@@ -380,6 +382,17 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
   throw new Error(USAGE);
 }
 
+/** `player set-owner <player_id> <owner_id>`: moves the player, its roster name and its life (assign-cmd). */
+async function runSetOwner(io: Io, env: Env, args: readonly string[]): Promise<number> {
+  const { playerId, owner } = parseSetOwner(args);
+  let lines: string[] = [];
+  await withSql(env, async (sql) => {
+    lines = await setPlayerOwner(sql, playerId, owner);
+  });
+  for (const line of lines) io.out(line);
+  return 0;
+}
+
 async function runPlayerFlags(
   parsed: Parsed,
   io: Io,
@@ -540,6 +553,8 @@ export async function run(
       await runAdmin(io, env, rest, parsed);
     } else if (command === 'player' && rest[0] === 'flags') {
       return await runPlayerFlags(parsed, io, env, rest.slice(1));
+    } else if (command === 'player' && rest[0] === 'set-owner') {
+      return await runSetOwner(io, env, rest.slice(1));
     } else if (command === 'player' && rest[0] === 'adopt-sheets') {
       return await runAdoptSheets(parsed, io, env, rest.slice(1));
     } else if (command === 'player') {
