@@ -120,6 +120,15 @@ describe('observeBreak', () => {
     expect(observeBreak(brk(SELF, { actor: SELF }), ctxFor(world))).toBeNull();
   });
 
+  it('breaking your own block under other capitals gives nothing', () => {
+    // Minecraft names are not case-sensitive: the server may send the Body's own name in other capitals.
+    const world = bench();
+    playerAt(world, SELF.toUpperCase());
+    expect(observeBreak(brk(SELF, { actor: SELF.toUpperCase() }), ctxFor(world))).toBeNull();
+    // Out of sight the breaker is unnamed; the Body must not take its own break for someone else's.
+    expect(observeBreak(brk(SELF, { actor: 'Ag_Capa_01' }), ctxFor(bench()))).toBeNull();
+  });
+
   it('the same message twice gives one', () => {
     const world = bench();
     playerAt(world, 'ag_capb_02');
