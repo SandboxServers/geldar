@@ -69,6 +69,13 @@ export function createFakeHandlers(): ToolHandlers {
         'what you see, from your eyes (an approximation, not a photograph)',
       ),
     survey: () => ({ text: 'legend ?=unknown\ny=64\n  z=0 25?', truncated: false }),
+    plan_check: () => ({
+      cells: 0,
+      material_needs: {},
+      unknown_cells: 0,
+      estimated_ticks: 0,
+      invalid_steps: [],
+    }),
     write_book: () => ({ book_id: makeId('bk', 2), budget_remaining_thoughts: BUDGET }),
     define_skill: () => ({
       skill_id: 'sk_mock',

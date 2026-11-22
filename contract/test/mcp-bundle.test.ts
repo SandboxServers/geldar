@@ -163,6 +163,7 @@ describe('bundled tool schemas', () => {
       'journal',
       'look',
       'offer',
+      'plan_check',
       'propose',
       'read_book',
       'say',
