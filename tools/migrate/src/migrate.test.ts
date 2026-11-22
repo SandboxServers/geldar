@@ -64,6 +64,7 @@ describe('listMigrations', () => {
       '0065_owner_export_budget.sql',
       '0066_events_trace_id.sql',
       '0067_skin_upload_rules.sql',
+      '0068_mc_ownership.sql',
     ]);
   });
 
