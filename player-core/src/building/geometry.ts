@@ -17,10 +17,13 @@ export function* boxCells(from: Cell, to: Cell, hollow: boolean): IterableIterat
   const [z0, z1] = minMax(from.z, to.z);
   for (let x = x0; x <= x1; x++) {
     for (let y = y0; y <= y1; y++) {
+      // A hollow box's interior column (x and y both inside) keeps only its two ends in z: no scan of it.
+      if (hollow && !(x === x0 || x === x1 || y === y0 || y === y1)) {
+        yield { x, y, z: z0 };
+        if (z1 > z0) yield { x, y, z: z1 };
+        continue;
+      }
       for (let z = z0; z <= z1; z++) {
-        if (hollow && !(x === x0 || x === x1 || y === y0 || y === y1 || z === z0 || z === z1)) {
-          continue;
-        }
         yield { x, y, z };
       }
     }
@@ -52,9 +55,9 @@ export function* lineCells(from: Cell, to: Cell): IterableIterator<Cell> {
  */
 export function* wallCells(from: Cell, to: Cell, height: number): IterableIterator<Cell> {
   const base = Math.min(from.y, to.y);
-  const floor = [...lineCells({ x: from.x, y: 0, z: from.z }, { x: to.x, y: 0, z: to.z })];
   for (let h = 0; h < height; h++) {
-    for (const p of floor) {
+    // Lazy: the floor line is walked per layer, never collected (the same cells in the same order).
+    for (const p of lineCells({ x: from.x, y: 0, z: from.z }, { x: to.x, y: 0, z: to.z })) {
       yield { x: p.x, y: base + h, z: p.z };
     }
   }
@@ -112,10 +115,12 @@ export function* circleCells(
 export function* sphereCells(center: Cell, radius: number, hollow = false): IterableIterator<Cell> {
   const r2 = radius * radius;
   const inside = (dx: number, dy: number, dz: number): boolean => dx * dx + dy * dy + dz * dz <= r2;
+  // Rows, not the cube: each (dx, dy) row's z-range is computed directly, so the work follows the cells.
   for (let dx = -radius; dx <= radius; dx++) {
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dz = -radius; dz <= radius; dz++) {
-        if (!inside(dx, dy, dz)) continue;
+    const halfY = isqrt(r2 - dx * dx);
+    for (let dy = -halfY; dy <= halfY; dy++) {
+      const halfZ = isqrt(r2 - dx * dx - dy * dy);
+      for (let dz = -halfZ; dz <= halfZ; dz++) {
         if (
           hollow &&
           inside(dx + 1, dy, dz) &&
@@ -131,6 +136,14 @@ export function* sphereCells(center: Cell, radius: number, hollow = false): Iter
       }
     }
   }
+}
+
+/** The integer square root floor of n (n >= 0), exact. */
+function isqrt(n: number): number {
+  let s = Math.floor(Math.sqrt(n));
+  while (s * s > n) s--;
+  while ((s + 1) * (s + 1) <= n) s++;
+  return s;
 }
 
 function minMax(a: number, b: number): [number, number] {

@@ -6,6 +6,7 @@ import {
   type ViewWorld,
 } from '../../perception/view/viewport.ts';
 import {
+  cellInView,
   newRecorder,
   RAY_BUDGET,
   RECORD_EVERY_TICKS,
@@ -87,6 +88,24 @@ describe('recordSeen: loaded chunks', () => {
     sweep(newRecorder(map), world, EYE, 0);
     expect(map.read(0, 64, -2)?.name).toBe('air');
     for (let z = -5; z >= -24; z--) expect(map.read(0, 64, z)).toBeUndefined();
+  });
+});
+
+describe('cellInView: the range pre-filter', () => {
+  it('refuses a cell beyond the light range before casting any ray', () => {
+    const world = fakeWorld();
+    expect(cellInView(world, EYE, 0, 64, -25)).toBe(false);
+    expect(world.calls).toBe(0);
+  });
+
+  it('refuses a cell beyond the dark range before casting any ray, though it is in light range', () => {
+    const world = fakeWorld({ dark: true });
+    expect(cellInView(world, EYE, 0, 64, -10)).toBe(false);
+    expect(world.calls).toBe(0);
+  });
+
+  it('still answers a cell at the edge of the light range as in view', () => {
+    expect(cellInView(fakeWorld(), EYE, 0, 64, -24)).toBe(true);
   });
 });
 
