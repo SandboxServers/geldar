@@ -41,6 +41,7 @@ This is a code change, not a runtime setting. Turning a program off means a merg
    (`golem/src/body/restart.ts`, `recover()`) refuses a plan or a checkpoint resume that names `<P>`, because the
    Body's own registry decides, not the validator's allow-list. Both must change, or a program can still run from
    a saved checkpoint.
+7. animus is frozen (decision D-HC-01). animus/src/validate/output.test.ts names explore, farm and patrol, so a kill-switch PR must edit it. Get Sam's explicit OK in the PR before editing a frozen package, and say in the PR body that the edit is for the kill switch only.
 
 ## Merging deploys
 
