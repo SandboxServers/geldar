@@ -114,6 +114,7 @@ One subcommand per run. `admin.sh` uses `exec`, so the container's exit code is 
 | `owner-admin set\|unset <owner>`, `owner-admin list` | `mcp-tokens owner admin` | Yes |
 | `player-add <id> --owner <o> --life <l> --name <n> --harness <h> [...]` | `mcp-tokens player add` | Yes |
 | `player-flags <player-id> [--public-camera on\|off] [--thoughts-delayed-public on\|off]` | `mcp-tokens player flags` | Yes |
+| `player-set-owner <player-id> <owner-id>` | `mcp-tokens player set-owner` | Yes |
 | `token-mint <player> --out <file>` | `mcp-tokens token mint` | Yes |
 | `token-revoke <tk_id>` | `mcp-tokens token revoke` | Yes |
 | `players-status [--player <id>]` | `mcp-tokens token list` (no hashes or values) | Yes |
@@ -150,6 +151,7 @@ Re-derive the list: the first `case $cmd` in `deploy/colo-admin.sh` (around line
 | `owner-admin set\|unset <owner>` or `list` | `admin owner-admin` | the same owner id rule; exact argument count |
 | `player-add <args>` | `admin player-add` | none |
 | `player-flags <player-id> <flags>` | `admin player-flags` | at least two arguments; id `ag-` then 1 to 40 of `a-z 0-9 -` |
+| `player-set-owner <player-id> <owner-id>` | `admin player-set-owner` | two arguments; player id as `player-flags`; owner id lower-case (checked by the CLI); refuses a retired player, a full owner and a roster name shared with another live player |
 | `token-mint <player> [--out /run/tokens/<name>.token]` | `admin token-mint` with a tokens overlay | see [token-mint](#token-mint) |
 | `token-revoke <args>` | `admin token-revoke` | none |
 | `players-status <args>` | `admin players-status` | none |
@@ -251,7 +253,7 @@ Counts from `grep -cE "^\s*it\(" <file>` at `1b114276`, 2026-11-16.
 | File | `it` cases | Covers |
 |---|---|---|
 | `deploy/test/colo-admin.test.ts` | 25 | Wrapper: refusals, token-mint, project scoping, dry run, manifest, owner-set-cap, roster, per-player hosts |
-| `deploy/test/admin-entrypoint.test.ts` | 8 | `admin.sh` dispatch of `roster`, `owner-admin`, `player-flags`, `owner-set-cap` |
+| `deploy/test/admin-entrypoint.test.ts` | 8 | `admin.sh` dispatch of `roster`, `owner-admin`, `player-flags`, `player-set-owner`, `owner-set-cap` |
 | `deploy/test/colo-admin-skin.test.ts` | 6 | `skin-import` |
 | `deploy/test/colo-admin-flags.test.ts` | 2 | `owner-admin` and `player-flags` refusals |
 | `tools/repo-checks/src/admin-image.test.ts` | 4 | The Dockerfile copies every golem file the `mcp-tokens` CLI imports |

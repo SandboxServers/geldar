@@ -86,8 +86,8 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   player set-model <id> --model <text>  set the declared model of a live player's life
   player pause|resume|retire <id>
   player flags <id> --public-camera on|off --thoughts-delayed-public on|off
-  player set-owner <player_id> <owner_id>  move a player, its roster name and its life to another owner (one transaction)
                                         set a flag (at least one; a thoughts change waits 10 seconds)
+  player set-owner <player_id> <owner_id>  move a player, its roster name and its life to another owner (one transaction)
   roster add|remove <name> --owner <o> [--max N]
                                         add or remove a Minecraft name an owner may run agents as (N 1 to 4, default 1)
   roster list [--owner <o>]             list the roster

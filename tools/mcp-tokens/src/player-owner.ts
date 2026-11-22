@@ -66,6 +66,17 @@ export async function setPlayerOwner(
     if (Number(used.rows[0]?.n) + 1 > Number(cap.player_cap)) {
       throw new Error(`owner ${owner} is at the cap of ${cap.player_cap} players; nothing changed`);
     }
+    // A roster name can serve several live players of one owner (max_agents), so moving the roster row
+    // would strand the others. Refused: the move is not split into a second roster row (a design change).
+    const sibling = await sql.query(
+      "SELECT count(*)::int AS n FROM mcp_players WHERE owner_id = $1 AND status <> 'retired' AND lower(display_name) = lower($2) AND player_id <> $3",
+      [from, String(player.display_name), playerId],
+    );
+    if (Number(sibling.rows[0]?.n) > 0) {
+      throw new Error(
+        `the roster name is shared with another live player of owner ${from}; nothing changed`,
+      );
+    }
     const roster = await sql.query(
       'UPDATE mcp_roster SET owner_id = $2 WHERE player_name = lower($1) AND owner_id = $3 RETURNING player_name',
       [String(player.display_name), owner, from],

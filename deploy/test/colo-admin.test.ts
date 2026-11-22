@@ -264,7 +264,7 @@ describe('colo-admin.sh (decision 0133)', () => {
       expect(r.code).toBe(0);
       expect(
         calls(fx).some((c) =>
-          c.endsWith('--profile admin run --rm admin player set-owner ag-ranger-01 bob'),
+          c.endsWith('--profile admin run --rm admin player-set-owner ag-ranger-01 bob'),
         ),
       ).toBe(true);
       expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
@@ -275,7 +275,7 @@ describe('colo-admin.sh (decision 0133)', () => {
       const r = run(fx, { DEPLOY_DRY_RUN: '1' }, ['player-set-owner', 'ag-ranger-01', 'bob']);
       expect(r.code).toBe(0);
       expect(r.out).toContain('dry-run, not run');
-      expect(r.out).toContain('admin player set-owner ag-ranger-01 bob');
+      expect(r.out).toContain('admin player-set-owner ag-ranger-01 bob');
       expect(starts(calls(fx))).toEqual([]);
     });
 
@@ -288,7 +288,7 @@ describe('colo-admin.sh (decision 0133)', () => {
       const fx = fixture();
       const r = run(fx, REAL, args);
       expect(r.code).not.toBe(0);
-      expect(calls(fx).some((c) => c.includes('admin player set-owner'))).toBe(false);
+      expect(calls(fx).some((c) => c.includes('admin player-set-owner'))).toBe(false);
     });
   });
 

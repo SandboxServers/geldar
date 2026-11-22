@@ -20,6 +20,10 @@ interface FakeOptions {
   agentRows?: number;
   /** The audit INSERT fails. */
   failAudit?: boolean;
+  /** Other live players of the old owner with the same roster name (0 is the normal case). */
+  siblings?: number;
+  /** Rows the mcp_players UPDATE changes (1 is the normal case). */
+  playerRows?: number;
 }
 
 const PLAYER = {
@@ -45,6 +49,9 @@ function fakeSql(options: FakeOptions = {}) {
           options.targetCap === undefined && !('targetCap' in options) ? 20 : options.targetCap;
         return { rows: cap === undefined ? [] : [{ player_cap: cap }] };
       }
+      if (text.includes('lower(display_name) = lower($2)')) {
+        return { rows: [{ n: options.siblings ?? 0 }] };
+      }
       if (text.includes('count(*)::int AS n FROM mcp_players')) {
         return { rows: [{ n: options.targetUsed ?? 0 }] };
       }
@@ -53,7 +60,8 @@ function fakeSql(options: FakeOptions = {}) {
         return { rows: Array.from({ length: count }, () => ({ player_name: 'ranger' })) };
       }
       if (text.startsWith('UPDATE mcp_players')) {
-        return { rows: [{ player_id: values?.[0] }] };
+        const count = options.playerRows ?? 1;
+        return { rows: Array.from({ length: count }, () => ({ player_id: values?.[0] })) };
       }
       if (text.startsWith('UPDATE agents')) {
         const count = options.agentRows ?? 1;
@@ -108,8 +116,33 @@ describe('setPlayerOwner', () => {
     const roster = calls.find((c) => c.text.startsWith('UPDATE mcp_roster'));
     expect(roster?.values).toEqual(['Ranger', 'bob', 'alice']);
     expect(roster?.text).toContain('player_name = lower($1)');
+    expect(roster?.text).toContain('AND owner_id = $3');
     const agent = calls.find((c) => c.text.startsWith('UPDATE agents'));
     expect(agent?.values).toEqual(['ag_ranger_01', 'bob', 'alice']);
+    expect(agent?.text).toContain('AND owner = $3');
+    const target = calls.find((c) => c.text.startsWith('SELECT player_cap FROM mcp_owners'));
+    expect(target?.text).toContain('FOR UPDATE');
+  });
+
+  it('refuses a move when another live player of the old owner shares the roster name', async () => {
+    const { sql, calls } = fakeSql({ siblings: 1 });
+    await expect(setPlayerOwner(sql, PLAYER_ID, 'bob')).rejects.toThrow(
+      'shared with another live player of owner alice; nothing changed',
+    );
+    const check = calls.find((c) => c.text.includes('lower(display_name) = lower($2)'));
+    expect(check?.values).toEqual(['alice', 'Ranger', PLAYER_ID]);
+    expect(check?.text).toContain("status <> 'retired'");
+    expect(has(calls, 'UPDATE')).toBe(false);
+    expect(has(calls, 'INSERT INTO register_audit')).toBe(false);
+    expect(calls.at(-1)?.text).toBe('ROLLBACK');
+  });
+
+  it('rolls back when the mcp_players row does not move', async () => {
+    const { sql, calls } = fakeSql({ playerRows: 0 });
+    await expect(setPlayerOwner(sql, PLAYER_ID, 'bob')).rejects.toThrow('did not move');
+    expect(has(calls, 'UPDATE agents')).toBe(false);
+    expect(has(calls, 'INSERT INTO register_audit')).toBe(false);
+    expect(calls.at(-1)?.text).toBe('ROLLBACK');
   });
 
   it('writes the audit row with a hashed actor and a detail of owner ids only', async () => {

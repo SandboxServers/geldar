@@ -319,7 +319,7 @@ if [ "$DRY_RUN" = 1 ]; then
   case $cmd in
     roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster add $roster_name --owner $roster_owner" ;;
     roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster list${roster_owner:+ --owner $roster_owner}" ;;
-    player-set-owner) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin player set-owner $set_owner_player $set_owner_owner" ;;
+    player-set-owner) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin player-set-owner $set_owner_player $set_owner_owner" ;;
     *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*" ;;
   esac
   if [ "$cmd" = token-mint ]; then
@@ -348,7 +348,7 @@ elif [ "$cmd" = roster-add ]; then
   say "roster-add: done for $roster_name on the roster of $roster_owner (the admin container was removed)"
 elif [ "$cmd" = player-set-owner ]; then
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm admin player set-owner "$set_owner_player" "$set_owner_owner" || die "player-set-owner refused or failed; a refused move writes nothing"
+  adm run --rm admin player-set-owner "$set_owner_player" "$set_owner_owner" || die "player-set-owner refused or failed; a refused move writes nothing"
   say "player-set-owner: done for $set_owner_player to owner $set_owner_owner (ids only; the admin container was removed)"
 elif [ "$cmd" = roster-list ]; then
   adm config --quiet || die "admin service config does not validate"
