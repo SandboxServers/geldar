@@ -31,6 +31,35 @@ export interface DetailOptions {
   onCopy?: (text: string, say: (label: string) => void) => void;
 }
 
+/** How long the copy control says how the copy went before its label comes back. */
+export const COPY_LABEL_MS = 1500;
+
+/** The part of the browser's clipboard the page uses: it writes plain text, and never reads. */
+export interface Clipboard {
+  writeText(text: string): Promise<unknown>;
+}
+
+/**
+ * The `onCopy` of the page: puts one entry on the reader's clipboard as plain text, on their press, says
+ * how it went in fixed words, and then puts the label back. Undefined where the browser gives the page no
+ * clipboard (it needs a secure context): no entry then gets a "Copy entry" button.
+ */
+export function copier(
+  clipboard: Clipboard | undefined,
+  timers: { setTimeout(fn: () => void, ms: number): unknown },
+): DetailOptions['onCopy'] {
+  if (typeof clipboard?.writeText !== 'function') return undefined;
+  return (text, say) => {
+    clipboard
+      .writeText(text)
+      .then(
+        () => say('Copied'),
+        () => say('Could not copy'),
+      )
+      .then(() => timers.setTimeout(() => say(COPY_LABEL), COPY_LABEL_MS));
+  };
+}
+
 /** A value the entry does not carry. */
 const NONE = '—';
 

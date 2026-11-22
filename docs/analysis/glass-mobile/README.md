@@ -4,7 +4,7 @@ What was checked for the Glass mobile redesign (decision [0410](../../decisions/
 
 ## How the page was looked at
 
-The page was served by the test-only preview (`node glass/test/page-preview/server.ts`): Glass's real handler, files, headers and Content-Security-Policy, with invented agents, thoughts and receipts. It was opened in headless Chromium (Playwright 1.64.1, the version `tools/kino-shot` pins) at the sizes the design handoff gives for a Galaxy Z Fold:
+The page was served by the test-only preview (`node glass/test/page-preview/server.ts`): Glass's real handler, files, headers and Content-Security-Policy, with invented agents, thoughts and receipts. The screenshots were taken with the preview's rate limits off (`unlimited`), because the script loads the page seventeen times in a row; the cold-load check below ran with them on. It was opened in headless Chromium (Playwright 1.64.1, the version `tools/kino-shot` pins) at the sizes the design handoff gives for a Galaxy Z Fold:
 
 | Screen | CSS pixels | Notes |
 |---|---|---|
@@ -55,8 +55,32 @@ Checked in the same Chromium, with the real policy header (`img-src 'none'` incl
 - The cache holds the 25 shell files and nothing under `/api/`.
 - Offline, a reload shows the shell with "Reconnecting..." and no entry. Back online, the feed reconnects, the pill says "Live −60s" and the list fills.
 
+## The rate limit
+
+A first visit is about 48 requests on the cover screen and 49 unfolded: the page's files, the service worker asking for each again, and the API. Under the limits Glass ships with (the preview with no `unlimited`), in Chromium:
+
+| Visit | Replies | Refused (429) | Worker |
+|---|---|---|---|
+| Cover, first visit | 48 | 0 | activated, 26 files copied |
+| Unfolded, first visit | 49 | 0 | activated, 26 files copied |
+| Unfolded, three visits in a row | 128 | 0 | activated |
+
+This is the result after a fix. The first version of this change charged the page's files to the general bucket (20 at once), and a reviewer's probe showed 24 of 44 requests refused on a first visit: the worker never installed and a typeface was lost. The first round of validation missed it because the preview then ran with no limiter. The page's files now have their own bucket (decision 0410, section 6), the preview runs under the shipped limits by default, and `glass/test/page-rate.test.ts` runs a cold load against them.
+
 Not checked: adding the app to a real home screen, the splash screen, and the icon as a launcher draws it. `beforeinstallprompt` does not fire in headless Chromium, so the install strip in shots 03 and 04 was shown by sending the page that event by hand; the strip's logic is covered by `glass/src/render-install.test.ts`.
 
 ## Tests
 
-`glass/` has 930 passing tests with this change. Each new behaviour was reverted by hand, one at a time (36 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons), and a test failed for every one.
+`glass/` has 945 passing tests with this change. Each new behaviour was reverted by hand, one at a time (52 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons, the page's rate bucket and its cap, the retry of a failed first page and its cap, stale replies, the worker's cache write), and a test failed for every one. Two reverts were not caught at first; their tests were tightened until they were.
+
+## Review
+
+An independent read-only review of the first version found seven things, all fixed in the same pull request:
+
+1. The page's files shared the general rate bucket (above). High.
+2. Pressing an agent chip dropped the keyboard focus, because the row is drawn again. The pressed chip now gets it back.
+3. A slow reply to an earlier filter change could overwrite the list of a later one. Only the latest request's reply is used, for the first page and for "Load older".
+4. A first page that failed while the feed was live was never asked for again. It is now retried five times with a growing wait, and after that when the feed next comes back.
+5. In the service worker, a failed cache write could hide a good server answer. The write is now apart from the answer.
+6. Two guards had no test (the page's delay slot, and the 2000-row cap for live entries). Both have one.
+7. Three doc claims were stronger than the code (receipts for journal lines, how a worker is replaced, the font hashes). The sentences are corrected and a test holds the font files to the hashes in `THIRD_PARTY_NOTICES.md`.

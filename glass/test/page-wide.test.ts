@@ -193,10 +193,15 @@ describe('the installable app', () => {
     // Nothing is claimed about a list that never arrived: no "Load older", no "nothing matches".
     expect([older.hidden, empty.hidden]).toEqual([true, true]);
     page.sources[0]?.onerror?.();
-    expect(win.document.getElementById('status')?.textContent).toBe('Reconnecting...');
+    const status = win.document.getElementById('status');
+    expect(status?.textContent).toBe('Reconnecting...');
+    // The first page is asked for again and fails again: the control still says the feed is reconnecting.
+    await vi.advanceTimersByTimeAsync(500);
+    await settle();
+    expect(page.fetchUrls.filter((url) => url === '/api/thoughts?limit=50')).toHaveLength(2);
+    expect(status?.textContent).toBe('Reconnecting...');
     // The network returns: the feed reconnects after its backoff, and the page asks for its first page again.
     network.down = false;
-    await vi.advanceTimersByTimeAsync(500);
     page.sources[1]?.onopen?.();
     await settle();
     expect(listRows(win)).toBe(3);
@@ -207,6 +212,58 @@ describe('the installable app', () => {
     page.sources[1]?.onopen?.();
     await settle();
     expect(page.fetchUrls.length).toBe(fetched);
+  });
+
+  it('asks again for a first page that failed five times with a growing wait, then only when the feed comes back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const network = { down: true };
+    const win = await boot(PAGES, { network });
+    const asked = (): number =>
+      page.fetchUrls.filter((url) => url === '/api/thoughts?limit=50').length;
+    expect(asked()).toBe(1);
+    // The waits are 0.5, 1, 2, 4 and 8 seconds: one request at the end of each, and none before.
+    let total = 1;
+    for (const wait of [500, 1000, 2000, 4000, 8000]) {
+      await vi.advanceTimersByTimeAsync(wait - 1);
+      await settle();
+      expect(asked(), `before ${wait} ms`).toBe(total);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      total += 1;
+      expect(asked(), `after ${wait} ms`).toBe(total);
+    }
+    expect(total).toBe(6);
+    // Past the fifth, nothing more on a timer: a page that cannot load does not ask for ever.
+    await vi.advanceTimersByTimeAsync(120_000);
+    await settle();
+    expect(asked()).toBe(6);
+    expect(win.document.getElementById('status')?.textContent).not.toBe('Live');
+    // The feed coming back is the one thing that asks again.
+    network.down = false;
+    const latest = page.sources.at(-1);
+    latest?.onopen?.();
+    await settle();
+    expect(asked()).toBe(7);
+    expect(listRows(win)).toBe(3);
+  });
+
+  it('asks again by itself when the first page failed though the feed is live', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const network = { down: true };
+    const win = await boot(PAGES, { network });
+    // The feed is up and stays up; only the first page fails (a refusal, a server error).
+    page.sources[0]?.onopen?.();
+    await settle();
+    // The feed coming up asks once more at once; that fails too, and with the feed live the control says what failed.
+    const status = win.document.getElementById('status');
+    expect(page.fetchUrls.filter((url) => url === '/api/thoughts?limit=50')).toHaveLength(2);
+    expect(status?.textContent).toBe('Could not load thoughts.');
+    expect(listRows(win)).toBe(0);
+    network.down = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(listRows(win)).toBe(3);
+    expect(status?.textContent).toBe('Live');
   });
 
   it('registers the service worker from the root of this origin, and works the same where there is none', async () => {

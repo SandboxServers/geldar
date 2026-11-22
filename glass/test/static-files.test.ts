@@ -3,6 +3,7 @@
  * security headers and a cache rule; the typefaces and icons arrive byte for byte; the page carries the
  * configured delay; and the page asks for nothing that is not in the table.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -17,6 +18,7 @@ import {
   pageWithDelay,
   RENDER_MODULES,
   STATIC_FILES,
+  withDelay,
 } from '../src/static-files.ts';
 
 const PUBLIC = new URL('../public/', import.meta.url);
@@ -123,6 +125,26 @@ describe('the static files', () => {
     }
   });
 
+  it('are the typeface files the third-party notice lists, hash for hash', () => {
+    const notice = readFileSync(new URL('../../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+    const listed = new Map(
+      [...notice.matchAll(/^([0-9a-f]{64}) {2}(\S+\.woff2)$/gm)].map((m) => [m[2], m[1]]),
+    );
+    expect([...listed.keys()].sort()).toEqual(FONT_FILES.map((name) => `${name}.woff2`).sort());
+    for (const name of FONT_FILES) {
+      const bytes = readFileSync(new URL(`fonts/${name}.woff2`, PUBLIC));
+      expect(createHash('sha256').update(bytes).digest('hex'), name).toBe(
+        listed.get(`${name}.woff2`),
+      );
+    }
+    // Each typeface's licence text travels with its files.
+    for (const licence of ['OFL-instrument-serif.txt', 'OFL-dm-mono.txt']) {
+      expect(readFileSync(new URL(`fonts/${licence}`, PUBLIC), 'utf8')).toContain(
+        'SIL OPEN FONT LICENSE Version 1.1',
+      );
+    }
+  });
+
   it('answer a HEAD without a body and refuse a write with 405', async () => {
     const port = await start();
     for (const path of [
@@ -175,6 +197,13 @@ describe('the page', () => {
     expect(slot(-5)).toBe('0');
     expect(slot(Number.NaN)).toBe('0');
     expect(slot(Number.POSITIVE_INFINITY)).toBe('0');
+  });
+
+  it('refuses a page without exactly one delay slot, instead of serving one that says nothing', () => {
+    const slot = '<button data-delay="0">';
+    expect(withDelay(slot, 60)).toBe('<button data-delay="60">');
+    expect(() => withDelay('<button>', 60)).toThrow(/no single delay slot/);
+    expect(() => withDelay(slot + slot, 60)).toThrow(/no single delay slot/);
   });
 
   it('asks only for files in the table: every link, script, import, typeface and icon', () => {

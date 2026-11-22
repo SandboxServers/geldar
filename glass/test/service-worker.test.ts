@@ -31,7 +31,10 @@ class FakeCache {
     this.added.push(...paths);
     for (const path of paths) this.entries.set(path, response(200, `precached ${path}`));
   }
+  /** Set, every store fails, as it does when the browser's storage is full. */
+  full = false;
   async put(key: string, value: FakeResponse): Promise<void> {
+    if (this.full) throw new Error('QuotaExceededError');
     this.entries.set(key, value);
   }
   async match(key: string): Promise<FakeResponse | undefined> {
@@ -213,6 +216,17 @@ describe('the service worker', () => {
     );
     // Offline, the API still has no answer from the worker: the page shows no thoughts.
     expect(await worker.request('/api/thoughts?limit=50')).toBeUndefined();
+  });
+
+  it('passes the server answer on when the copy cannot be stored: a full disk never serves an old page', async () => {
+    const worker = load(online);
+    await worker.lifecycle('install');
+    const cache = worker.stores.get(worker.cacheName);
+    if (cache !== undefined) cache.full = true;
+    const reply = await worker.request('/app.js');
+    expect(reply?.body).toBe(`fresh ${ORIGIN}/app.js`);
+    // The old copy is still there for an offline visit; it was not served in place of the new answer.
+    expect(cache?.entries.get('/app.js')?.body).toBe('precached /app.js');
   });
 
   it('fails as the network failed when there is no copy', async () => {

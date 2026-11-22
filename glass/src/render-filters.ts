@@ -56,6 +56,8 @@ export function createFilters(deps: FilterDeps): Filters {
   /** Chip position -> position in /api/agents. */
   let order: number[] = [];
   let agentId = '';
+  /** Gives the focus to the chip at a position of the row as it is drawn now. */
+  let pressed: (position: number) => void = () => undefined;
 
   /** The start of the chosen time range in epoch ms, or undefined for all loaded thoughts. */
   function sinceMs(): number | undefined {
@@ -88,20 +90,26 @@ export function createFilters(deps: FilterDeps): Filters {
     }
   }
 
-  /** Draws the agent filter. A press on the chip that is on turns the filter off. */
+  /**
+   * Draws the agent filter. A press on the chip that is on turns the filter off. The row is drawn again on
+   * every press, so the chip that was pressed is given the focus back: a keyboard reader stays on the row.
+   */
   function drawChips(): El {
     const chips = order.map((index) => {
       const agent = agents.get(agentIds[index] ?? '');
       return { name: String(agent?.name ?? ''), dead: agent?.died_at != null };
     });
     const on = order.findIndex((index) => agentIds[index] === agentId);
-    return renderChips(deps.doc, deps.chips, chips, on, (position) => {
+    const drawn = renderChips(deps.doc, deps.chips, chips, on, (position) => {
       const picked = position < 0 ? '' : (agentIds[order[position] ?? -1] ?? '');
       agentId = picked === agentId ? '' : picked;
       drawChips();
+      pressed(position);
       save();
       deps.onReload();
     });
+    pressed = (position) => drawn.buttons[position + 1]?.focus?.();
+    return drawn.on;
   }
 
   // Server-side filters reload the first page; the text filters only narrow the loaded list.

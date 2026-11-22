@@ -77,8 +77,9 @@ names a file on disk. Caddy routes the same list (`deploy/caddy/glass.caddy`;
   reaches a style or an attribute.
 - **Receipts need an action id.** The detail asks for receipts only when the thought row names its
   action (`action_id`). The API does not send one today, so on live data the receipts list does not
-  appear yet (decision 0410, item 8). Nothing is shown in its place: the page never says "no receipts"
-  for an answer it does not have.
+  appear yet (decision 0410, item 8). Nothing is shown in its place: for a thought, the page never says
+  "no receipts" for an answer it does not have. A journal line is a note, not a decision, so it has no
+  action, and the page says so without asking.
 
 ### The installable app
 
@@ -101,14 +102,16 @@ The page can be installed from Chrome ("Add to Home screen"), and then opens ful
 ### Seeing the page without a shard
 
 The test-only preview serves the page through Glass's real handler (the same files, headers and
-policy) with invented agents, thoughts and receipts, and a live entry every few seconds:
+policy, and the rate limits Glass ships with) with invented agents, thoughts and receipts, and a live
+entry every few seconds:
 
 ```powershell
-node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds]   # default 8790, 5 and 60; binds 127.0.0.1
+node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]   # default 8790, 5 and 60; binds 127.0.0.1
 ```
 
 Open `http://localhost:8790/` (a service worker needs `localhost` or HTTPS). Unlike the real API, the
-preview's thoughts name their action, so it shows receipts.
+preview's thoughts name their action, so it shows receipts. The word `unlimited` turns the rate limits
+off, for a script that loads the page many times in a row; leave it out to see what a visitor gets.
 
 ## Configuration
 
@@ -134,7 +137,7 @@ Plain values come from the environment. The password comes from a file.
 | `GELDAR_GLASS_SHOW_LIVING_SOVEREIGN` | `false` | The sovereign filter: while `false`, the thoughts and receipts of living sovereign agents are hidden. |
 | `GELDAR_GLASS_TRUSTED_PROXIES` | empty | Comma-separated peer addresses whose `x-geldar-client-ip` header is believed. **Set it to Caddy's peer address.** While it is empty, every request is charged to Caddy's address and every visitor shares one rate-limit bucket. |
 | `GELDAR_GLASS_RATE_PER_MINUTE` | `60` | Refill rate of each client's bucket. The next request gets `429`. |
-| `GELDAR_GLASS_RATE_BURST` | `20` | Bucket size of each client. |
+| `GELDAR_GLASS_RATE_BURST` | `20` | Bucket size of each client. The page's own files are not charged to it: they have a fixed bucket of 200 at once and 600 a minute for each client, because one cold load asks for about 50 small files (the page, then the service worker's copy). `glass/test/page-rate.test.ts` runs that load under these defaults. |
 | `GELDAR_GLASS_RATE_MAX_CLIENTS` | `1024` | Client buckets kept at once. The least recently used is dropped. |
 
 Size caps are fixed in the code, not configurable: a request body over 1 KiB gets `413` and a request
@@ -217,9 +220,11 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
   answers only for the page's own files, by an exact list that a test holds equal to the files Glass
   serves (`glass/test/service-worker.test.ts`); every other request passes it untouched. It stores no
   API reply, so an installed app holds no thought after the delay or the sovereign filter would have
-  hidden it. It is served with `no-cache`, and a browser re-checks a worker script at least daily, so a
-  fixed worker replaces a broken one without a visit from the reader. The kill switch is honoured:
-  a `503` is passed on, never replaced by the stored copy.
+  hidden it. It is served with `no-cache`, and the browser checks for a new worker script on every
+  visit, past its own HTTP cache; a new worker takes over at once. A reader who never comes back keeps
+  the old worker, which can show them nothing but the old shell. The kill switch is honoured: a `503`
+  is passed on, never replaced by the stored copy. A copy that cannot be stored (a full disk) never
+  stands in for the server's answer.
 - **Typefaces and storage.** The typefaces are files on this origin, not a font service: no request
   leaves the origin, and `font-src` names no other host. The page stores one flag (the install strip was
   dismissed) and nothing about the reader or what they read.

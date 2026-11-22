@@ -27,6 +27,7 @@ export interface El {
   addEventListener(type: 'click', listener: () => void): void;
   /** Only ever called with a fixed name and a fixed value: no world text becomes an attribute. */
   setAttribute(name: string, value: string): void;
+  focus?: () => void;
 }
 
 export interface Doc {
@@ -201,7 +202,8 @@ export interface Chip {
 /**
  * Fills the agent filter: "Everyone" first, then one chip per agent, each with its sigil. `selected` is a
  * position in `chips`, or -1 for everyone. A press calls `onPick` with the chip's position (-1 for
- * "Everyone"), so no agent id or name becomes an attribute. Returns the selected chip.
+ * "Everyone"), so no agent id or name becomes an attribute. Returns the chips in row order ("Everyone"
+ * first) and the one that is on.
  */
 export function renderChips(
   doc: Doc,
@@ -209,7 +211,7 @@ export function renderChips(
   chips: Chip[],
   selected: number,
   onPick: (index: number) => void,
-): El {
+): { buttons: El[]; on: El } {
   const chip = (index: number, label: string): El => {
     const button = action(doc, index === selected ? 'chip on' : 'chip', '', () => onPick(index));
     button.setAttribute('aria-pressed', index === selected ? 'true' : 'false');
@@ -224,5 +226,5 @@ export function renderChips(
   };
   const buttons = [chip(-1, 'Everyone'), ...chips.map((item, index) => chip(index, item.name))];
   row.replaceChildren(...buttons);
-  return buttons[selected + 1] ?? (buttons[0] as El);
+  return { buttons, on: buttons[selected + 1] ?? (buttons[0] as El) };
 }

@@ -89,10 +89,14 @@ const DELAY_SLOT = 'data-delay="0"';
  * a whole number from the configuration, never text from a request or from the world. A page without the
  * slot is a mistake in the markup, and is refused at start instead of serving a page that says nothing.
  */
-export function pageWithDelay(delaySeconds: number): StaticFile {
-  const page = STATIC_FILES.get('/') as StaticFile;
-  const html = String(page.body);
+export function withDelay(html: string, delaySeconds: number): string {
   if (html.split(DELAY_SLOT).length !== 2) throw new Error('index.html has no single delay slot');
   const seconds = Number.isFinite(delaySeconds) ? Math.max(0, Math.floor(delaySeconds)) : 0;
-  return { ...page, body: html.replace(DELAY_SLOT, `data-delay="${seconds}"`) };
+  return html.replace(DELAY_SLOT, `data-delay="${seconds}"`);
+}
+
+/** The page entry of the table with the configured delay in it. */
+export function pageWithDelay(delaySeconds: number): StaticFile {
+  const page = STATIC_FILES.get('/') as StaticFile;
+  return { ...page, body: withDelay(String(page.body), delaySeconds) };
 }

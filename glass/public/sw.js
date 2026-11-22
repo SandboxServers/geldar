@@ -44,21 +44,29 @@ const SHELL = [
 
 const SHELL_PATHS = new Set(SHELL);
 
+/** Keeps a good answer as the copy. A store that fails (a full disk) is not the reader's problem. */
+async function keep(path, response) {
+  try {
+    const cache = await caches.open(CACHE);
+    await cache.put(path, response);
+  } catch {
+    // The copy stays as it was. The next good answer tries again.
+  }
+}
+
 /** The network's answer, kept as the copy when it is a good one; the copy only when there is no answer. */
 async function shellFile(request, path) {
+  let response;
   try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE);
-      await cache.put(path, response.clone());
-    }
-    return response;
+    response = await fetch(request);
   } catch (error) {
     const cache = await caches.open(CACHE);
     const kept = await cache.match(path);
     if (kept !== undefined) return kept;
     throw error;
   }
+  if (response.ok) await keep(path, response.clone());
+  return response;
 }
 
 self.addEventListener('install', (event) => {

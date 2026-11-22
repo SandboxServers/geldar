@@ -202,14 +202,14 @@ describe('renderChips', () => {
     const doc = new Window().document;
     const row = doc.createElement('div');
     const picked: number[] = [];
-    const on = renderChips(
+    const { on, buttons } = renderChips(
       doc as unknown as Doc,
       row as unknown as El,
       names.map((name, index) => ({ name, dead: dead[index] === true })),
       selected,
       (index) => picked.push(index),
     );
-    return { row, picked, on };
+    return { row, picked, on, buttons };
   }
 
   it('puts "Everyone" first and then one chip per agent, with the name only as text', () => {
@@ -247,6 +247,12 @@ describe('renderChips', () => {
     const none = chipsFor(['Ada'], -1);
     expect(none.row.querySelector('button.on')?.textContent).toBe('Everyone');
     expect((none.on as unknown as { textContent: string }).textContent).toBe('Everyone');
+  });
+
+  it('returns the chips in row order, so a caller can give one the focus', () => {
+    const { row, buttons } = chipsFor(['Ada', 'Bo'], 0);
+    expect(buttons).toHaveLength(3);
+    expect(buttons).toEqual(Array.from(row.querySelectorAll('button')));
   });
 
   it('calls back with the position of the pressed chip, and -1 for "Everyone"', () => {

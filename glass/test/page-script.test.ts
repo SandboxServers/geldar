@@ -462,38 +462,18 @@ describe('the page script', () => {
     expect(odd.document.getElementById('status')?.textContent).toBe('Live');
   });
 
-  it('filters by agent on a press of its chip, keeps it in the URL, and clears it on a second press', async () => {
+  it('never draws more than 2000 rows: a live entry past the cap pushes the oldest off the page', async () => {
     const win = await boot(PAGES);
-    const chip = (): HTMLButtonElement =>
-      win.document.querySelectorAll('#chips button')[1] as HTMLButtonElement;
-    fire(win, chip(), 'click');
-    await settle();
-    expect(page.fetchUrls.at(-1)).toBe('/api/thoughts?limit=50&agent=a1');
-    expect(win.location.search).toBe('?agent=a1');
-    expect([chip().className, chip().getAttribute('aria-pressed')]).toEqual(['chip on', 'true']);
-    expect(win.document.querySelector('#chips button')?.getAttribute('aria-pressed')).toBe('false');
-    // The chip that is on, pressed again, is "Everyone".
-    fire(win, chip(), 'click');
-    await settle();
-    expect(page.fetchUrls.at(-1)).toBe('/api/thoughts?limit=50');
-    expect(win.location.search).toBe('');
-    expect(win.document.querySelector('#chips button.on')?.textContent).toBe('Everyone');
-  });
-
-  it('lists the living agents before the dead ones in the filter row', async () => {
-    const win = await boot({
-      ...PAGES,
-      agents: [
-        { agent_id: 'a1', name: 'Mote', died_at: '2026-11-09' },
-        { agent_id: 'a2', name: 'Ada' },
-        { agent_id: 'a3', name: 'Bo' },
-      ],
-    });
-    const names = [...win.document.querySelectorAll('#chips .chip-name')].map((n) => n.textContent);
-    expect(names).toEqual(['Everyone', 'Ada', 'Bo', 'Mote']);
-    // The position on the row still picks the right agent.
-    fire(win, win.document.querySelectorAll('#chips button')[3] ?? null, 'click');
-    await settle();
-    expect(page.fetchUrls.at(-1)).toBe('/api/thoughts?limit=50&agent=a1');
+    for (let i = 100; i < 2097; i += 1) page.sources[0]?.emit('thought', thought(i));
+    expect(listRows(win)).toBe(2000);
+    expect(win.document.querySelector('#thoughts > li:last-child')?.textContent).toContain(
+      'plan 3',
+    );
+    page.sources[0]?.emit('thought', thought(5000));
+    expect(listRows(win)).toBe(2000);
+    expect(win.document.querySelector('#thoughts > li')?.textContent).toContain('plan 5000');
+    expect(win.document.querySelector('#thoughts > li:last-child')?.textContent).toContain(
+      'plan 2',
+    );
   });
 });

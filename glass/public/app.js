@@ -6,11 +6,12 @@
  * render-view.ts and render-detail.ts, and nothing here parses markup.
  */
 
-import { COPY_LABEL, renderDetail } from '/js/render-detail.ts';
+import { copier, renderDetail } from '/js/render-detail.ts';
 import { createFilters } from '/js/render-filters.ts';
 import { registerWorker, setUpInstall } from '/js/render-install.ts';
 import {
   appendOlder,
+  backoffMs,
   countLabel,
   filterThoughts,
   freshLabel,
@@ -60,7 +61,9 @@ const state = {
   pending: [], // thoughts that arrived while paused, newest first, at most LIST_CAP
   paused: false,
   loaded: false, // true once the first page has arrived
-  firstFailed: false, // true when the first page could not be fetched: it is asked for again once the feed is live
+  firstFailed: false, // true when the first page could not be fetched and has not been asked for again
+  firstTries: 0, // how many times a failed first page was asked for again on a timer
+  asked: 0, // counts requests for the first page: a reply that is not for the latest one is dropped
   next: null, // cursor for "load older", or null when there is no older page
   stream: 'connecting',
   delay: readDelay(els.pause.getAttribute('data-delay')),
@@ -123,6 +126,12 @@ function updateStatus() {
   updateFresh();
 }
 
+/** Says that a request failed, unless the feed is down too: "Reconnecting..." is then the truer word. */
+function sayFailed(message) {
+  if (state.stream === 'connecting' || state.stream === 'reconnecting') return;
+  els.status.textContent = message;
+}
+
 /** The line under the filters: how many entries are shown, and how far a search has reached. */
 function updateCount(shown) {
   els.count.textContent = countLabel(
@@ -144,27 +153,10 @@ function refreshKept(keyword) {
   state.drawnDay = day;
 }
 
-/**
- * True when this browser lets a page write to the clipboard (a secure context with the Clipboard API).
- * Without it no entry gets a "Copy entry" button.
- */
-const CAN_COPY =
-  typeof navigator === 'object' && typeof navigator.clipboard?.writeText === 'function';
-const COPY_LABEL_MS = 1500;
-
-/**
- * Puts one entry on the reader's clipboard as plain text, on their click. The page only ever writes
- * text, never markup, and never reads the clipboard. `say` sets the button's label.
- */
-function copyEntry(text, say) {
-  navigator.clipboard
-    .writeText(text)
-    .then(
-      () => say('Copied'),
-      () => say('Could not copy'),
-    )
-    .then(() => window.setTimeout(() => say(COPY_LABEL), COPY_LABEL_MS));
-}
+/** Puts an entry on the clipboard on a press of "Copy entry"; undefined where the browser gives no clipboard. */
+const copyEntry = copier(typeof navigator === 'object' ? navigator.clipboard : undefined, {
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+});
 
 /** What a row, a detail and the reader need to know about an entry's agent, and the page's own callbacks. */
 function entryOptions(view, keyword) {
@@ -174,7 +166,7 @@ function entryOptions(view, keyword) {
     mode: typeof agent?.mode === 'string' ? agent.mode : undefined,
     nowMs: Date.now(),
     keyword,
-    onCopy: CAN_COPY ? copyEntry : undefined,
+    onCopy: copyEntry,
     onSelect: (id) => {
       if (isWide()) reader.select(id);
     },
@@ -255,11 +247,17 @@ function drawLive(view) {
   return true;
 }
 
-/** Replaces the list with the first page, using the current server-side filters. */
+/**
+ * Replaces the list with the first page, using the current server-side filters. Two quick changes of a
+ * filter send two requests, and the slower reply may be the older one: only the latest is used.
+ */
 async function reload() {
   clearFresh();
+  state.asked += 1;
+  const mine = state.asked;
   try {
     const page = await getJson(thoughtsPath(null));
+    if (mine !== state.asked) return;
     state.list = page.thoughts.map(toView).slice(0, LIST_CAP);
     state.next = page.next;
     state.loaded = true;
@@ -267,9 +265,27 @@ async function reload() {
     state.details.clear();
     render();
   } catch {
-    if (!state.loaded) state.firstFailed = true;
-    els.status.textContent = 'Could not load thoughts.';
+    if (mine !== state.asked) return;
+    sayFailed('Could not load thoughts.');
+    if (!state.loaded) retryFirstLater();
   }
+}
+
+/** How many times a first page that failed is asked for again on a timer: after 0.5, 1, 2, 4 and 8 seconds. */
+const FIRST_TRIES = 5;
+
+/** Asks again for a failed first page a few times, then only when the feed comes back: never for ever. */
+function retryFirstLater() {
+  state.firstFailed = true;
+  if (state.firstTries >= FIRST_TRIES) return;
+  window.setTimeout(retryFirst, backoffMs(state.firstTries));
+  state.firstTries += 1;
+}
+
+function retryFirst() {
+  if (!state.firstFailed) return;
+  state.firstFailed = false;
+  loadFirst();
 }
 
 /** The agents, then the first page. A bookmark's filters are read from the URL in between. */
@@ -277,7 +293,7 @@ function loadFirst() {
   return getJson('/api/agents')
     .then(({ agents }) => filters.setAgents(agents))
     .catch(() => {
-      els.status.textContent = 'Could not load the agents.';
+      sayFailed('Could not load the agents.');
     })
     .then(() => {
       // A bookmarked agent may sit far along the row: bring its chip into view.
@@ -290,13 +306,16 @@ function loadFirst() {
 async function loadOlder() {
   if (state.next === null) return;
   els.older.disabled = true;
+  const mine = state.asked;
   try {
     const page = await getJson(thoughtsPath(state.next));
+    // The filters changed while the older page was on its way: it belongs to a list that is gone.
+    if (mine !== state.asked) return;
     state.list = appendOlder(state.list, page.thoughts.map(toView));
     state.next = page.next;
     render();
   } catch {
-    els.status.textContent = 'Could not load older thoughts.';
+    sayFailed('Could not load older thoughts.');
     els.older.disabled = state.next === null;
   }
 }
@@ -454,10 +473,7 @@ function start() {
       state.stream = status;
       updateStatus();
       // The page opened without a network (the installed app, offline): the feed is back, so the list is too.
-      if (status === 'live' && state.firstFailed) {
-        state.firstFailed = false;
-        loadFirst();
-      }
+      if (status === 'live') retryFirst();
     },
   });
 

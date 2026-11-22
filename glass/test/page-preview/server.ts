@@ -1,14 +1,18 @@
 // The Thought Stream page without Postgres or a shard, for looking at it while changing it. The page, its
-// files, the Content-Security-Policy, the Host check and the 404s are Glass's real handler
-// (glass/src/http.ts). Only the data is invented (sample.ts): this server answers the /api/ routes itself,
-// with a live entry every few seconds. Test-only, loopback only, never deployed.
+// files, the Content-Security-Policy, the Host check, the rate limits and the 404s are Glass's real handler
+// (glass/src/http.ts) under the limits it ships with. Only the data is invented (sample.ts): this server
+// answers the /api/ routes itself, with a live entry every few seconds. Test-only, loopback only, never
+// deployed.
 //
-//   node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds]
+//   node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]
 //
 // Defaults: 8790, 5 and 60. 0 live-entry-seconds means no live entries. Open http://localhost:8790/.
+// The word "unlimited" as the fourth argument turns the rate limits off, for a script that loads the page
+// many times in a row (screenshots). Leave it out to see what a visitor gets.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHandler } from '../../src/http.ts';
+import { buildLimiters } from '../../src/policy.ts';
 import type { SqlClient } from '../../src/query.ts';
 import type { SseHub } from '../../src/sse.ts';
 import { AGENTS, type Entry, entry, HISTORY, POOL, type Row } from './sample.ts';
@@ -16,6 +20,11 @@ import { AGENTS, type Entry, entry, HISTORY, POOL, type Row } from './sample.ts'
 const port = Number(process.argv[2] ?? 8790);
 const liveSeconds = Number(process.argv[3] ?? 5);
 const delaySeconds = Number(process.argv[4] ?? 60);
+// The limits Glass ships with (the defaults in glass/src/config.ts), so a page that asks for too much is refused here too.
+const limits =
+  process.argv[5] === 'unlimited'
+    ? {}
+    : buildLimiters({ perMinute: 60, burst: 20, maxClients: 1024 });
 
 const DAY_MS = 86_400_000;
 const now = Date.now();
@@ -87,7 +96,7 @@ function api(req: IncomingMessage, res: ServerResponse): boolean {
 const handler = createHandler({
   db: {} as SqlClient,
   hub: {} as SseHub,
-  policy: { delaySeconds },
+  policy: { delaySeconds, ...limits },
   extra: api,
 });
 
