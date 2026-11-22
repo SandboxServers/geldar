@@ -3,7 +3,7 @@ title: "Building: the flag, rollback, restart windows and what to do after an in
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-22 against 35fa5207
+last_verified: 2026-11-22 against 727109a3
 companions: [README.md, coreprotect.md, block-owner.md, nats-auth-inplace.md, kill-switch-programs.md, incident-response.md]
 sources: [docs/analysis/building/work-packets.md, docs/decisions/0420-agents-build-and-break-freely-in-survival.md, docs/decisions/0422-building-accepted-risks.md, docs/decisions/0426-building-rollout-both-shards.md]
 ---
@@ -29,23 +29,34 @@ it with the owner.
 
 - The flag is `body_actions.building`. It defaults to `false`. It is declared in the shard config schema and read
   like `body_actions.use` (decision [0218](../decisions/0218-use-mount-dismount-verbs.md) sets the pattern).
-- Flag off: the `break` and `plan` verbs are refused with the neutral message `not_possible: building is off`, the
-  `survey` and `plan_check` MCP tools are hidden and refused, and the plan lane is not registered. Nothing runs in
+- Flag off: the `break` and `plan` verbs are refused with the neutral message `not_possible: building is not available`, the
+  `survey` and `plan_check` MCP tools are refused. The MCP does not read `body_actions.building`; whether they are listed is `sovereign.mcp.show_unavailable_tools`, a separate colo setting. `plan_check` is refused even when the flag is on (see the TODO list). The plan lane is not registered. Nothing runs in
   the background.
 - Flag on: agents may break blocks and queue plans, within the physical limits that remain (out of reach, unbreakable
   blocks, unloaded chunks, no reachable stand). The dig-safety refusals for falling blocks, liquids and walled-in cells
   are removed (decision [0428](../decisions/0428-dig-safety-refusals-removed.md)). Deaths are part of the experiment.
-- The flag is a node config change, not a Paper plugin or jar change. Nothing else is needed to switch it on or off.
+- The flag is a shard config change (`shards/colo-mind.yaml`), not a Paper plugin or jar change. It does not expose the MCP tools; see the TODO list.
+
+## TODO after code fix
+
+Not in the code yet. Do not treat these as behaviour.
+
+- Bucket creation only when the flag is on: today the Body creates `geldar-plans` and `geldar-seen` at every start, flag on or off (`golem/src/body/restart.ts`, lines 149 to 150).
+- Seed: `golem/src/seed-buckets.ts` does not seed either bucket. The owner seeds them by hand (`docs/runbooks/nats-auth-inplace.md`).
+- Metrics emission: the plan and seen metric methods in `golem/src/metrics.ts` have no call sites; no `geldar_plan_*` or `geldar_seen_*` series is emitted yet.
+- The MCP reads `body_actions.building`: today it does not.
+- `plan_check` is refused even when the flag is on (`threshold/mcp/src/world.ts`; no caller of `planCheckTool`).
+- Default Body API prompt: v10 today. The Mind is not taught `break` or `plan` until the default changes to v12 (`animus/src/prompts/library.ts`).
 
 ## Rollback: turn the flag off
 
 Use this to stop new building on a shard. It is the only rollback this campaign provides.
 
-1. Set `body_actions.building: false` in the node's shard config for the shard you are stopping.
+1. Set `body_actions.building: false` in `shards/colo-mind.yaml` (the file has no `building` key today; add it under `body_actions`). The Body and MCP read that file through a read-only bind mount, so commit the change, then restart.
 2. Restart the Bodies so the Body start reads the new value (the flag is read when a Body starts). The restart path
    is the one in [deploy/README.md](../../deploy/README.md).
-3. Check that the flag is off: a `break` attempt is refused with `not_possible: building is off`, and the MCP tools
-   `survey` and `plan_check` are not listed.
+3. Check that the flag is off: a `break` attempt is refused with `not_possible: building is not available`, and the MCP tools
+   `survey` and `plan_check` are refused, and are not listed when `show_unavailable_tools` is false.
 
 What turning the flag off does not do:
 

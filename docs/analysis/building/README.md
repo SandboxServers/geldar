@@ -1,6 +1,6 @@
 # Building campaign (free-form block placement and removal for agents)
 
-Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `ecae177c` (BLD-38h merged). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
+Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `727109a3` at the time of docs packet BLD-docsfix-1 (BLD-38h merged). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
 
 ## Purpose
 
@@ -35,7 +35,7 @@ Numbers 0420 to 0429 are all used. Verified on `origin/main` and every remote br
 
 ## Packets
 
-Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done, Manual (not run). Wave 3a rows (BLD-38 family) have no entry in the packet file; their scope is the one-line summary in their worknote.
+Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done, Manual (not run), Partial (wiring open: merged, but a named wire or source is still missing; the note says which). Wave 3a rows (BLD-38 family) have no entry in the packet file; their scope is the one-line summary in their worknote.
 
 | ID | Title | Wave (graph) | Size | Restarts | Depends | Status |
 |---|---|---|---|---|---|---|
@@ -56,7 +56,7 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | Done |
 | BLD-17 | Seen-block recorder | 1 | M | Y | S3a | Done |
 | BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | Done |
-| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Done (MANUAL NATS role and seed open) |
+| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Partial (wiring open): no predecessor source, nothing inherited; MANUAL NATS role and seed open |
 | BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | Done |
 | BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | Done (review pending) |
 | BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | Done |
@@ -66,11 +66,11 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | Done |
 | BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | Done |
 | BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | Done |
-| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Done |
-| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | Done (worknote: plan_progress presenter not done) |
-| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Done |
+| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Partial (wiring open): `plan_check` refuses in `world.ts`; no caller of `planCheckTool` |
+| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | Partial (wiring open): presenter in df27bb82; `status.active_plan` has no source |
+| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Partial (wiring open): plan and seen metric methods have no call sites; no series emitted |
 | BLD-30 | Operator runbook | 5 | S | N | 14 | Done |
-| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | Done |
+| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | Partial (wiring open): panel off; Glass feed and flag gate not wired |
 | BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | Done in kit repo (kit PR 137; tag and upgrades MANUAL) |
 | BLD-28 | Paper integration test | 6 | M | N | all code | Done (live test written, NOT run) |
 | BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | Manual (not run) |
