@@ -1,6 +1,6 @@
 # 0389: `use` with an item and no target puts the item in hand
 
-- Status: Accepted (owner, Cadacious, 2026-11-18). Amends 0218 (the no-target shape).
+- Status: Accepted (owner, 2026-11-18). Amends 0218 (the no-target shape).
 - Date: 2026-11-18
 
 ## Context
@@ -28,7 +28,7 @@ This amends 0218's no-target clause. 0218 said that with neither `at` nor `entit
    - the Body sends `detail.fact` as the outcome's `detail_text`, cut to 160 characters (`golem/src/body/executor-outcome.ts`);
    - `use` joins `PLAIN_FACT_VERBS` (`contract/src/outcome-words.ts`), the list of verbs whose successful outcome keeps its fact on the way to the Mind (`threshold/mcp/src/events/handlers/action-outcome.ts`).
    
-   The `action-outcome-event` schema's description adds `use` to the verbs that send a fact. This is a description change only, so the action shape is unchanged. The owner chose that agents read this fact (Cadacious, 2026-11-18).
+   The `action-outcome-event` schema's description adds `use` to the verbs that send a fact. This is a description change only, so the action shape is unchanged. The owner chose that agents read this fact (owner, 2026-11-18).
 5. When the fishing rod ships (0222), the rod's air click takes this shape for `fishing_rod` alone. Every other item is held.
 6. The `body_actions.use` shard flag gates this shape like every other `use`.
 7. No contract shape change, no new verb, no prompt version bump. Agents are not told: no persona, skill or goals text changes. They find the shape by trying it, the same way they found the refusals.
