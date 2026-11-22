@@ -423,7 +423,8 @@ fetch_coreprotect() {
 # Caddy shows. The lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
 # load_node_env fills an unset variable from the file and exports it; save_node_env writes the values in force.
 # REGISTER_KILL_SWITCH (compose/colo.yml, default true = sign-up closed) is also a node env name: the file value and a
-# shell value must be exactly true or false, anything else dies before anything is deployed. A shell value wins over the file.
+# shell value must be exactly true or false, anything else dies before anything is deployed. A shell value wins over the file
+# for this run, but save_node_env never persists it: it writes back the file's own REGISTER_KILL_SWITCH line, if it has one.
 NODE_PROXY_VARS="GELDAR_GLASS_TRUSTED_PROXIES GELDAR_MCP_TRUSTED_PROXIES"
 NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET REGISTER_TRUSTED_PEERS REGISTER_KILL_SWITCH"
 # node_env_check NAME VALUE SOURCE: dies unless VALUE is allowed for NAME (SOURCE names where it came from).
@@ -459,12 +460,19 @@ save_node_env() {
     say "dry-run, not run: persist the trusted proxy lists in $STATE_DIR/node.env"
     return 0
   fi
+  # The kill switch is re-read from the file, never taken from the shell: a one-off override is not persisted.
+  ks_file=$(sed -n "s/^REGISTER_KILL_SWITCH=//p" "$STATE_DIR/node.env" 2>/dev/null | tail -n 1)
+  [ -z "$ks_file" ] || node_env_check REGISTER_KILL_SWITCH "$ks_file" "$STATE_DIR/node.env"
   (
     umask 077
     mkdir -p "$STATE_DIR" || exit 1
     : >"$STATE_DIR/node.env.new"
     for v in $NODE_ENV_VARS; do
-      eval "cur=\${$v:-}"
+      if [ "$v" = REGISTER_KILL_SWITCH ]; then
+        cur=$ks_file
+      else
+        eval "cur=\${$v:-}"
+      fi
       [ -z "$cur" ] || echo "$v=$cur" >>"$STATE_DIR/node.env.new"
     done
     mv "$STATE_DIR/node.env.new" "$STATE_DIR/node.env"

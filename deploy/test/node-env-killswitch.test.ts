@@ -142,6 +142,32 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
     expect(readFileSync(join(bare, 'node.env'), 'utf8')).not.toContain('REGISTER_KILL_SWITCH');
   });
 
+  it('a shell value is never persisted: shell false creates no line in an empty file', () => {
+    const bare = sandbox();
+    expect(sh('load_node_env; save_node_env', bare, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(0);
+    expect(readFileSync(join(bare, 'node.env'), 'utf8')).not.toContain('REGISTER_KILL_SWITCH');
+  });
+
+  it('a shell override leaves the file line as it was (the file value is kept, not the shell one)', () => {
+    const state = sandbox('REGISTER_KILL_SWITCH=false\n');
+    expect(sh('load_node_env; save_node_env', state, { REGISTER_KILL_SWITCH: 'true' }).code).toBe(0);
+    expect(readFileSync(join(state, 'node.env'), 'utf8')).toBe('REGISTER_KILL_SWITCH=false\n');
+    const again = sandbox('REGISTER_KILL_SWITCH=true\n');
+    expect(sh('load_node_env; save_node_env', again, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(0);
+    expect(readFileSync(join(again, 'node.env'), 'utf8')).toBe('REGISTER_KILL_SWITCH=true\n');
+  });
+
+  it('an invalid file value dies on save, with or without a shell override, and the file is left alone', () => {
+    for (const env of [{}, { REGISTER_KILL_SWITCH: 'true' }]) {
+      const state = sandbox('REGISTER_KILL_SWITCH=no\n');
+      const r = sh('save_node_env; printf reached', state, env);
+      expect(r.code, JSON.stringify(env)).not.toBe(0);
+      expect(r.out, JSON.stringify(env)).toContain('must be exactly true or false');
+      expect(r.out, JSON.stringify(env)).not.toContain('reached');
+      expect(readFileSync(join(state, 'node.env'), 'utf8')).toBe('REGISTER_KILL_SWITCH=no\n');
+    }
+  });
+
   it('say_node_env prints the value in force, true, false or unset, also on a dry run', () => {
     const say = 'load_node_env; say_node_env';
     expect(sh(say, sandbox('REGISTER_KILL_SWITCH=false\n'), { DEPLOY_DRY_RUN: '1' }).out).toContain(
