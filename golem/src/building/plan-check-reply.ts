@@ -1,42 +1,34 @@
 // The Body's answer to a `plan_check` request (BLD-22b): a dry run of a plan against the Body's pack and
 // seen map. It places and breaks nothing. The seen map is read for a boolean per cell: a cell never seen
 // counts as unknown and its coordinates never leave this file. The reply is the contract's plan_check
-// result, or a refusal (`plan_too_large` over the cell cap, `not_available` when the building flag is off).
+// result, or a refusal (`not_available` when the building flag is off, or the walk was superseded).
+//
+// The dry run has no cell cap (decision 0423). It streams the plan one step at a time and one layer at a
+// time (lazyBottomUp, the production order), so only one layer is held. It yields to the event loop after
+// each slice of cells, and stops when its signal aborts (a newer plan_check, or the Body ends).
 import { validateToolInput, validateToolResult } from '@geldar/contract';
-import {
-  type Cell,
-  expandPlan,
-  type PlanCell,
-  type PlanSpec,
-  type PlanStep,
-  tallyMaterials,
-} from '@geldar/player-core/src/building/index.ts';
+import type { Cell, PlanSpec, PlanStep } from '@geldar/player-core/src/building/index.ts';
+import { type LayerObserver, lazyBottomUp } from '@geldar/player-core/src/building/layers.ts';
 import type { SeenMap } from './seen/section.ts';
+import { COUNT_SLICE } from './wire-expand.ts';
 
 /** The planning estimate: one tick per cell (the placeholder the MCP tool used before BLD-22b). */
 export const PLAN_CHECK_TICKS_PER_CELL = 1;
-
-/** Most cells one dry run expands. A plan over it is refused as `plan_too_large`; no cell past it is expanded. */
-export const PLAN_CHECK_CELL_CAP = 8_192;
 
 const MAX_REASON = 120;
 
 /** Most invalid steps one reply lists; the rest are dropped (the count of cells is still exact). */
 export const MAX_INVALID_STEPS = 256;
 
-/**
- * Most rows or cells one step may span before it is refused as `plan_too_large`, checked before the step is
- * expanded. A step over it always has more than PLAN_CHECK_CELL_CAP cells (a box has at least one cell per
- * x-y column, a wall has its length times its height, a sphere of this face has a shell over 4 pi r^2 cells),
- * so no answer that the cap would give changes.
- */
-const WORK_BOUND = 4 * PLAN_CHECK_CELL_CAP;
-
 /** What a dry run reads from the Body: the seen map, the pack by item name, and the feet cell. */
 export interface PlanCheckBody {
   seen: SeenMap;
   pack: () => Record<string, number>;
   feet: () => Cell;
+  /** Cells counted between two yields to the event loop; read before each slice. Default COUNT_SLICE. */
+  sliceFor?: () => number;
+  /** Told each layer as the walk materializes it (a measuring hook; the answer does not use it). */
+  layers?: LayerObserver;
 }
 
 /** The part of the Body's bot a dry run reads: its inventory and its position. */
@@ -55,76 +47,112 @@ export interface PlanCheckResult {
 }
 
 /** The reply: the dry run, or a refusal. `invalid_input` is an answer the gateway reads as a failure. */
-export type PlanCheckAnswer =
-  | PlanCheckResult
-  | { error: 'invalid_input' | 'not_available' | 'plan_too_large' };
+export type PlanCheckAnswer = PlanCheckResult | { error: 'invalid_input' | 'not_available' };
 
-/** Thrown inside the expansion once the cap is passed; the answer maps it to `plan_too_large`. */
-class PlanTooLarge extends Error {}
+/** Thrown inside the walk once its signal aborts; the answer maps it to `not_available`. */
+class WalkAborted extends Error {}
 
 /**
  * The Mind-link server's `plan_check` option for a Body whose seen map exists (the building flag is on):
- * each request is answered from the map, the bot's pack and its feet cell. A bot with no position is
- * `not_available`, so the gateway fails closed.
+ * each request is answered from the map, the bot's pack and its feet cell. A new request supersedes the
+ * walk still running (it aborts, and answers not_available). `lifeSignal` ends every walk when the Body
+ * ends. A bot with no position is `not_available`, so the gateway fails closed.
  */
-export function planCheckFrom(seen: SeenMap, bot: PlanCheckBot): (request: unknown) => unknown {
-  return (request) =>
-    answerPlanCheck({ seen, pack: () => packOf(bot), feet: () => feetOf(bot) }, request, true);
+export function planCheckFrom(
+  seen: SeenMap,
+  bot: PlanCheckBot,
+  lifeSignal?: AbortSignal,
+): (request: unknown) => Promise<unknown> {
+  let running: AbortController | null = null;
+  return (request) => {
+    running?.abort();
+    const walk = new AbortController();
+    running = walk;
+    const signal =
+      lifeSignal === undefined ? walk.signal : AbortSignal.any([walk.signal, lifeSignal]);
+    return answerPlanCheck(
+      { seen, pack: () => packOf(bot), feet: () => feetOf(bot) },
+      request,
+      true,
+      signal,
+    );
+  };
 }
 
 /**
  * Answers a plan_check request. `building` is the shard's body_actions.building flag: off, every request
- * is `not_available` and the map is not read. Never throws.
+ * is `not_available` and the map is not read. `signal` aborts the walk (the answer is then `not_available`).
+ * Never throws.
  */
-export function answerPlanCheck(
+export async function answerPlanCheck(
   body: PlanCheckBody,
   request: unknown,
   building: boolean,
-): PlanCheckAnswer {
+  signal?: AbortSignal,
+): Promise<PlanCheckAnswer> {
   if (!building) return { error: 'not_available' };
   if (!validateToolInput('plan_check', request).ok) return { error: 'invalid_input' };
   try {
-    const check = dryRun((request as { plan: PlanSpec }).plan, body);
+    const check = await dryRun((request as { plan: PlanSpec }).plan, body, signal);
     return validateToolResult('plan_check', check).ok ? check : { error: 'not_available' };
-  } catch (error) {
-    if (error instanceof PlanTooLarge) return { error: 'plan_too_large' };
+  } catch {
     return { error: 'not_available' };
   }
 }
 
-/** Counts each step on its own. A step that fails to expand adds nothing and is listed as invalid. */
-function dryRun(plan: PlanSpec, body: PlanCheckBody): PlanCheckResult {
+/**
+ * Counts each step on its own, one layer at a time. A step that fails to expand adds nothing and is
+ * listed as invalid. The step's counts are merged only when the step finishes, so a step that fails
+ * part way adds no cells.
+ */
+async function dryRun(
+  plan: PlanSpec,
+  body: PlanCheckBody,
+  signal?: AbortSignal,
+): Promise<PlanCheckResult> {
   const base = originOf(plan, body.feet());
   const pack = body.pack();
+  const sliceFor = body.sliceFor ?? (() => COUNT_SLICE);
   const invalid: { index: number; reason: string }[] = [];
   const counts = new Map<string, number>();
   let cells = 0;
   let unknown = 0;
-  plan.steps.forEach((step, index) => {
+  let inSlice = 0;
+  let limit = sliceLimit(sliceFor);
+  for (const [index, step] of plan.steps.entries()) {
+    if (signal?.aborted) throw new WalkAborted('superseded');
     if (namesMissingKey(step, plan)) {
       invalid.push({ index, reason: 'unknown_palette_key' });
-      return;
+      continue;
     }
-    if (overWorkBound(step)) throw new PlanTooLarge('work bound');
+    const stepCounts = new Map<string, number>();
     let stepCells = 0;
     let stepUnknown = 0;
-    const visit = (cell: Cell): void => {
-      stepCells++;
-      if (cells + stepCells > PLAN_CHECK_CELL_CAP) throw new PlanTooLarge('cell cap');
-      if (body.seen.read(cell.x, cell.y, cell.z) === undefined) stepUnknown++;
-    };
     try {
-      const stepTally = tallyMaterials(
-        shifted(expandPlan({ palette: plan.palette, steps: [step] }), base, visit),
+      const layers = lazyBottomUp(
+        { palette: plan.palette, steps: [step] } as PlanSpec,
+        base,
+        body.layers,
       );
-      cells += stepCells;
-      unknown += stepUnknown;
-      for (const [pal, n] of Object.entries(stepTally)) counts.set(pal, (counts.get(pal) ?? 0) + n);
+      for (const cell of layers) {
+        stepCells++;
+        if (body.seen.read(cell.x, cell.y, cell.z) === undefined) stepUnknown++;
+        if (cell.pal !== null) stepCounts.set(cell.pal, (stepCounts.get(cell.pal) ?? 0) + 1);
+        if (++inSlice >= limit) {
+          inSlice = 0;
+          limit = sliceLimit(sliceFor);
+          await pause(signal);
+        }
+      }
     } catch (error) {
-      if (error instanceof PlanTooLarge) throw error;
+      if (error instanceof WalkAborted) throw error;
       invalid.push({ index, reason: reasonOf(error) });
+      continue;
     }
-  });
+    cells += stepCells;
+    unknown += stepUnknown;
+    for (const [pal, n] of stepCounts) counts.set(pal, (counts.get(pal) ?? 0) + n);
+  }
   const material_needs: PlanCheckResult['material_needs'] = {};
   for (const [pal, need] of counts) {
     const block = blockOf(plan, pal);
@@ -140,25 +168,16 @@ function dryRun(plan: PlanSpec, body: PlanCheckBody): PlanCheckResult {
   };
 }
 
-/**
- * True when a step's geometry would walk more than WORK_BOUND rows or cells. Only the shapes that could be
- * large are read (a step with a missing field is left to the expansion, which lists it as invalid).
- */
-function overWorkBound(step: PlanStep): boolean {
-  if ((step.op === 'box' || step.op === 'hollow_box') && step.from && step.to) {
-    const columns =
-      (Math.abs(step.to.x - step.from.x) + 1) * (Math.abs(step.to.y - step.from.y) + 1);
-    return columns > WORK_BOUND;
-  }
-  if (step.op === 'wall' && step.from && step.to && step.height !== undefined) {
-    const length =
-      Math.max(Math.abs(step.to.x - step.from.x), Math.abs(step.to.z - step.from.z)) + 1;
-    return length * step.height > WORK_BOUND;
-  }
-  if (step.op === 'sphere' && step.radius !== undefined) {
-    return (2 * step.radius + 1) ** 2 > WORK_BOUND;
-  }
-  return false;
+/** Yields to the event loop once, then stops the walk if its signal has aborted. */
+async function pause(signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  if (signal?.aborted) throw new WalkAborted('superseded');
+}
+
+/** A slice size as a whole number of at least 1; a value that is not a number counts as 1. */
+function sliceLimit(sliceFor: () => number): number {
+  const n = sliceFor();
+  return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
 }
 
 /** The offset relative cells are measured from: none, a coordinate, or the feet cell for `here`. */
@@ -167,19 +186,6 @@ function originOf(plan: PlanSpec, feet: Cell): Cell {
   if (origin === undefined) return { x: 0, y: 0, z: 0 };
   if (origin === 'here') return feet;
   return origin;
-}
-
-/** Shifts each expanded cell by the origin and reports it to `visit`; lazy, so nothing is collected. */
-function* shifted(
-  cells: Iterable<PlanCell>,
-  base: Cell,
-  visit: (cell: Cell) => void,
-): IterableIterator<PlanCell> {
-  for (const cell of cells) {
-    const at = { x: cell.x + base.x, y: cell.y + base.y, z: cell.z + base.z };
-    visit(at);
-    yield { ...at, pal: cell.pal };
-  }
 }
 
 /** A placing step must name a palette key the plan defines (the expansion does not check that). */

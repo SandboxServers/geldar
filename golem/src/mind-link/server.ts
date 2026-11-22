@@ -59,11 +59,11 @@ const SURVEY_NOT_AVAILABLE = JSON.stringify({ error: 'not_available' });
  * Replies to a building request (survey, plan_check) with `answer`'s result for its JSON request, or the
  * `not_available` refusal when no answer is wired or the request is not JSON.
  */
-function answerFrom(
+async function answerFrom(
   answer: ((request: unknown) => unknown) | undefined,
   data: string,
   reply: (body: string) => void,
-): void {
+): Promise<void> {
   let request: unknown;
   try {
     request = JSON.parse(data) as unknown;
@@ -71,7 +71,7 @@ function answerFrom(
     request = undefined;
   }
   if (answer === undefined || request === undefined) reply(SURVEY_NOT_AVAILABLE);
-  else reply(JSON.stringify(answer(request)));
+  else reply(JSON.stringify(await answer(request)));
 }
 
 /** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */

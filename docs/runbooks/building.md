@@ -46,8 +46,10 @@ it with the owner.
 ## Limits that exist in code
 
 - **Survey box:** a box over 32768 cells is refused as `box_too_large`; the MCP tool returns `invalid_input`.
-- **plan_check:** over 8192 cells the reply is `plan_too_large`; at most 256 `invalid_steps` are returned. The
-  contract has no `maxItems` on `invalid_steps`.
+- **plan_check:** no cell cap (decision 0423). The dry run streams the plan one step and one layer at a time,
+  yields to the event loop between slices, and counts every cell; a new `plan_check` or the Body ending stops the
+  walk in progress (it answers `not_available`). At most 256 `invalid_steps` are returned. The contract has no
+  `maxItems` on `invalid_steps`.
 - **plan:** no size cap. A very large plan (for example a sphere of radius 60 or more) is expanded in full before it
   runs; see the known gaps in RESUME.md. Only the lane throttle limits the work per tick.
 - **Facing:** a block state is accepted only as stairs `half`. `facing`, `axis` and other keys are refused by name
@@ -147,7 +149,7 @@ the owner must rule on any change.
 2. **Nothing is protected** (decision 0420). The town, the ranger bases, the spawn and every agent's work can be
    broken. There is no protected block code.
 3. **No caps in policy.** The lane is tick-budgeted and slows down under server load (decision 0423). The code limits
-   listed above (survey box, plan_check) are health bounds, not policy caps; `plan` has no size bound in code.
+   listed above (survey box) are health bounds, not policy caps; `plan` and `plan_check` have no size bound in code.
 4. **All 19 at once** (decision 0426), behind the flag.
 5. **Known deviations from the spec.** The spec says Geldar-Core protects the Shrine, the Moot Stone and the example
    Cradle; the code does not, and the campaign does not add it. The inline `build` action is deleted (0427). The
