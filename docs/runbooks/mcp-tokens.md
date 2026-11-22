@@ -19,6 +19,14 @@ Before `mcp-tokens player add` for a NEW sovereign player, the player name must 
 - Names are stored lower-cased, so `Ranger` and `ranger` are the same name.
 - `player add` refuses an unlisted name with `ROSTER_NOT_LISTED`. Fix the roster, then run it again.
 - Existing rangers and their tokens are unaffected by roster changes.
+
+### Moving a player to another owner (assign-cmd)
+
+- `deploy/colo-admin.sh player-set-owner <player-id> <owner-id>` (`DEPLOY_DRY_RUN=1` prints the plan and writes nothing). It runs `mcp-tokens player set-owner` in the admin container.
+- One transaction moves three links: `mcp_players.owner_id`, the `mcp_roster` row of the player's name, and `agents.owner` of its life. A missing roster row makes the supervisor refuse Body starts, and a missed `agents.owner` breaks Kino and Glass scope and deletion, so all three move or none does.
+- It refuses an unknown player, an unknown owner, a retired player, and a move that would take the target owner past its `player_cap` (active and paused players count). A player already on the target owner is a no-op: it prints `nothing changed` and writes no audit row.
+- A successful move writes one `register_audit` row (action `player.set_owner`, detail with the owner ids only).
+- The target owner's cap must be at least its player count after the move. `deploy/colo-admin.sh owner-set-cap <owner-id> 20` (range 0 to 50) is enough for 20 players; the cap default is 3.
 - Nothing seeds the roster automatically on the node. Run `roster seed` only with the owner's go-ahead.
 
 On the Colo node, run the same step through the operator wrapper (the name is the Minecraft name, 1 to 16 letters, digits
