@@ -23,9 +23,6 @@ const DIAGONALS: ReadonlyArray<readonly [number, number]> = [
 /** Body feet positions the geometry tests stand the Body at. */
 const BODIES: readonly Vec3[] = [new Vec3(0, 64, 0), new Vec3(10, 70, -4), new Vec3(-7, 40, 12)];
 
-const FALL_REFUSAL = 'stone is unsafe to dig: gravel above it would fall on you';
-const WALLED_REFUSAL = 'gravel falls when dug, and you have no open cell beside you';
-
 /** A bot whose feet are at `feet`, with `blocks` in the world. */
 function bodyAt(feet: Vec3, blocks: FakeBlock[]) {
   const bot = fakeBot(blocks);
@@ -76,15 +73,11 @@ describe('mine: the falling block above the stone is refused, by where the Body 
     [...SIDES, ...DIAGONALS].map(([dx, dz]) => [feet, dx, dz] as const),
   );
   it.each(beside)(
-    'refuses a stone beside the Body (feet %o, offset %i,%i)',
+    'digs a stone beside the Body under gravel, decision 0428 (feet %o, offset %i,%i)',
     async (feet, dx, dz) => {
       const bot = bodyAt(feet, stoneUnderGravel(feet.offset(dx, 0, dz)));
-      expect(await mine(bot, 1, 'stone')).toMatchObject({
-        status: 'failed',
-        reason: 'not_possible',
-        message: FALL_REFUSAL,
-      });
-      expect(bot.dig).not.toHaveBeenCalled();
+      expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+      expect(bot.dig).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -100,30 +93,20 @@ describe('mine: the falling block above the stone is refused, by where the Body 
   );
 
   // Head at the stone's level + 3 is refused; + 4 is not. The Body below the column is refused too.
-  it.each([
-    [new Vec3(0, 62, 0), FALL_REFUSAL],
-    [new Vec3(0, 63, 0), 'completed'],
-    [new Vec3(0, 50, 0), FALL_REFUSAL],
-  ] as const)('applies the height bound for feet at %o', async (feet, outcome) => {
-    const at = new Vec3(1, 60, 0);
-    const bot = bodyAt(feet, stoneUnderGravel(at));
-    const result = await mine(bot, 1, 'stone');
-    if (outcome === 'completed') {
-      expect(result).toMatchObject({ status: 'completed' });
-    } else {
-      expect(result).toMatchObject({ status: 'failed', reason: 'not_possible', message: outcome });
-      expect(bot.dig).not.toHaveBeenCalled();
-    }
-  });
+  it.each([[new Vec3(0, 62, 0)], [new Vec3(0, 63, 0)], [new Vec3(0, 50, 0)]] as const)(
+    'digs the stone whatever the height of the Body (feet %o), decision 0428',
+    async (feet) => {
+      const bot = bodyAt(feet, stoneUnderGravel(new Vec3(1, 60, 0)));
+      expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+      expect(bot.dig).toHaveBeenCalledTimes(1);
+    },
+  );
 
-  it('refuses at the height bound from a Body in another place, and digs one cell above it', async () => {
+  it('digs at the height bound from a Body in another place, and one cell above it', async () => {
     const feet = new Vec3(10, 70, -4);
     const at = new Vec3(11, 67, -4);
     const atBound = bodyAt(new Vec3(10, 69, -4), stoneUnderGravel(at));
-    expect(await mine(atBound, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      message: FALL_REFUSAL,
-    });
+    expect(await mine(atBound, 1, 'stone')).toMatchObject({ status: 'completed' });
     const aboveBound = bodyAt(feet.offset(0, 0, 0), stoneUnderGravel(at));
     expect(await mine(aboveBound, 1, 'stone')).toMatchObject({ status: 'completed' });
   });
@@ -138,29 +121,21 @@ describe('mine: a 2-high gravel bank beside the Body', () => {
   it.each([
     ['bottom first', 0],
     ['top first', 1],
-  ])('digs the top block when the bottom is refused (%s)', async (_order, which) => {
-    const bottom = block(GRAVEL, new Vec3(1, 64, 0), [], undefined, 'gravel');
-    const top = block(GRAVEL, new Vec3(1, 65, 0), [], undefined, 'gravel');
-    const bot = which === 0 ? fakeBot([bottom, top]) : fakeBot([top, bottom]);
-    expect(await mine(bot, 1, 'gravel')).toMatchObject({
-      status: 'completed',
-      detail: { mined: 1 },
-    });
-    expect(bot.dig).toHaveBeenCalledTimes(1);
-    expect(bot.dig.mock.calls[0]?.[0]).toBe(top);
-  });
-
-  it('keeps the refusal text when every candidate is walled in', async () => {
-    const gravel = block(GRAVEL, new Vec3(2, 64, 0), [], undefined, 'gravel');
-    const bot = fakeBot([...pit(null, null), gravel]);
-    expect(await mine(bot, 1, 'gravel')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: WALLED_REFUSAL,
-      detail: { mined: 0 },
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
-  });
+  ])(
+    'digs the nearest of two stacked gravel blocks, whichever is listed first (%s)',
+    async (_order, which) => {
+      const bottom = block(GRAVEL, new Vec3(1, 64, 0), [], undefined, 'gravel');
+      const top = block(GRAVEL, new Vec3(1, 65, 0), [], undefined, 'gravel');
+      const bot = which === 0 ? fakeBot([bottom, top]) : fakeBot([top, bottom]);
+      expect(await mine(bot, 1, 'gravel')).toMatchObject({
+        status: 'completed',
+        detail: { mined: 1 },
+      });
+      expect(bot.dig).toHaveBeenCalledTimes(1);
+      // The fake lists the candidates in order: the first one listed is the nearest, and is dug.
+      expect(bot.dig.mock.calls[0]?.[0]).toBe(which === 0 ? bottom : top);
+    },
+  );
 });
 
 describe('mine: walled-in check for a falling block being dug', () => {
@@ -187,13 +162,11 @@ describe('mine: walled-in check for a falling block being dug', () => {
     expect(await mine(bot, 1, 'gravel')).toMatchObject({ status: 'completed' });
   });
 
-  it('refuses gravel when feet and head are walled on all four sides', async () => {
+  it('digs gravel when feet and head are walled on all four sides, decision 0428', async () => {
     const gravel = block(GRAVEL, new Vec3(2, 64, 0), [], undefined, 'gravel');
     const bot = fakeBot([...pit(null, null), gravel]);
-    expect(await mine(bot, 1, 'gravel')).toMatchObject({
-      status: 'failed',
-      message: WALLED_REFUSAL,
-    });
+    expect(await mine(bot, 1, 'gravel')).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -216,15 +189,11 @@ describe('mine: a pointed dripstone above the stone', () => {
     expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a stone under a hanging stalactite (tip down) beside the Body', async () => {
+  it('digs a stone under a hanging stalactite (tip down) beside the Body, decision 0428', async () => {
     const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
     const bot = fakeBot([stone, dripstone(new Vec3(1, 65, 0), 'down')]);
-    expect(await mine(bot, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'stone is unsafe to dig: pointed_dripstone above it would fall on you',
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
   it('does not count a stalagmite as a falling block in the shared hazard check', () => {
