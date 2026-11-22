@@ -143,7 +143,8 @@ export async function resumePlanLane(
   try {
     const cells = await persistence.readCells(saved.plan_id, saved.chunks);
     const entry = { planId: saved.plan_id, cells, chunks: saved.chunks };
-    if (!queue.restore(entry, saved.cursor)) return 'failed';
+    const counts = { counts: saved.counts, skipped: saved.skipped };
+    if (!queue.restore(entry, saved.cursor, counts)) return 'failed';
     persistence.adopt(saved.plan_id, saved.chunks);
     return 'resumed';
   } catch (error) {

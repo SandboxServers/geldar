@@ -1,10 +1,12 @@
 import {
   type ActionOutcomePayload,
   type ActionRecord,
+  type PlanProgressPayload,
   type Receipt,
   validateActionOutcomePayload,
   validateActionRecord,
   validateIntentEventPayload,
+  validatePlanProgressPayload,
   validateReceipt,
   validateReflexFiredPayload,
   validateWakePayload,
@@ -115,6 +117,12 @@ function clip(text: string | undefined): string | undefined {
  * is dropped alone, logged as an error and counted, so it never blocks the queue. `source_event_id` comes from the record (for an action, its `action_id` and
  * `state`), so a retry or a replay is one event to the sink.
  */
+/** The plan_progress check in the shape `emit` takes: the generated validator returns a boolean. */
+function checkPlanProgress(value: unknown): { ok: boolean; errors?: string[] } {
+  if (validatePlanProgressPayload(value)) return { ok: true };
+  return { ok: false, errors: [String(validatePlanProgressPayload.errors)] };
+}
+
 export class NatsRecordSink implements RecordSink {
   private readonly opts: NatsSinkOptions;
   private readonly queue: Queued[] = [];
@@ -232,6 +240,16 @@ export class NatsRecordSink implements RecordSink {
       tick,
       structuredClone(payload),
       validateActionOutcomePayload,
+    );
+  }
+
+  planProgress(payload: PlanProgressPayload, tick: number): void {
+    this.emit(
+      'plan_progress',
+      `plan_progress:${this.opts.lifeId}:${tick}:${payload.plan_id}:${payload.done}`,
+      tick,
+      structuredClone(payload),
+      checkPlanProgress,
     );
   }
 

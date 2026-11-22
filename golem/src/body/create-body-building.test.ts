@@ -11,6 +11,8 @@ function buildingBody(opts: { building: boolean; bot?: Bot }) {
   const ticks = manualTicks();
   const view = fakeView();
   const bot = opts.bot ?? fakeBot();
+  // A fake wall clock: each world tick is 50 ms of wall time (20 TPS), however slow the test is.
+  const wall = { ms: 0 };
   const made = createBody({
     lifeId: LIFE,
     bodyGeneration: 1,
@@ -19,8 +21,9 @@ function buildingBody(opts: { building: boolean; bot?: Bot }) {
     currentRevision: () => 1,
     view,
     building: opts.building,
+    wallClock: () => wall.ms,
   });
-  return { ...made, ticks, view, bot };
+  return { ...made, ticks, view, bot, wall };
 }
 
 /**
@@ -67,6 +70,7 @@ async function flush(): Promise<void> {
 
 /** One world tick: the view's tick moves to `age`, the source emits it, and the tick settles. */
 async function tickAt(made: ReturnType<typeof buildingBody>, age: number): Promise<void> {
+  made.wall.ms += 50;
   mutableView(made).tick = age;
   made.ticks.emit(age);
   await flush();

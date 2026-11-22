@@ -9,6 +9,7 @@ import { useHandler } from '../actions/use.ts';
 import { setSwimEnabled } from '../actions/water-rules.ts';
 import type { PlanQueueStore } from '../building/queue.ts';
 import { planHandler } from '../building/queue-action.ts';
+import type { WallClock } from '../building/tps-estimate.ts';
 import { createPlanExpand } from '../building/wire-expand.ts';
 import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
 import {
@@ -60,6 +61,8 @@ export interface CreateBodyOptions {
   seen?: Partial<Pick<SeenWiringOptions, 'kv' | 'agentId' | 'predecessor' | 'log'>>;
   /** Where queued plans and plan progress are stored (wire-plan-store); with the building flag on only. */
   planStore?: PlanQueueStore;
+  /** Wall-clock ms for the plan's TPS estimate and progress cadence. Default: Date.now. Tests inject one. */
+  wallClock?: WallClock;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -216,6 +219,7 @@ export function createBody(options: CreateBodyOptions): Body {
       runtime: built,
       expand: createPlanExpand(feet),
       ...(options.planStore === undefined ? {} : { store: options.planStore }),
+      ...(options.wallClock === undefined ? {} : { wallClock: options.wallClock }),
     });
   }
   built.actions.register(planHandler(options.building ?? false, plan?.queue ?? null));

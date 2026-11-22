@@ -1,12 +1,12 @@
-// Tick-budget throttle for the plan lane (BLD-15).
+// Tick-budget throttle for the plan lane (BLD-15, tick-based since BLD-38f2).
 //
 // This is a health throttle, not a policy cap. It sets no limit on cells, volume or
 // edits per day. It widens the minimum gap between block operations as the server's
 // reported TPS falls, and pauses the lane when the server is badly behind. The lane
 // resumes when TPS recovers. The TPS source is the existing `server_tps` world event.
-
-/** One server tick in milliseconds. */
-export const TICK_MS = 50;
+//
+// Every wait is a count of world ticks, read from the Body's tick hook. Nothing here
+// sleeps: a wait is a verdict for one tick, and the lane asks again on the next tick.
 
 /** Minimum gap in ticks between block operations at healthy TPS. */
 export const BASE_GAP_TICKS = 4;
@@ -20,30 +20,12 @@ export const PAUSE_BELOW_TPS = 12;
 /** Below this TPS the gap is doubled. At or above it the base gap applies. */
 export const SLOW_BELOW_TPS = 18;
 
-/** How often a paused lane re-reads TPS, in ticks. */
-export const PAUSE_POLL_TICKS = 20;
-
-/** Sleeps for `ms`, rejecting with the signal's reason if it aborts first. */
-export type ThrottleSleep = (ms: number, signal: AbortSignal) => Promise<void>;
-
-export interface ThrottleOptions {
-  signal: AbortSignal;
-  /** The body's time scale. Waits are multiplied by it, as in the other actions. */
-  timeScale?: number;
-  /** The latest `server_tps` value, or undefined when none has been reported yet. */
-  readTps: () => number | undefined;
-  /** Defaults to a real timer. Tests pass a fake clock. */
-  sleep?: ThrottleSleep;
-  /** Called once when the lane starts waiting for TPS to recover. */
-  onPause?: () => void;
-}
-
-export interface ThrottleResult {
-  /** The gap that was waited before this block operation, in ticks. */
-  gapTicks: number;
-  /** True when the lane was paused for TPS before this operation. */
-  paused: boolean;
-}
+/**
+ * What the throttle says before a cell: `go` (the cell may run now), `gap` (the gap since the
+ * last cell has not passed: wait for a later tick) or `tps` (TPS is below 12: the lane waits
+ * for TPS to recover, phase waiting_tps).
+ */
+export type ThrottleVerdict = 'go' | 'gap' | 'tps';
 
 /**
  * The gap in ticks for a TPS reading: the base gap at 18 TPS and above, doubled from
@@ -56,41 +38,25 @@ export function gapTicksFor(tps: number | undefined): number | null {
   return BASE_GAP_TICKS;
 }
 
-const defaultSleep: ThrottleSleep = (ms, signal) =>
-  new Promise<void>((resolve, reject) => {
-    signal.throwIfAborted();
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason);
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-
 /**
- * Waits before the next block operation. While TPS is below 12 it pauses, polling every
- * PAUSE_POLL_TICKS, and reports the pause once. Then it waits the TPS-dependent gap.
- * Throws the signal's reason if aborted, and propagates errors from `readTps`.
+ * The tick-based throttle. `before(now)` is asked before each cell at world tick `now`. It reads
+ * TPS (a throw propagates to the caller). Below 12 TPS it returns `tps` and no cell runs. Before
+ * the gap since the last cell has passed it returns `gap`. Otherwise it returns `go` and starts the
+ * next gap from `now`, so a cell is followed by `gapTicksFor(tps)` ticks of waiting.
  */
-export async function throttleWait(options: ThrottleOptions): Promise<ThrottleResult> {
-  const { signal, readTps } = options;
-  const scale = options.timeScale ?? 1;
-  const sleep = options.sleep ?? defaultSleep;
-  let paused = false;
-  for (;;) {
-    signal.throwIfAborted();
-    const gapTicks = gapTicksFor(readTps());
-    if (gapTicks !== null) {
-      await sleep(gapTicks * TICK_MS * scale, signal);
-      return { gapTicks, paused };
-    }
-    if (!paused) {
-      paused = true;
-      options.onPause?.();
-    }
-    await sleep(PAUSE_POLL_TICKS * TICK_MS * scale, signal);
+export class TickThrottle {
+  private nextTick = 0;
+  private readonly readTps: () => number | undefined;
+
+  constructor(readTps: () => number | undefined) {
+    this.readTps = readTps;
+  }
+
+  before(now: number): ThrottleVerdict {
+    const gap = gapTicksFor(this.readTps());
+    if (gap === null) return 'tps';
+    if (now < this.nextTick) return 'gap';
+    this.nextTick = now + gap;
+    return 'go';
   }
 }

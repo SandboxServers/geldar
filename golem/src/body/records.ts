@@ -1,4 +1,10 @@
-import type { ActionOutcomePayload, ActionRecord, Receipt, Thought } from '@geldar/contract';
+import type {
+  ActionOutcomePayload,
+  ActionRecord,
+  PlanProgressPayload,
+  Receipt,
+  Thought,
+} from '@geldar/contract';
 import type { ReflexOutcome } from './reflex.ts';
 import type { WakeRequest } from './wake.ts';
 
@@ -68,6 +74,8 @@ export interface RecordSink {
    * (C5-02). Optional, so a sink written before it keeps working.
    */
   actionOutcome?(payload: ActionOutcomePayload, tick: number): void;
+  /** One plan_progress event (BLD-16 counts). Optional: a sink without it drops progress. */
+  planProgress?(payload: PlanProgressPayload, tick: number): void;
 }
 
 /** A sink that keeps every record in order, in arrays. For tests and for a Body with no store. */
@@ -78,6 +86,7 @@ export class MemorySink implements RecordSink {
   readonly reflexes: ReflexFiredRecord[] = [];
   readonly wakes: WakeRequest[] = [];
   readonly outcomes: ActionOutcomePayload[] = [];
+  readonly progress: PlanProgressPayload[] = [];
 
   intentChanged(change: IntentChange): void {
     this.intents.push({ ...change });
@@ -102,5 +111,9 @@ export class MemorySink implements RecordSink {
 
   actionOutcome(payload: ActionOutcomePayload, _tick: number): void {
     this.outcomes.push(structuredClone(payload));
+  }
+
+  planProgress(payload: PlanProgressPayload, _tick: number): void {
+    this.progress.push(structuredClone(payload));
   }
 }

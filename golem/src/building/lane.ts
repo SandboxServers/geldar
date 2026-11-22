@@ -3,6 +3,7 @@
 // resume, so a cell is never placed twice: `done_already`). A death drops the plan. One plan at a
 // time; a second `start` is refused (BLD-14 adds the queue).
 import type { ActionContext } from '../actions/registry.ts';
+import { parseBlockRef } from './block-ref.ts';
 import {
   type CellCode,
   type CellEnv,
@@ -11,10 +12,27 @@ import {
   type PlanCell,
 } from './cell-do.ts';
 import type { LaneStateName } from './lane-state.ts';
+import { countMaterials } from './materials.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
+import type { ThrottleVerdict } from './throttle.ts';
 
 /** World ticks one `step` may run before it returns; the Body loop calls again on a later tick. */
 export const SLICE_TICKS = 4;
+
+/** What the lane reports for progress: the plan, its phase (`completed` or `failed` once it ended) and counts. */
+export interface LaneSnapshot {
+  planId: string;
+  total: number;
+  phase: LaneStateName | 'completed' | 'failed';
+  counts: Record<string, number>;
+}
+
+/** The item a materials wait is for: the block, how many are held and how many this cell needs. */
+export interface MaterialsShortfall {
+  block: string;
+  have: number;
+  need: number;
+}
 
 /** A plan the lane runs: its cells in order, the chunk count it is stored under, and the cursor to start from. */
 export interface LanePlan {
@@ -32,6 +50,12 @@ export interface LaneDeps {
   handlers: CellHandlers;
   /** The world tick now. A slice stops once it has run `SLICE_TICKS` ticks. */
   now: () => number;
+  /**
+   * Asked before each cell with the world tick (the TPS throttle, wire-lane). `go` runs the cell;
+   * `gap` and `tps` end this slice without a cell (`tps` sets phase waiting_tps) and the lane asks
+   * again on a later tick. A throw cancels the cell: the cursor stays and the lane keeps running.
+   */
+  beforeCell?: (now: number) => ThrottleVerdict;
 }
 
 /** Codes that leave the cell right: the cursor moves on. Every other code is skipped and recorded. */
@@ -51,16 +75,61 @@ export class PlanLane {
   private skipped: SkippedCell[] = [];
   private inFlight: AbortController | null = null;
   private gate: Promise<void> | null = null;
+  /** The plan last started (kept after it ends, for the completed progress event). */
+  private last: { planId: string; total: number } | null = null;
+  private completed = false;
+  private failed = false;
+  /** Set while the cursor waits on missing materials; cleared when the cell is counted or the plan ends. */
+  private shortfall: MaterialsShortfall | null = null;
 
-  /** Starts a plan from its cursor. Refused (false) while another plan is active. */
-  start(plan: LanePlan): boolean {
+  /**
+   * Starts a plan from its cursor, with the counts and skipped cells a checkpoint saved (empty for
+   * a new plan). Refused (false) while another plan is active.
+   */
+  start(
+    plan: LanePlan,
+    saved?: { counts: Record<string, number>; skipped: SkippedCell[] },
+  ): boolean {
     if (this.plan !== null) return false;
     this.plan = plan;
     this.cursor = plan.cursor ?? 0;
-    this.counts = {};
-    this.skipped = [];
+    this.counts = { ...(saved?.counts ?? {}) };
+    this.skipped = [...(saved?.skipped ?? [])];
     this.state = 'running';
+    this.last = { planId: plan.planId, total: plan.cells.length };
+    this.completed = false;
+    this.failed = false;
+    this.shortfall = null;
     return true;
+  }
+
+  /** The plan's progress view for a progress event; null before any plan. */
+  snapshot(): LaneSnapshot | null {
+    if (this.last === null) return null;
+    const phase = this.failed ? 'failed' : this.completed ? 'completed' : this.state;
+    return { ...this.last, phase, counts: { ...this.counts } };
+  }
+
+  /**
+   * The item the plan waits for while its cursor is held on missing materials; null otherwise
+   * (no plan, no wait, or the wait ended). The wake of a materials wait reads it (progress-emitter.ts).
+   */
+  materialsShortfall(): MaterialsShortfall | null {
+    if (this.plan === null || this.shortfall === null) return null;
+    return { ...this.shortfall };
+  }
+
+  /**
+   * The plan ended in failure: it is dropped for this life like a death does, and its snapshot reads
+   * phase `failed` for one progress event. A no-op with no plan.
+   */
+  fail(): void {
+    if (this.plan === null) return;
+    this.plan = null;
+    this.state = 'idle';
+    this.failed = true;
+    this.shortfall = null;
+    this.inFlight?.abort();
   }
 
   /** Runs cells from the cursor until this slice's ticks are spent or the lane stops for a reason. */
@@ -102,6 +171,10 @@ export class PlanLane {
   async endForDeath(_revision: number): Promise<void> {
     const gate = this.gate;
     this.plan = null;
+    this.last = null;
+    this.completed = false;
+    this.failed = false;
+    this.shortfall = null;
     this.state = 'idle';
     this.cursor = 0;
     this.counts = {};
@@ -129,7 +202,12 @@ export class PlanLane {
   }
 
   private runnable(): boolean {
-    return this.plan !== null && (this.state === 'running' || this.state === 'waiting_materials');
+    return (
+      this.plan !== null &&
+      (this.state === 'running' ||
+        this.state === 'waiting_materials' ||
+        this.state === 'waiting_tps')
+    );
   }
 
   private async slice(ctx: ActionContext, deps: LaneDeps): Promise<void> {
@@ -142,8 +220,19 @@ export class PlanLane {
       if (cell === undefined) {
         this.plan = null;
         this.state = 'idle';
+        this.completed = true;
         return;
       }
+      const verdict = this.throttle(deps);
+      // No cell this tick: the gap or TPS holds it. The next tick asks again.
+      if (verdict === 'gap') return;
+      if (verdict === 'tps') {
+        this.state = 'waiting_tps';
+        return;
+      }
+      // A throttle that threw cancels the cell: the cursor stays, the lane keeps running.
+      if (verdict === 'error') return;
+      if (this.state === 'waiting_tps') this.state = 'running';
       const ctl = new AbortController();
       const stop = () => ctl.abort();
       ctx.signal.addEventListener('abort', stop, { once: true });
@@ -158,9 +247,12 @@ export class PlanLane {
       // A pause, a death or a runtime stop ended the cell: the cursor stays so the cell is re-read.
       if (!this.runnable() || code === 'cancelled') return;
       if (code === 'missing_materials') {
+        const block = parseBlockRef(cell.target).name;
+        this.shortfall = { block, have: countMaterials(deps.env.held(), block), need: 1 };
         this.state = 'waiting_materials';
         return;
       }
+      this.shortfall = null;
       this.count(code);
       if (!DONE.has(code)) {
         this.skipped.push({ at: [cell.at.x, cell.at.y, cell.at.z], code });
@@ -170,8 +262,19 @@ export class PlanLane {
       if (this.cursor >= plan.cells.length) {
         this.plan = null;
         this.state = 'idle';
+        this.completed = true;
         return;
       }
+    }
+  }
+
+  /** The throttle's verdict for the next cell; a throw is `error` (the cell is cancelled). */
+  private throttle(deps: LaneDeps): ThrottleVerdict | 'error' {
+    if (deps.beforeCell === undefined) return 'go';
+    try {
+      return deps.beforeCell(deps.now());
+    } catch {
+      return 'error';
     }
   }
 
