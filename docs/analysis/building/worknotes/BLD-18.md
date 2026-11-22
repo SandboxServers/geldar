@@ -14,3 +14,10 @@
 - Not wired: `recorder.ts` writes to `SeenMap` (section.ts), not to `SeenStore`. The store's `record` is async and has no caller yet.
 - Not wired: `survey.ts` (BLD-20) is still the stub.
 - BLD-29 measurement: `flushes` counts flush runs. Bytes per section are the length of the stored value. Measure both on a live run.
+
+## Correction (2026-11-22)
+
+- "The bucket name is not set in code" is stale: `golem/src/building/names.ts:8,10` sets `PLAN_BUCKET` and `SEEN_BUCKET`, and `golem/src/seed-buckets.ts:33-34` creates them.
+- "Not wired: `recorder.ts` writes to `SeenMap`, not `SeenStore`; the store's `record` has no caller" is stale: `golem/src/building/wire-seen.ts:124` constructs a `SeenStore`.
+- "Not wired: `survey.ts` (BLD-20) is still the stub" is stale: `golem/src/building/wire-seen.ts:239` calls `surveyBox(map, box, nowTick)`.
+- Still true: no `eraseLife` call in `tools/players-cli/src/erase-owner.ts` (checked by search on this branch).
