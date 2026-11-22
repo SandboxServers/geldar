@@ -15,6 +15,45 @@ function memoryKv(): SeenKv {
   } as unknown as SeenKv;
 }
 
+/** An in-memory KV that also lists keys by prefix, as the inheritance read needs. */
+function listingKv(): SeenKv {
+  const values = new Map<string, string>();
+  return {
+    put: async (key: string, value: string) => {
+      values.set(key, value);
+    },
+    get: async (key: string) => values.get(key) ?? null,
+    list: async (prefix: string) => [...values.keys()].filter((key) => key.startsWith(prefix)),
+  } as unknown as SeenKv;
+}
+
+describe('createSeenWiring inheritance (decision 0424, 2026-11-22 addendum)', () => {
+  it('a predecessor cell reads inherited with its last-seen tick; a fresh sighting clears the mark', async () => {
+    const kv = listingKv();
+    const base = {
+      bot: {} as Bot,
+      ticks: () => () => undefined,
+      kv,
+      agentId: 'ag_test_01',
+      flushIntervalMs: 60_000,
+    };
+    const pred = createSeenWiring({ ...base, lifeId: 'ag_pred_01' });
+    pred.map.record(0, 64, 0, 'stone', 5);
+    await pred.flush();
+    pred.stop();
+    const succ = createSeenWiring({
+      ...base,
+      lifeId: 'ag_succ_01',
+      predecessor: { lifeId: 'ag_pred_01', agentId: 'ag_test_01' },
+    });
+    await succ.ready;
+    expect(succ.map.read(0, 64, 0)).toEqual({ name: 'stone', lastSeen: 5, inherited: true });
+    succ.map.record(0, 64, 0, 'stone', 9);
+    expect(succ.map.read(0, 64, 0)).toEqual({ name: 'stone', lastSeen: 9, inherited: false });
+    succ.stop();
+  });
+});
+
 describe('createSeenWiring flush metrics (fix2c F4)', () => {
   it('reports the bytes of a store flush to seenFlush, once per flush', async () => {
     const seenFlush = vi.fn();
