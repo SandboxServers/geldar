@@ -72,7 +72,7 @@ const REJECTED: Row[] = [
     code: 'not_allowed',
   },
   {
-    name: 'the explicit-blocks build action (only the blueprint program is enabled)',
+    name: 'the removed inline build action (decision 0427; the build program is the only build)',
     text: thought({
       actions: [
         {

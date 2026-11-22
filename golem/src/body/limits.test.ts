@@ -44,21 +44,9 @@ describe('LimitTracker', () => {
 });
 
 describe('blockOperationsOf', () => {
-  it('costs mine its count, place one, build its blocks, others nothing', () => {
+  it('costs mine its count, place one, others nothing', () => {
     expect(blockOperationsOf({ do: 'mine', block: 'stone', count: 7 })).toBe(7);
     expect(blockOperationsOf({ do: 'place', block: 'stone', at: 'feet' })).toBe(1);
-    expect(
-      blockOperationsOf({
-        do: 'build',
-        blueprint: {
-          name: 'x',
-          blocks: [
-            { block: 'stone', dx: 0, dy: 0, dz: 0 },
-            { block: 'stone', dx: 1, dy: 0, dz: 0 },
-          ],
-        },
-      }),
-    ).toBe(2);
     expect(blockOperationsOf({ do: 'eat' })).toBe(0);
   });
 });
