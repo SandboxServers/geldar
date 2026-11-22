@@ -90,6 +90,9 @@ export class PlanPersistence implements PlanQueueStore {
     }
     await this.writer.flush();
     try {
+      // The life has one checkpoint, and it is the active plan's: a waiting plan's drop leaves it.
+      const saved = await loadCheckpoint(this.checkpoints, this.lifeId);
+      if (saved !== null && saved.plan_id !== planId) return;
       await this.checkpoints.delete(checkpointKey(this.lifeId));
     } catch (error) {
       this.log(`plan checkpoint for ${this.lifeId} not removed: ${errorText(error)}`);

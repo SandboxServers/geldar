@@ -12,6 +12,7 @@ import {
   type ActiveIntent,
   DEFAULT_REMEMBERED_ACTIONS,
   type ExecutorOptions,
+  type ForegroundGate,
   type Intent,
   type IntentDisposition,
   type IntentObserver,
@@ -35,6 +36,9 @@ import type { WakeReason } from './wake.ts';
 
 export * from './executor-types.ts';
 
+/** The holder an intent takes on the plan lane's contention (BLD-14). */
+const intentHolder = (id: string): string => `intent:${id}`;
+
 /**
  * The Body's executor (spec 5.3, section 7). `submit` takes a thought and its envelope: it checks
  * validity, runs the immediate actions in order (at most 6; the first failure stops the list and
@@ -55,6 +59,7 @@ export class IntentExecutor {
   private readonly stored = new Map<string, Promise<ActionReport>>();
   private readonly seenIntents = new Set<string>();
   private readonly observer: IntentObserver | null;
+  private readonly foreground: ForegroundGate | null;
   private active: ActiveIntent | null = null;
   /** The revision the Body died at, or null before any death: the plan gate's floor (read by the mind link). */
   deathFloor: number | null = null;
@@ -73,6 +78,7 @@ export class IntentExecutor {
     this.now = options.now ?? (() => new Date());
     this.maxRemembered = options.maxRememberedActions ?? DEFAULT_REMEMBERED_ACTIONS;
     this.observer = options.observer ?? null;
+    this.foreground = options.foreground ?? null;
     if (options.wakeTap) {
       this.taps.push(
         options.wakeTap.onWake((request) => {
@@ -329,19 +335,24 @@ export class IntentExecutor {
   ): Promise<void> {
     if (a.ended) return;
     a.ended = true;
-    // A detour for a walk this intent asked for is of no use to whoever plans next.
-    dropBlockedReport(this.runtime.view, a.id);
-    if (this.active === a) this.active = null;
-    a.controller.abort();
-    a.stepController?.abort();
-    await this.runtime.cancelAction();
-    // A step that ends its own intent is the step in flight: waiting for it would wait forever.
-    if (!fromStep) await a.stepping;
-    this.setState(a, state, detail);
-    // A replaced intent keeps its checkpoint until the new intent overwrites it (one key per life).
-    if (!this.stopping && !keepCheckpoint) this.tellObserver((o) => o.ended(a.id));
-    if (wake) {
-      this.runtime.sink.wake({ reason: wake, tick: this.tick(), intentId: a.id, detail });
+    // The finally releases the plan lane's hold however the end goes: a throw or a cancel included.
+    try {
+      // A detour for a walk this intent asked for is of no use to whoever plans next.
+      dropBlockedReport(this.runtime.view, a.id);
+      if (this.active === a) this.active = null;
+      a.controller.abort();
+      a.stepController?.abort();
+      await this.runtime.cancelAction();
+      // A step that ends its own intent is the step in flight: waiting for it would wait forever.
+      if (!fromStep) await a.stepping;
+      this.setState(a, state, detail);
+      // A replaced intent keeps its checkpoint until the new intent overwrites it (one key per life).
+      if (!this.stopping && !keepCheckpoint) this.tellObserver((o) => o.ended(a.id));
+      if (wake) {
+        this.runtime.sink.wake({ reason: wake, tick: this.tick(), intentId: a.id, detail });
+      }
+    } finally {
+      this.foreground?.release(intentHolder(a.id));
     }
   }
 
@@ -474,6 +485,7 @@ export class IntentExecutor {
           // A restart during the first step finds this entry; each step then refreshes it.
           this.tellObserver((o) => o.stepped(this.snapshot(a)));
         },
+        holdLane: (a) => this.foreground?.hold(intentHolder(a.id)) ?? Promise.resolve(),
       },
       intent,
       id,

@@ -67,6 +67,31 @@ describe('the plan expander the queue is built with (BLD-38b)', () => {
     expect(cells[0]?.target).toBe('oak_stairs[facing=north,half=bottom]');
   });
 
+  it('carries a palette entry state into the cell target, in the sorted spelling', () => {
+    const expand = createPlanExpand(feet);
+    const palette = { s: { block: 'oak_stairs', state: { half: 'top', facing: 'north' } } };
+    const cells = expand({
+      palette,
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(cells[0]?.target).toBe('oak_stairs[facing=north,half=top]');
+    const axis = expand({
+      palette: { l: { block: 'oak_log', state: { axis: 'x' } } },
+      steps: [{ op: 'place', pal: 'l', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(axis[0]?.target).toBe('oak_log[axis=x]');
+  });
+
+  it('refuses a palette state whose value is not a string', () => {
+    const expand = createPlanExpand(feet);
+    const palette = { s: { block: 'oak_stairs', state: { half: 1 } } };
+    expect(() =>
+      expand({ palette, steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }] }),
+    ).toThrow(PlanNotRunnable);
+  });
+
   it('refuses a palette key that names no block, and an origin that is not a cell', () => {
     const expand = createPlanExpand(feet);
     const steps = [{ op: 'place', pal: 'missing', at: { x: 0, y: 64, z: 0 } }];
