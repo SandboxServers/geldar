@@ -25,6 +25,14 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   till: { do: 'till', at: POS },
   edit_sign: { do: 'edit_sign', at: POS, text: 'Home' },
   use: { do: 'use', item: 'oak_door', at: POS },
+  break: { do: 'break', at: POS },
+  plan: {
+    do: 'plan',
+    op: 'add',
+    plan_id: 'shelter_1',
+    palette: { wall: { block: 'stone' } },
+    steps: [{ op: 'box', pal: 'wall', from: POS, to: { x: 4, y: 68, z: 4 } }],
+  },
 };
 
 function accepts(action: Record<string, unknown>): boolean {
