@@ -14,10 +14,11 @@ const NOW = 12 * TICKS_PER_MINUTE;
 /** The cell a survey should decode to for a block: unseen reads no name and no age. */
 function expectedCell(map: SeenMap, x: number, y: number, z: number, now: number): DecodedCell {
   const cell = map.read(x, y, z);
-  if (cell === undefined) return { name: undefined, ageMinutes: undefined };
+  if (cell === undefined) return { name: undefined, ageMinutes: undefined, inherited: false };
   return {
     name: cell.name,
     ageMinutes: Math.floor(Math.max(0, now - cell.lastSeen) / TICKS_PER_MINUTE),
+    inherited: cell.inherited,
   };
 }
 
@@ -41,7 +42,31 @@ describe('surveyBox', () => {
     expect(reply.text).toBe('legend ?=unknown a=minecraft:stone\ny=0\n  z=0 1? 1a@12 1?');
     const row = decodeSurvey(reply.text).layers[0]?.rows[0]?.cells ?? [];
     expect(row.map((cell) => cell.name)).toEqual([undefined, 'minecraft:stone', undefined]);
-    expect(row[0]).toEqual({ name: undefined, ageMinutes: undefined });
+    expect(row[0]).toEqual({ name: undefined, ageMinutes: undefined, inherited: false });
+  });
+
+  it('a stale cell inherited from a predecessor reads back with its age and the inherited mark', () => {
+    const map = new SeenMap();
+    map.record(0, 0, 0, 'minecraft:stone', 0, true);
+    map.record(1, 0, 0, 'minecraft:stone', NOW);
+    const box: SurveyBox = { min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 0, z: 0 } };
+    const reply = surveyBox(map, box, NOW);
+    expect(reply.text).toBe('legend ?=unknown a=minecraft:stone\ny=0\n  z=0 1a@12i 1a@0');
+    const row = decodeSurvey(reply.text).layers[0]?.rows[0]?.cells ?? [];
+    expect(row).toEqual([
+      { name: 'minecraft:stone', ageMinutes: 12, inherited: true },
+      { name: 'minecraft:stone', ageMinutes: 0, inherited: false },
+    ]);
+  });
+
+  it('a fresh sighting of an inherited cell clears its mark and its age restarts', () => {
+    const map = new SeenMap();
+    map.record(0, 0, 0, 'minecraft:stone', 0, true);
+    map.record(0, 0, 0, 'minecraft:stone', NOW);
+    const box: SurveyBox = { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } };
+    expect(surveyBox(map, box, NOW).text).toBe(
+      'legend ?=unknown a=minecraft:stone\ny=0\n  z=0 1a@0',
+    );
   });
 
   it('round trips a box that spans negative coordinates, runs and both seen and unseen cells', () => {

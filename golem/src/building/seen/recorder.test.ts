@@ -177,8 +177,8 @@ describe('recordChange', () => {
   it('records a block the Body placed or broke', () => {
     const map = new SeenMap();
     recordChange(map, 3, 70, -2, 'oak_planks', 7);
-    expect(map.read(3, 70, -2)).toEqual({ name: 'oak_planks', lastSeen: 7 });
+    expect(map.read(3, 70, -2)).toEqual({ name: 'oak_planks', lastSeen: 7, inherited: false });
     recordChange(map, 3, 70, -2, 'air', 9);
-    expect(map.read(3, 70, -2)).toEqual({ name: 'air', lastSeen: 9 });
+    expect(map.read(3, 70, -2)).toEqual({ name: 'air', lastSeen: 9, inherited: false });
   });
 });

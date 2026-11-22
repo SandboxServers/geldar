@@ -20,3 +20,10 @@ Without a read of the world, a long plan is written blind; a wall-hack would let
 
 - A leak test: a block behind a wall, or in an unloaded or unseen chunk, is absent from the map and from `survey`.
 - A size and write-rate figure is measured on the test shard before go-live, not assumed (BLD-18).
+
+## Interpretation, 2026-11-22, by the coordinator from the owner rulings; owner may overrule
+
+Applied to decision 1 (no wall-hack) and decision 3 (inheritance), from the owner rulings of the same date:
+
+- A live verification read of a cell is written to the seen map only when that cell is in view now, by the same test the recorder uses (`cellInView`). An out-of-view verification read is never recorded. For an out-of-view cell the plan or mismatch report to the Mind says only "cell not as expected", with no block name, so verification cannot probe unseen cells. Recording a block the Body itself digs is fine when the agent saw it or is adjacent to it with line of sight.
+- Stale cells are shown, not hidden or silently refreshed. A cell reads back with its last-seen age and an `inherited` mark when it came from a predecessor life. Only a fresh in-view sighting updates a cell and clears the mark.

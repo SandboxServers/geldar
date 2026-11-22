@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ViewPose, ViewWorld } from '../../perception/view/viewport.ts';
-import { cellInView } from './recorder.ts';
+import { cellInView, recordIfInView } from './recorder.ts';
+import { SeenMap } from './section.ts';
 
 /** A view world with `solid` cells opaque, `unknown` cells not loaded, the rest air. */
 function world(solid: string[] = [], unknown: string[] = [], dark = false): ViewWorld {
@@ -43,5 +44,36 @@ describe('cellInView (review fix 3: no wall-hack for a changed cell)', () => {
 
   it('an unloaded cell on the line of sight ends the sight: the target is not in view', () => {
     expect(cellInView(world([], ['0,64,-3']), pose, 0, 64, -5)).toBe(false);
+  });
+});
+
+describe('recordIfInView (decision 0424, 2026-11-22 addendum: an out-of-view read never enters the map)', () => {
+  it('an out-of-view verified read of an unseen cell does not enter the map', () => {
+    const map = new SeenMap();
+    const recorded = recordIfInView(
+      map,
+      world(['0,64,-3']),
+      pose,
+      0,
+      64,
+      -5,
+      'minecraft:diamond_ore',
+      7,
+    );
+    expect(recorded).toBe(false);
+    expect(map.read(0, 64, -5)).toBeUndefined();
+  });
+
+  it('an out-of-view read leaves a seen cell as the Body last saw it', () => {
+    const map = new SeenMap();
+    map.record(0, 64, -5, 'minecraft:stone', 1);
+    recordIfInView(map, world(['0,64,-3']), pose, 0, 64, -5, 'minecraft:air', 9);
+    expect(map.read(0, 64, -5)).toEqual({ name: 'minecraft:stone', lastSeen: 1, inherited: false });
+  });
+
+  it('an in-view read is recorded with its tick', () => {
+    const map = new SeenMap();
+    expect(recordIfInView(map, world(), pose, 0, 64, -5, 'minecraft:stone', 7)).toBe(true);
+    expect(map.read(0, 64, -5)).toEqual({ name: 'minecraft:stone', lastSeen: 7, inherited: false });
   });
 });
