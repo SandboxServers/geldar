@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { completed, failed } from '../actions/outcome.ts';
 import type { PlanCell } from './cell-do.ts';
+import { arrayCellSource, type CellSource, cellsOf } from './cell-source.ts';
 import { contendFor } from './contention.ts';
 import type { PlanCheckpointState } from './plan-checkpoint.ts';
 import { type PlanChunk, type PlanExpand, PlanQueue } from './queue.ts';
@@ -17,7 +18,7 @@ function cell(x: number): PlanCell {
 const expand: PlanExpand = (body) => {
   const steps = body.steps as { x: number; bad?: boolean }[];
   if (steps.some((s) => s.bad === true)) throw new Error('bad step');
-  return steps.map((s) => cell(s.x));
+  return arrayCellSource(steps.map((s) => cell(s.x)));
 };
 
 /** A lane fake with the PlanLane surface the queue uses: one cell per `step`. */
@@ -30,9 +31,9 @@ class FakeLane {
   drops = 0;
   pauses = 0;
 
-  start(plan: { planId: string; cells: readonly PlanCell[] }): boolean {
+  start(plan: { planId: string; source: CellSource; total: number }): boolean {
     if (this.plan !== null) return false;
-    this.plan = plan;
+    this.plan = { planId: plan.planId, cells: cellsOf(plan.source) };
     this.cursor = 0;
     this.state = 'running';
     this.started.push(plan.planId);
@@ -266,7 +267,7 @@ describe('contention gate (BLD-14)', () => {
 });
 
 async function queueStart(lane: FakeLane): Promise<void> {
-  lane.start({ planId: 'x', cells: [cell(0), cell(1)] });
+  lane.start({ planId: 'x', source: arrayCellSource([cell(0), cell(1)]), total: 2 });
 }
 
 describe('plan action with the queue (BLD-14)', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { arrayCellSource } from '../building/cell-source.ts';
 import { contendFor } from '../building/contention.ts';
 import { type LanePlan, PlanLane } from '../building/lane.ts';
 import { executorHarness, planFor, scriptedProgram, thought } from './executor.fakes.ts';
@@ -7,7 +8,14 @@ import { IntentExecutor } from './executor.ts';
 /** A lane that holds a plan at cursor 2, as a Body's lane does between cells. */
 function laneAtCursor(): PlanLane {
   const lane = new PlanLane();
-  const plan: LanePlan = { lifeId: 'ag_test_01', planId: 'p1', chunks: 1, cells: [], cursor: 2 };
+  const plan: LanePlan = {
+    lifeId: 'ag_test_01',
+    planId: 'p1',
+    chunks: 1,
+    source: arrayCellSource([]),
+    total: 0,
+    cursor: 2,
+  };
   expect(lane.start(plan)).toBe(true);
   return lane;
 }

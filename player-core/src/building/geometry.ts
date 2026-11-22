@@ -139,7 +139,7 @@ export function* sphereCells(center: Cell, radius: number, hollow = false): Iter
 }
 
 /** The integer square root floor of n (n >= 0), exact. */
-function isqrt(n: number): number {
+export function isqrt(n: number): number {
   let s = Math.floor(Math.sqrt(n));
   while (s * s > n) s--;
   while ((s + 1) * (s + 1) <= n) s++;

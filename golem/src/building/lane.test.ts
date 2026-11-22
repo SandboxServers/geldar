@@ -4,6 +4,7 @@ import { type ActionOutcome, cancelled, completed, failed } from '../actions/out
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
 import { cancelForDeath } from '../body/death-cancel.ts';
 import type { CellEnv, CellHandlers, PlanCell } from './cell-do.ts';
+import { arrayCellSource } from './cell-source.ts';
 import { createPlanLane, type LaneDeps, type LanePlan, PlanLane, SLICE_TICKS } from './lane.ts';
 import { laneStateOf } from './lane-state.ts';
 import type { HeldBlock } from './scaffold.ts';
@@ -50,7 +51,8 @@ function plan(n: number, cursor?: number): LanePlan {
     lifeId: 'life-1',
     planId: 'p1',
     chunks: 1,
-    cells,
+    source: arrayCellSource(cells),
+    total: n,
     ...(cursor === undefined ? {} : { cursor }),
   };
 }

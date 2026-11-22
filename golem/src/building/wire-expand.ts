@@ -8,10 +8,12 @@ import {
   type PlanSpec,
   type PlanStep,
 } from '@geldar/player-core/src/building/expand.ts';
+import { lazyBottomUp } from '@geldar/player-core/src/building/layers.ts';
 import { orderPlanCells } from '@geldar/player-core/src/building/order.ts';
 import { canonicalBlockRef, parseBlockRef } from './block-ref.ts';
 import type { PlanCell } from './cell-do.ts';
-import type { PlanExpand } from './queue.ts';
+import { arrayCellSource, type CellSource, lazyCellSource } from './cell-source.ts';
+import type { PlanBody } from './queue.ts';
 import type { Cell } from './stand.ts';
 
 /** Thrown for a plan the lane cannot run yet; the queue refuses the plan with this message. */
@@ -26,7 +28,7 @@ export class PlanNotRunnable extends Error {
  * The expander the plan queue is built with. `feet` gives the origin of an `origin: "here"` plan
  * (the Body's feet now); an origin left out is the world origin, as plan-check reads it.
  */
-export function createPlanExpand(feet: () => Cell): PlanExpand {
+export function createPlanExpand(feet: () => Cell): (body: PlanBody) => readonly PlanCell[] {
   return (body) => {
     const steps = body.steps as readonly PlanStep[];
     if (steps.length === 0) return [];
@@ -89,6 +91,73 @@ function referenceOf(key: string, block: string, state: unknown): string {
     return `${name}=${value}`;
   });
   return pairs.length === 0 ? block : `${block}[${pairs.join(',')}]`;
+}
+
+/** Cells counted between two yields to the event loop, so the count pass never holds it for long. */
+export const COUNT_SLICE = 512;
+
+/**
+ * The lazy source of a plan's cells in the lane's order (B8-lazy): the same cells, in the same order,
+ * as `createPlanExpand`. Each call returns a new source; nothing is expanded until it is read. A bad
+ * palette key throws PlanNotRunnable on the read that reaches it, so a count pass at add time
+ * reads the whole plan and refuses it before it is stored.
+ */
+export function createPlanSource(feet: () => Cell): (body: PlanBody) => CellSource {
+  return (body) => {
+    const steps = body.steps as readonly PlanStep[];
+    if (steps.length === 0) return arrayCellSource([]);
+    const base = originOf(body.origin, feet);
+    const palette = body.palette;
+    return lazyCellSource(() =>
+      body.order === 'given'
+        ? givenCells(steps, palette, base)
+        : orderedCells(steps, palette, base),
+    );
+  };
+}
+
+/** Bottom-up order, one layer at a time (`lazyBottomUp`); a falling block is not a plan kind here. */
+function* orderedCells(
+  steps: readonly PlanStep[],
+  palette: Readonly<Record<string, unknown>>,
+  base: Cell,
+): Generator<PlanCell> {
+  for (const cell of lazyBottomUp({ palette, steps } as PlanSpec, base)) {
+    yield toLaneCell(cell, palette);
+  }
+}
+
+/** The step order as given: each step's cells in its own expansion order. */
+function* givenCells(
+  steps: readonly PlanStep[],
+  palette: Readonly<Record<string, unknown>>,
+  base: Cell,
+): Generator<PlanCell> {
+  for (const step of steps) {
+    for (const cell of expandPlan({ palette, steps: [step] } as PlanSpec)) {
+      const shifted = {
+        x: cell.x + base.x,
+        y: cell.y + base.y,
+        z: cell.z + base.z,
+        pal: cell.pal,
+        replaces: step.op === 'replace',
+      };
+      yield toLaneCell(shifted, palette);
+    }
+  }
+}
+
+/**
+ * Counts a source's cells by reading it to its end, yielding to the event loop every `slice` cells.
+ * The read uses up the source: count one source and run another (`createPlanSource` makes one per call).
+ */
+export async function countPlanCells(source: CellSource, slice = COUNT_SLICE): Promise<number> {
+  let count = 0;
+  while (source.at(count) !== undefined) {
+    count++;
+    if (count % slice === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  return count;
 }
 
 /** The shift of the plan: zero when none is given, the feet for `here`, else the given cell. */

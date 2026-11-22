@@ -4,13 +4,8 @@
 // time; a second `start` is refused (BLD-14 adds the queue).
 import type { ActionContext } from '../actions/registry.ts';
 import { parseBlockRef } from './block-ref.ts';
-import {
-  type CellCode,
-  type CellEnv,
-  type CellHandlers,
-  doCell,
-  type PlanCell,
-} from './cell-do.ts';
+import { type CellCode, type CellEnv, type CellHandlers, doCell } from './cell-do.ts';
+import type { CellSource } from './cell-source.ts';
 import type { LaneStateName } from './lane-state.ts';
 import { countMaterials } from './materials.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
@@ -34,12 +29,17 @@ export interface MaterialsShortfall {
   need: number;
 }
 
-/** A plan the lane runs: its cells in order, the chunk count it is stored under, and the cursor to start from. */
+/**
+ * A plan the lane runs: its cells in order (read from `source` by index), the exact cell count
+ * `total` (from the streaming count at add time), the chunk count it is stored under, and the cursor
+ * to start from.
+ */
 export interface LanePlan {
   lifeId: string;
   planId: string;
   chunks: number;
-  cells: readonly PlanCell[];
+  source: CellSource;
+  total: number;
   /** Index of the next cell to run; a restart passes the checkpoint's cursor. Default 0. */
   cursor?: number;
 }
@@ -98,7 +98,7 @@ export class PlanLane {
     this.counts = { ...(saved?.counts ?? {}) };
     this.skipped = [...(saved?.skipped ?? [])];
     this.state = 'running';
-    this.last = { planId: plan.planId, total: plan.cells.length };
+    this.last = { planId: plan.planId, total: plan.total };
     this.completed = false;
     this.failed = false;
     this.shortfall = null;
@@ -218,7 +218,7 @@ export class PlanLane {
       if (ctx.signal.aborted) return;
       const plan = this.plan;
       if (plan === null) return;
-      const cell = plan.cells[this.cursor];
+      const cell = plan.source.at(this.cursor);
       if (cell === undefined) {
         this.plan = null;
         this.state = 'idle';
@@ -262,7 +262,7 @@ export class PlanLane {
       }
       this.cursor++;
       this.state = 'running';
-      if (this.cursor >= plan.cells.length) {
+      if (this.cursor >= plan.total) {
         this.plan = null;
         this.state = 'idle';
         this.completed = true;
