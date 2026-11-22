@@ -20,10 +20,7 @@ const ROOT = resolve(DEPLOY, '..');
 const posix = (p: string) => p.replace(/\\/g, '/');
 const dg = (name: string, c: string) =>
   `registry.example.invalid/geldar/${name}@sha256:${c.repeat(64)}`;
-const MANIFEST = [
-  `GELDAR_BODY_IMAGE=${dg('body', '1')}`,
-  `GELDAR_ADMIN_IMAGE=${dg('admin', '6')}`,
-];
+const MANIFEST = [`GELDAR_BODY_IMAGE=${dg('body', '1')}`, `GELDAR_ADMIN_IMAGE=${dg('admin', '6')}`];
 const GLASS_LINE = `GELDAR_GLASS_IMAGE=${dg('glass', '7')}`;
 const SECRET_NAMES = ['postgres.txt', 'postgres-mcp.txt', 'postgres-glass.txt'];
 
