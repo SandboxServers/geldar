@@ -1,22 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BASE_GAP_TICKS,
-  gapTicksFor,
-  PAUSE_POLL_TICKS,
-  SLOW_GAP_TICKS,
-  TICK_MS,
-  throttleWait,
-} from './throttle.ts';
-
-/** A fake clock: sleeps resolve at once and add their length to `elapsedMs`. */
-function fakeSleep() {
-  const calls: number[] = [];
-  const sleep = async (ms: number, signal: AbortSignal): Promise<void> => {
-    signal.throwIfAborted();
-    calls.push(ms);
-  };
-  return { calls, sleep, elapsedMs: () => calls.reduce((sum, ms) => sum + ms, 0) };
-}
+import { BASE_GAP_TICKS, gapTicksFor, SLOW_GAP_TICKS, TickThrottle } from './throttle.ts';
 
 /** Returns the TPS values in order, then the last one forever. */
 function tpsSequence(values: (number | undefined)[]): () => number | undefined {
@@ -60,131 +43,56 @@ describe('gapTicksFor (BLD-15 health throttle)', () => {
   });
 });
 
-describe('throttleWait', () => {
-  it('waits the base gap at 20 TPS, scaled to milliseconds', async () => {
-    const clock = fakeSleep();
-    const result = await throttleWait({
-      signal: new AbortController().signal,
-      readTps: () => 20,
-      sleep: clock.sleep,
-    });
-    expect(result).toEqual({ gapTicks: 4, paused: false });
-    expect(clock.calls).toEqual([4 * TICK_MS]);
+describe('TickThrottle (tick-based, fake clock)', () => {
+  it('lets the first cell go at once, then waits the base gap in ticks at 20 TPS', () => {
+    const throttle = new TickThrottle(() => 20);
+    expect(throttle.before(10)).toBe('go');
+    expect(throttle.before(11)).toBe('gap');
+    expect(throttle.before(13)).toBe('gap');
+    expect(throttle.before(14)).toBe('go');
   });
 
-  it('waits the doubled gap at 15 TPS', async () => {
-    const clock = fakeSleep();
-    const result = await throttleWait({
-      signal: new AbortController().signal,
-      readTps: () => 15,
-      sleep: clock.sleep,
-    });
-    expect(result).toEqual({ gapTicks: 8, paused: false });
-    expect(clock.calls).toEqual([8 * TICK_MS]);
+  it('delays by the doubled gap in ticks at 15 TPS', () => {
+    const throttle = new TickThrottle(() => 15);
+    expect(throttle.before(0)).toBe('go');
+    for (let tick = 1; tick < SLOW_GAP_TICKS; tick++) expect(throttle.before(tick)).toBe('gap');
+    expect(throttle.before(SLOW_GAP_TICKS)).toBe('go');
   });
 
-  it('respects the body timeScale', async () => {
-    const clock = fakeSleep();
-    await throttleWait({
-      signal: new AbortController().signal,
-      timeScale: 0.5,
-      readTps: () => 20,
-      sleep: clock.sleep,
-    });
-    expect(clock.calls).toEqual([4 * TICK_MS * 0.5]);
-  });
-
-  it('pauses at 8 TPS, reports waiting_tps once, and resumes when TPS recovers', async () => {
-    const clock = fakeSleep();
-    let pauses = 0;
+  it('returns tps and runs nothing below 12 TPS, then goes on the tick TPS recovers', () => {
     const readTps = tpsSequence([8, 8, 8, 20]);
-    const result = await throttleWait({
-      signal: new AbortController().signal,
-      readTps,
-      sleep: clock.sleep,
-      onPause: () => {
-        pauses += 1;
-      },
-    });
-    expect(pauses).toBe(1);
-    expect(result).toEqual({ gapTicks: 4, paused: true });
-    // Three pause polls, then the base gap once TPS is back at 20.
-    expect(clock.calls).toEqual([
-      PAUSE_POLL_TICKS * TICK_MS,
-      PAUSE_POLL_TICKS * TICK_MS,
-      PAUSE_POLL_TICKS * TICK_MS,
-      4 * TICK_MS,
-    ]);
+    const throttle = new TickThrottle(readTps);
+    expect(throttle.before(0)).toBe('tps');
+    expect(throttle.before(1)).toBe('tps');
+    expect(throttle.before(2)).toBe('tps');
+    expect(throttle.before(3)).toBe('go');
   });
 
-  it('does not report a pause when TPS is healthy', async () => {
-    let pauses = 0;
-    await throttleWait({
-      signal: new AbortController().signal,
-      readTps: () => 15,
-      sleep: fakeSleep().sleep,
-      onPause: () => {
-        pauses += 1;
-      },
-    });
-    expect(pauses).toBe(0);
+  it('the gap keeps counting through a pause: the cell after it waits for the gap to pass', () => {
+    const readTps = tpsSequence([20, 5, 5, 20, 20]);
+    const throttle = new TickThrottle(readTps);
+    expect(throttle.before(0)).toBe('go');
+    expect(throttle.before(1)).toBe('tps');
+    expect(throttle.before(2)).toBe('tps');
+    expect(throttle.before(3)).toBe('gap');
+    expect(throttle.before(4)).toBe('go');
   });
 
-  it('refuses with the abort reason when aborted while paused', async () => {
-    const controller = new AbortController();
-    const clock = fakeSleep();
-    const sleep = async (ms: number, signal: AbortSignal) => {
-      clock.calls.push(ms);
-      controller.abort(new Error('plan cancelled'));
-      signal.throwIfAborted();
-    };
-    await expect(
-      throttleWait({ signal: controller.signal, readTps: () => 5, sleep }),
-    ).rejects.toThrow('plan cancelled');
-    expect(clock.calls).toEqual([PAUSE_POLL_TICKS * TICK_MS]);
-  });
-
-  it('refuses at once when the signal is already aborted', async () => {
-    const controller = new AbortController();
-    controller.abort(new Error('stopped'));
-    const clock = fakeSleep();
-    await expect(
-      throttleWait({ signal: controller.signal, readTps: () => 20, sleep: clock.sleep }),
-    ).rejects.toThrow('stopped');
-    expect(clock.calls).toEqual([]);
-  });
-
-  it('stops a real pause when the signal aborts during the wait', async () => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(new Error('cancelled')), 5);
-    await expect(
-      throttleWait({ signal: controller.signal, timeScale: 1, readTps: () => 5 }),
-    ).rejects.toThrow('cancelled');
-  });
-
-  it('propagates an error from the TPS source instead of swallowing it', async () => {
-    const readTps = () => {
+  it('propagates an error from the TPS source instead of swallowing it', () => {
+    const throttle = new TickThrottle(() => {
       throw new Error('tps source failed');
-    };
-    await expect(
-      throttleWait({
-        signal: new AbortController().signal,
-        readTps,
-        sleep: fakeSleep().sleep,
-      }),
-    ).rejects.toThrow('tps source failed');
+    });
+    expect(() => throttle.before(0)).toThrow('tps source failed');
   });
 
-  it('caps nothing: 100,000 cells all pass the throttle with a fake clock', async () => {
-    const clock = fakeSleep();
-    const signal = new AbortController().signal;
+  it('lets 100,000 cells pass one per gap with no cap', () => {
+    const throttle = new TickThrottle(() => 20);
+    let tick = 0;
     let completed = 0;
-    for (let cell = 0; cell < 100_000; cell += 1) {
-      await throttleWait({ signal, readTps: () => 20, sleep: clock.sleep });
-      completed += 1;
+    while (completed < 100_000) {
+      if (throttle.before(tick) === 'go') completed += 1;
+      tick += 1;
     }
-    expect(completed).toBe(100_000);
-    expect(clock.calls).toHaveLength(100_000);
-    expect(clock.elapsedMs()).toBe(100_000 * BASE_GAP_TICKS * TICK_MS);
+    expect(tick).toBe((100_000 - 1) * BASE_GAP_TICKS + 1);
   });
 });

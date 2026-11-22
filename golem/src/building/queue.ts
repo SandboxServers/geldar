@@ -10,6 +10,7 @@ import type { ActionContext } from '../actions/registry.ts';
 import type { PlanCell } from './cell-do.ts';
 import type { Contention } from './contention.ts';
 import type { LaneDeps, LanePlan, PlanLane } from './lane.ts';
+import type { SkippedCell } from './plan-checkpoint.ts';
 
 /** The plan body a chunk carries: the palette and steps, and where and in what order they go. */
 export interface PlanBody {
@@ -181,15 +182,19 @@ export class PlanQueue {
   restore(
     entry: { planId: string; cells: readonly PlanCell[]; chunks: number },
     cursor: number,
+    saved?: { counts: Record<string, number>; skipped: SkippedCell[] },
   ): boolean {
     if (this.active !== null || this.lane.state !== 'idle') return false;
-    const started = this.lane.start({
-      lifeId: this.lifeId,
-      planId: entry.planId,
-      chunks: entry.chunks,
-      cells: entry.cells,
-      cursor,
-    });
+    const started = this.lane.start(
+      {
+        lifeId: this.lifeId,
+        planId: entry.planId,
+        chunks: entry.chunks,
+        cells: entry.cells,
+        cursor,
+      },
+      saved,
+    );
     if (started) this.active = { planId: entry.planId, cells: entry.cells, chunks: entry.chunks };
     return started;
   }

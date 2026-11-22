@@ -11,8 +11,10 @@ import type { BodyRuntime } from '../body/runtime.ts';
 import type { CellEnv, CellHandlers } from './cell-do.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
+import { PlanProgressEmitter } from './progress-emitter.ts';
 import { type PlanExpand, PlanQueue, type PlanQueueStore } from './queue.ts';
-import { TpsEstimator } from './tps-estimate.ts';
+import { TickThrottle } from './throttle.ts';
+import { TpsEstimator, type WallClock } from './tps-estimate.ts';
 
 /** The holder name a reflex's tick takes on the lane's contention. */
 const REFLEX_HOLDER = 'reflex';
@@ -25,6 +27,8 @@ export interface LaneWiringOptions {
   expand: PlanExpand;
   /** Persists queued plans and progress (wire-plan-store); left out, in memory only. */
   store?: PlanQueueStore;
+  /** Wall-clock ms for the TPS estimate and the progress cadence; default Date.now. */
+  wallClock?: WallClock;
 }
 
 /** The parts of one Body's plan work. */
@@ -52,13 +56,19 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
   });
   const env = cellEnvOf(bot);
   const handlers = cellHandlersOf(runtime);
-  const tps = new TpsEstimator();
+  const clock: WallClock = options.wallClock ?? (() => Date.now());
+  const tps = new TpsEstimator(clock);
+  // The throttle asks before each cell, in world ticks, with the Body's own TPS estimate (throttle.ts).
+  const throttle = new TickThrottle(() => tps.tps());
+  const beforeCell = (now: number) => throttle.before(now);
+  // The plan's progress events and wakes (progress-emitter.ts) go through the Body's record sink.
+  const progress = new PlanProgressEmitter(runtime.sink, clock);
   return {
     queue,
     lane,
     contention,
     tps,
-    async onTick(_tick: number, reflexBusy: boolean): Promise<void> {
+    async onTick(tick: number, reflexBusy: boolean): Promise<void> {
       tps.onTick();
       if (reflexBusy) await contention.hold(REFLEX_HOLDER);
       else contention.release(REFLEX_HOLDER);
@@ -67,7 +77,16 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
         signal: new AbortController().signal,
         timeScale: runtime.timeScale,
       };
-      await queue.step(ctx, { env, handlers, now: () => runtime.view.tick ?? 0 });
+      try {
+        await queue.step(ctx, { env, handlers, now: () => runtime.view.tick ?? 0, beforeCell });
+      } catch (error) {
+        // An unexpected throw fails the plan: its `failed` phase goes out once, then the error is rethrown.
+        lane.fail();
+        progress.observe(lane.snapshot(), tick);
+        throw error;
+      }
+      progress.observe(lane.snapshot(), tick);
+      progress.observeShortfall(lane.materialsShortfall(), tick);
     },
   };
 }
