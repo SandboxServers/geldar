@@ -4,11 +4,13 @@
 // answers the /api/ routes itself, with a live entry every few seconds. Test-only, loopback only, never
 // deployed.
 //
-//   node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]
+//   node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [limited|unlimited] [kino]
 //
 // Defaults: 8790, 5 and 60. 0 live-entry-seconds means no live entries. Open http://localhost:8790/.
 // The word "unlimited" as the fourth argument turns the rate limits off, for a script that loads the page
-// many times in a row (screenshots). Leave it out to see what a visitor gets.
+// many times in a row (screenshots). Leave it out (or say "limited") to see what a visitor gets. The word
+// "kino" as the fifth shows the page as it is served when Kino is mounted, with the Kino tab; the link
+// itself leads nowhere here (the Kino preview is glass/test/kino-preview/server.ts).
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHandler } from '../../src/http.ts';
@@ -97,6 +99,7 @@ const handler = createHandler({
   db: {} as SqlClient,
   hub: {} as SseHub,
   policy: { delaySeconds, ...limits },
+  kinoMounted: process.argv[6] === 'kino',
   extra: api,
 });
 

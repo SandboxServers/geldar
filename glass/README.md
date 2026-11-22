@@ -71,7 +71,8 @@ route, or when the route is changed in the same step as the page.
   entries costs one request. Text and controls keep out of the middle 30px, where a foldable has its
   hinge.
 - **Bottom navigation.** Glass and Roster switch views at the root and work with browser Back.
-  Bookmark Roster at `/?view=roster`. Map opens the BlueMap site. See decision 0411.
+  Bookmark Roster at `/?view=roster`. Map opens the BlueMap site. Kino links to `/kino/` only
+  when Glass has mounted it with a feed. See decisions 0411 and 0412.
 - **Roster.** The Alive and Dead groups count only the agents returned by `/api/agents`. The page
   shows each life's name, mode, birth day and, where applicable, the local date and cause of death.
   On a wide screen, select a row to see up to six of that life's latest entries. On a phone, a row
@@ -120,12 +121,14 @@ policy, and the rate limits Glass ships with) with invented agents, thoughts and
 entry every few seconds:
 
 ```powershell
-node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]   # default 8790, 5 and 60; binds 127.0.0.1
+node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [limited|unlimited] [kino]   # default 8790, 5 and 60; binds 127.0.0.1
 ```
 
 Open `http://localhost:8790/` (a service worker needs `localhost` or HTTPS). Unlike the real API, the
 preview's thoughts name their action, so it shows receipts. The word `unlimited` turns the rate limits
-off, for a script that loads the page many times in a row; leave it out to see what a visitor gets.
+off, for a script that loads the page many times in a row; leave it out (or say `limited`) to see what a
+visitor gets. The word `kino` after it serves the page as it is when Kino is mounted, with the Kino tab
+(the link leads nowhere in this preview). Both previews read their files at start: restart after an edit.
 
 ## Configuration
 
@@ -171,13 +174,22 @@ It prints `glass listening on 127.0.0.1:<port>` when it is ready. Stop it with C
 
 ### Seeing the Kino page without a shard
 
-The Kino page (`glass/web/kino/`, decision 0166) needs a feed, textures and skins, so it cannot be looked at with Glass alone. The test-only preview serves the real page (types stripped, as Glass does) with an invented world: rolling grass, a pond, trees, a wall and a hut, and three agents walking their own routes. Its textures and skins are drawn from noise, so no game asset is used:
+Kino (`glass/web/kino/`, decisions 0166 and 0412) has the same bottom navigation as Glass.
+It uses Glass's two typefaces and dark colours. At 700px the active monitor's controls and
+channel guide sit beside the wall. On a phone the controls dock below the wall and **Channels**
+opens a bottom sheet. **More controls** holds rotation, step zoom, recentre, channel surfing, solo
+and monitor details. **Clear** closes the active monitor. The guide makes a sigil from each permitted
+target's displayed label.
+
+Kino needs a feed and textures to draw a world. The test-only preview serves the real page,
+shared fonts and an invented feed with three walking agents. Its textures and skins are drawn
+from noise:
 
 ```powershell
 node glass/test/kino-preview/server.ts [port] [web-dir]   # default 8789 and glass/web/kino; binds 127.0.0.1
 ```
 
-Open `http://127.0.0.1:8789/kino/`. Pass another `web-dir` (an export of an older `glass/web/kino`) to compare before and after. The preview is not Glass's relay: it has no audit, scope check, rate limit or CSP. `tools/kino-shot` can be pointed at it (`--url http://localhost:8789/kino/`).
+Open `http://127.0.0.1:8789/kino/`. Pass another `web-dir` (an export of an older `glass/web/kino`) to compare before and after. The preview applies Kino's page policy and supplies a simulated feed. Production handles audit, scope and rate limits. `tools/kino-shot` can be pointed at it (`--url http://localhost:8789/kino/`).
 
 ## The `geldar_glass` role
 
@@ -252,6 +264,10 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
   not as instructions or commands.
 - **Model input and raw replies.** The database role may read the prompt and the raw reply of a
   thought, but Glass does not select or send them. Changing that needs an owner-signed privacy review.
+
+- **Kino's policy.** The camera page has its own policy, with a self-only font directive for the Glass
+  typefaces. Its channel guide renders permitted target labels as text and hashes them for canvas sigils.
+  The camera scope remains enforced by the target query and the relay.
 
 ## Tests
 

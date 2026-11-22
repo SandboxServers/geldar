@@ -2,47 +2,67 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>Kino</title>
     <!-- Where the sign-in page lives and where BlueMap's textures.json is served. The textures default is the BlueMap overworld map id (plugins/bluemap/config/maps/overworld.conf); change the content for another map id. -->
     <meta name="kino-signin-url" content="/register/" />
     <meta name="kino-textures-url" content="/kino/tex/maps/overworld/textures.json" />
     <script type="importmap">
-      { "imports": { "three": "/kino/vendor/three.module.js" } }
+      { "imports": { "three": "/kino/vendor/three.module.js", "/src/render-sigil.ts": "/js/render-sigil.ts" } }
     </script>
+    <link rel="stylesheet" href="/js/fonts.css" />
+    <link rel="stylesheet" href="/js/roster.css" />
     <link rel="stylesheet" href="./kino.css" />
   </head>
   <body>
-    <header id="bar">
-      <h1 class="brand"><span class="mark" aria-hidden="true"></span>Kino</h1>
-      <div class="layouts" role="group" aria-label="Layout">
-        <button type="button" data-layout="wall" aria-pressed="true" title="Wall (L)">Wall</button>
-        <button type="button" data-layout="feature" aria-pressed="false" title="Feature (L)">Feature</button>
-        <button type="button" data-layout="solo" aria-pressed="false" title="Solo (Enter)">Solo</button>
-      </div>
-      <span id="notice"></span>
-      <a id="signin" hidden>Sign in</a>
-      <div class="actions">
-        <button type="button" id="open-guide" title="Channels (T)" aria-label="Channels"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg><span>Channels</span></button>
-        <button type="button" id="toggle-status" aria-expanded="false" aria-controls="status" title="Feed details" aria-label="Feed details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18" /></svg><span>Details</span></button>
-        <button type="button" id="open-help" title="Controls (?)" aria-label="Controls"><span aria-hidden="true">?</span></button>
-      </div>
-      <p id="status" hidden></p>
-    </header>
-    <main id="wall" aria-label="Monitors"></main>
-    <p id="say" class="sr-only" aria-live="polite"></p>
-
-    <dialog id="guide" aria-labelledby="guide-title">
-      <div class="panel">
-        <header>
-          <h2 id="guide-title">Channels</h2>
-          <button type="button" class="guide-close" aria-label="Close channels">Close</button>
+    <main class="kino">
+      <section class="wall-pane" aria-labelledby="kino-title">
+        <header id="bar">
+          <h1 id="kino-title">Kino</h1>
+          <div class="layouts" role="group" aria-label="Layout">
+            <button type="button" data-layout="wall" aria-pressed="true" title="Wall (L)">Wall</button>
+            <button type="button" data-layout="feature" aria-pressed="false" title="Feature (L)">Feature</button>
+            <button type="button" data-layout="solo" aria-pressed="false" title="Solo (Enter)">Solo</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="toggle-status" aria-expanded="false" aria-controls="status" title="Feed details" aria-label="Feed details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18" /></svg></button>
+            <button type="button" id="open-help" title="Controls (?)" aria-label="Controls"><span aria-hidden="true">?</span></button>
+          </div>
+          <div class="feed-notice"><span id="notice"></span> <a id="signin" hidden>Sign in</a></div>
+          <p id="status" hidden></p>
         </header>
-        <p class="guide-caption"></p>
-        <ul class="guide-list"></ul>
-      </div>
-    </dialog>
+        <div id="wall" role="region" aria-label="Monitors"></div>
+        <p id="say" class="sr-only" aria-live="polite"></p>
+      </section>
+      <aside class="channel-pane" aria-label="Monitor controls and channels">
+        <div class="dock">
+          <div class="dock-head">
+            <h2 id="focus-title" tabindex="-1">No channel selected</h2>
+            <button type="button" id="open-guide" title="Channels (T)" aria-haspopup="dialog" aria-controls="guide" disabled>Channels</button>
+            <button type="button" id="clear-monitor" title="Close this monitor (X)" disabled>Clear</button>
+          </div>
+          <div id="camera-controls"></div>
+        </div>
+        <section id="guide-inline" aria-labelledby="guide-title" hidden>
+          <div class="guide-content">
+            <header>
+              <h2 id="guide-title">Channels</h2>
+              <button type="button" class="guide-close" aria-label="Close channels">Close</button>
+            </header>
+            <p class="guide-caption"></p>
+            <ul class="guide-list"></ul>
+          </div>
+        </section>
+      </aside>
+    </main>
+    <nav class="tabs" aria-label="Glass views">
+      <a id="tab-glass" href="/">Glass</a>
+      <a id="tab-kino" href="/kino/" aria-current="page">Kino</a>
+      <a id="tab-map" href="https://map.geldar.sandboxservers.games" rel="noopener noreferrer">Map</a>
+      <a id="tab-roster" href="/?view=roster">Roster</a>
+    </nav>
+    <dialog id="guide" aria-labelledby="guide-title"></dialog>
 
     <dialog id="help" aria-labelledby="help-title">
       <div class="panel">
@@ -55,7 +75,7 @@
           <dt><kbd>1</kbd>&ndash;<kbd>4</kbd></dt><dd>Pick a monitor</dd>
           <dt><kbd>C</kbd></dt><dd>Next camera: Chase, Orbit, Free</dd>
           <dt><kbd>Q</kbd> <kbd>E</kbd> or <kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Rotate round the agent in steps</dd>
-          <dt><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or wheel</dt><dd>Zoom: close, medium, far</dd>
+          <dt><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or wheel</dt><dd>Zoom: Chase distances, Orbit radius or Free movement</dd>
           <dt><kbd>R</kbd> or double-click</dt><dd>Back behind the agent</dd>
           <dt>Drag</dt><dd>Turn the camera</dd>
           <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, <kbd>Space</kbd>, <kbd>Shift</kbd></dt><dd>Fly (Free camera)</dd>

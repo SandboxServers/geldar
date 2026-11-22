@@ -20,6 +20,7 @@ import {
   STATIC_FILES,
   WORKER_PATH,
   withDelay,
+  withKinoTab,
 } from '../src/static-files.ts';
 
 const PUBLIC = new URL('../public/', import.meta.url);
@@ -237,6 +238,18 @@ describe('the page', () => {
     expect(withDelay(slot, 60)).toBe('<button data-delay="60">');
     expect(() => withDelay('<button>', 60)).toThrow(/no single delay slot/);
     expect(() => withDelay(slot + slot, 60)).toThrow(/no single delay slot/);
+  });
+
+  it('writes the Kino tab into its one slot, removes the slot when off, and refuses any other page', () => {
+    const slot = '      <!-- kino-tab -->\n';
+    const page = `<nav>\n${slot}</nav>`;
+    expect(withKinoTab(page, true)).toBe(
+      '<nav>\n      <a id="tab-kino" href="/kino/">Kino</a>\n</nav>',
+    );
+    expect(withKinoTab(page, false)).toBe('<nav>\n</nav>');
+    expect(() => withKinoTab('<nav></nav>', true)).toThrow(/no single Kino tab slot/);
+    expect(() => withKinoTab('<nav></nav>', false)).toThrow(/no single Kino tab slot/);
+    expect(() => withKinoTab(page + slot, true)).toThrow(/no single Kino tab slot/);
   });
 
   it('asks only for files in the table: every link, script, import, typeface and icon', () => {

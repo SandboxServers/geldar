@@ -102,23 +102,26 @@ async function main(): Promise<number> {
     // first visit tunes CH 1 to the first agent by itself.
     await page.waitForFunction(
       () =>
-        document.querySelectorAll('#guide .guide-list li').length > 0 ||
+        document.querySelectorAll('.guide-list li').length > 0 ||
         /atlas FAILED/.test(document.getElementById('status')?.textContent ?? ''),
       undefined,
       { timeout: 60_000 },
     );
-    pickerOptions = await page.locator('#guide .guide-list li').count();
+    pickerOptions = await page.locator('.guide-list li').count();
     if (args.agent) {
       // The guide lists the agents in the order of the page's own camera list: pick by position, an
       // exact id first, then an exact label (never a substring, so "Moss" never picks "Mossy").
       const index = agentIndex((await targetsReply)?.agents ?? [], args.agent);
       if (index < 0) throw new Error(`agent not listed for this viewer: ${args.agent}`);
-      await page.locator('#open-guide').click();
-      await page.locator('#guide .guide-list li .tune').nth(index).click({ timeout: 3000 });
+      // Under 700px the list is in the Channels sheet; from 700px it is in the pane beside the wall.
+      const channels = page.locator('#open-guide');
+      if (await channels.isVisible()) await channels.click();
+      await page.locator('.guide-list li .tune').nth(index).click({ timeout: 3000 });
     }
     if (args.mode !== 'follow') {
       const name = args.mode === 'orbit' ? 'Orbit camera' : 'Free camera';
-      await page.locator(`.monitor.active [aria-label="${name}"]`).click({ force: true });
+      // The active monitor's controls sit in the dock (decision 0412), not on the monitor.
+      await page.locator(`#camera-controls [aria-label="${name}"]`).click({ timeout: 5000 });
     }
   } catch (e) {
     log.push(`setup: ${redact(String((e as Error).message).split('\n')[0] ?? '')}`);

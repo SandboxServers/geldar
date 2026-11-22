@@ -9,6 +9,7 @@ export type MonitorAction =
   | { kind: 'mode'; mode: CameraMode }
   | { kind: 'rotate'; steps: number }
   | { kind: 'zoom'; steps: number }
+  | { kind: 'zoom-level'; level: number }
   | { kind: 'recentre' }
   | { kind: 'surf'; steps: number }
   | { kind: 'guide' }
@@ -30,7 +31,6 @@ export const ICONS = {
   guide: 'M4 6h16M4 12h16M4 18h10',
   solo: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   info: 'M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18',
-  close: 'M6 6l12 12M18 6L6 18',
 } as const;
 
 export function icon(path: string): SVGSVGElement {
@@ -58,6 +58,8 @@ function button(label: string, iconPath: string | null, text?: string): HTMLButt
   return b;
 }
 
+const ZOOM_LABELS = ['Near', 'Medium', 'Far'] as const;
+
 const MODE_TEXT: Record<CameraMode, string> = { follow: 'Chase', orbit: 'Orbit', free: 'Free' };
 /** What a viewer reads for each camera mode. `follow` is the Lakitu chase camera. */
 export const modeText = (m: CameraMode): string => MODE_TEXT[m];
@@ -65,10 +67,12 @@ export const modeText = (m: CameraMode): string => MODE_TEXT[m];
 export interface MonitorFrame {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
+  controls: HTMLElement;
   setChannel(n: number): void;
   /** The agent's label; while `tuning`, "Tuning in to <label>" (the server has not named it yet). */
   setLabel(text: string, tuning?: boolean): void;
   setMode(m: CameraMode): void;
+  setZoom(level: number | null): void;
   setLive(live: boolean): void;
   setActive(active: boolean): void;
   setFeatured(featured: boolean): void;
@@ -107,7 +111,13 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   live.textContent = 'Live';
   const mode = document.createElement('span');
   mode.className = 'mode';
-  osd.append(ch, name, mode, live);
+  const top = document.createElement('div');
+  top.className = 'monitor-top';
+  top.append(live, ch);
+  const bottom = document.createElement('div');
+  bottom.className = 'monitor-bottom';
+  bottom.append(name, mode);
+  osd.append(top, bottom);
 
   const msg = document.createElement('div');
   msg.className = 'msg';
@@ -137,8 +147,22 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   const info = act('Show feed details', ICONS.info, { kind: 'info' });
   info.setAttribute('aria-expanded', 'false');
   const solo = act('Solo this monitor', ICONS.solo, { kind: 'solo' });
-  controls.append(
-    group('Camera mode', ...modeButtons.values()),
+  const zoomButtons = ZOOM_LABELS.map((label, level) => {
+    const b = button(label, null, label);
+    b.addEventListener('click', () => onAction({ kind: 'zoom-level', level }));
+    return b;
+  });
+  const modes = group('Camera mode', ...modeButtons.values());
+  const zoom = group('Chase distance', ...zoomButtons);
+  const segments = document.createElement('div');
+  segments.className = 'camera-segments';
+  segments.append(modes, zoom);
+  const more = document.createElement('details');
+  more.className = 'monitor-tools';
+  const summary = document.createElement('summary');
+  summary.textContent = 'More controls';
+  more.append(
+    summary,
     group(
       'Camera',
       act('Rotate left', ICONS.rotl, { kind: 'rotate', steps: -1 }),
@@ -153,8 +177,10 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
       act('Choose an agent', ICONS.guide, { kind: 'guide' }),
       act('Next agent', ICONS.next, { kind: 'surf', steps: 1 }),
     ),
-    group('Monitor', solo, info, act('Close this monitor', ICONS.close, { kind: 'close' })),
+    group('Monitor', solo, info),
   );
+
+  controls.append(segments, more);
 
   const status = document.createElement('div');
   status.className = 'status';
@@ -165,23 +191,43 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   notice.setAttribute('role', 'status');
   notice.hidden = true;
 
-  root.append(screen, osd, msg, notice, controls, status);
+  root.append(screen, osd, msg, notice, status);
+  let cameraMode: CameraMode = 'follow';
+  let cameraZoom: number | null = null;
+  const showMode = (): void => {
+    const distance = cameraZoom === null ? undefined : ZOOM_LABELS[cameraZoom];
+    mode.textContent = distance
+      ? `${modeText(cameraMode)} · ${distance.toLowerCase()}`
+      : modeText(cameraMode);
+  };
   let flickerTimer: ReturnType<typeof setTimeout> | undefined;
   let sayTimer: ReturnType<typeof setTimeout> | undefined;
   return {
     root,
     canvas,
+    controls,
     setChannel(n) {
       ch.textContent = `CH ${n}`;
+      ch.id = `monitor-channel-${n}`;
+      name.id = `monitor-name-${n}`;
+      root.setAttribute('aria-labelledby', `${ch.id} ${name.id}`);
     },
     setLabel(text, tuning = false) {
       const shown = tuning ? `Tuning in to ${text}` : text;
       name.textContent = shown;
-      root.setAttribute('aria-label', `Monitor: ${shown}`);
     },
     setMode(m) {
-      mode.textContent = modeText(m);
+      cameraMode = m;
+      showMode();
       for (const [k, b] of modeButtons) b.setAttribute('aria-pressed', String(k === m));
+    },
+    setZoom(level) {
+      if (level === cameraZoom && zoom.hidden === (level === null)) return;
+      cameraZoom = level;
+      zoom.hidden = level === null;
+      showMode();
+      for (const [i, b] of zoomButtons.entries())
+        b.setAttribute('aria-pressed', String(i === level));
     },
     setLive(on) {
       live.classList.toggle('off', !on);
@@ -238,23 +284,66 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   };
 }
 
-/** An empty slot: static, "No signal" and a Tune in button. */
-export function buildEmptySlot(onTune: () => void): HTMLElement {
+/**
+ * Puts the wall's tiles in the order given (by channel) and drops the rest. A tile already in
+ * its place is not touched: moving a node drops its focus, and the monitors keep their canvases.
+ */
+export function orderTiles(wall: HTMLElement, tiles: readonly HTMLElement[]): void {
+  for (const child of [...wall.children]) if (!tiles.includes(child as HTMLElement)) child.remove();
+  let at = wall.firstElementChild;
+  for (const tile of tiles) {
+    if (tile === at) at = at.nextElementSibling;
+    else wall.insertBefore(tile, at);
+  }
+}
+
+/**
+ * Shows one monitor's controls in the dock. When focus was in the dock it goes to the same control
+ * of the new monitor (More controls stays as it was), or to `fallback` when that control is not there.
+ */
+export function showControls(
+  dock: HTMLElement,
+  controls: HTMLElement | null,
+  fallback: HTMLElement,
+): void {
+  if (dock.firstChild === controls) return;
+  const focused = dock.contains(document.activeElement) ? document.activeElement : null;
+  const before = dock.querySelector('details');
+  const more = controls?.querySelector('details');
+  if (before && more) more.open = before.open;
+  dock.replaceChildren(...(controls ? [controls] : []));
+  if (focused === null) return;
+  // Fixed labels from this file, never world text.
+  const label = focused.getAttribute('aria-label');
+  const same = [...(controls?.querySelectorAll<HTMLElement>('button, summary') ?? [])].find(
+    (c) =>
+      c.tagName === focused.tagName &&
+      c.getAttribute('aria-label') === label &&
+      !c.closest('[hidden]'),
+  );
+  (same ?? fallback).focus();
+}
+
+/** A numbered vacancy. The whole empty card is the tune-in button, and says which channel it is. */
+export function buildEmptySlot(
+  onTune: (channel: number, button: HTMLButtonElement) => void,
+  channel = 1,
+): HTMLElement {
   const root = document.createElement('section');
   root.className = 'monitor empty';
   root.setAttribute('aria-label', 'Empty monitor');
   const screen = document.createElement('div');
   screen.className = 'screen';
-  const noise = document.createElement('div');
-  noise.className = 'static on idle';
-  screen.appendChild(noise);
   const card = document.createElement('div');
   card.className = 'nosignal';
   const t = document.createElement('p');
-  t.textContent = 'No signal';
-  const b = button('Tune in an agent on this monitor', ICONS.plus, 'Tune in');
-  b.addEventListener('click', onTune);
-  card.append(t, b);
+  t.textContent = 'no channel';
+  const number = document.createElement('p');
+  number.textContent = `CH ${channel}`;
+  const b = button(`No signal. Tune in an agent on CH ${channel}`, null);
+  b.append(number, t);
+  b.addEventListener('click', () => onTune(channel, b));
+  card.append(b);
   root.append(screen, card);
   return root;
 }

@@ -17,7 +17,7 @@ import {
   startupPlan,
   writeSaved,
 } from '../../web/kino/panes/saved.ts';
-import { planWall } from '../../web/kino/panes/wall-layout.ts';
+import { freeChannel, planWall } from '../../web/kino/panes/wall-layout.ts';
 
 describe('keyboard map', () => {
   it('maps the Lakitu controls, monitor picks, surfing, layouts and dialogs', () => {
@@ -90,11 +90,11 @@ describe('wall layouts', () => {
     ).toEqual([1, 2, 3, 4]);
   });
 
-  it('Wall on a phone: one column, one empty slot, the empty row short', () => {
+  it('Wall on a phone: the same two-by-two wall with all four slots', () => {
     const p = planWall({ ids: [1], active: 1, layout: 'wall', cap: 4, narrow: true });
-    expect(p.columns).toBe('repeat(1, minmax(0, 1fr))');
-    expect(p.cells.map((c) => c.id)).toEqual([1, null]);
-    expect(p.rows).toBe('minmax(16rem, 1fr) 7rem');
+    expect(p.columns).toBe('repeat(2, minmax(0, 1fr))');
+    expect(p.cells.map((c) => c.id)).toEqual([1, null, null, null]);
+    expect(p.rows).toBe('repeat(2, minmax(0, 1fr))');
   });
 
   it('an empty wall still shows a monitor to tune', () => {
@@ -188,6 +188,18 @@ describe('remembered wall', () => {
     expect(readSaved(blocked, ['ag_a'], 4)).toBeNull();
     expect(() => writeSaved(blocked, { layout: 'wall', monitors: [] })).not.toThrow();
     expect(readSaved(null, ['ag_a'], 4)).toBeNull();
+  });
+});
+
+describe('channel numbers (decision 0412)', () => {
+  it('gives a new monitor the vacancy it was opened from, else the lowest free number', () => {
+    expect(freeChannel(new Set())).toBe(1);
+    expect(freeChannel(new Set([1, 2]))).toBe(3);
+    expect(freeChannel(new Set([2, 3]))).toBe(1);
+    expect(freeChannel(new Set([1]), 3)).toBe(3);
+    expect(freeChannel(new Set([1]), 4)).toBe(4);
+    // A vacancy taken since it was pressed falls back to the lowest free number.
+    expect(freeChannel(new Set([1, 3]), 3)).toBe(2);
   });
 });
 

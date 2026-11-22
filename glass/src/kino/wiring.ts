@@ -33,10 +33,10 @@ const THREE = new URL('../../node_modules/three/build/', import.meta.url);
 const JS = 'text/javascript; charset=utf-8';
 /** Open panes are re-checked against the store this often (ban, camera switched off, expired cookie). */
 export const REVALIDATE_MS = 60_000;
-/** Kino's page needs an inline import map and style, and loads images from itself: its own policy, same strictness otherwise. */
+/** Kino's page needs an inline import map and style, and loads fonts and images from itself: its own policy, same strictness otherwise. */
 export function kinoCsp(inlineScriptHashes: string[]): string {
   const hashes = inlineScriptHashes.map((h) => ` 'sha256-${h}'`).join('');
-  return `default-src 'none'; script-src 'self'${hashes}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  return `default-src 'none'; script-src 'self'${hashes}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 }
 
 export interface KinoEnv {

@@ -1,36 +1,33 @@
 // Production browser entry (decision 0166): the monitor wall. It loads the camera list and the
 // textures, then keeps up to DEFAULT_PANES monitors, one active, in a layout, with the channel guide,
 // the keyboard map and the remembered wall. Not unit tested (it is the page's wiring); the decisions it
-// makes live in tested modules: keys (routeKey), wall-layout, saved (startupPlan), subscribe-gate,
-// pane-set, pane-view, session, guide, targets and the camera rig.
+// makes live in tested modules: keys (routeKey), keyboard, wall-layout, saved (startupPlan),
+// subscribe-gate, pane-set, pane-view, monitor, session, guide, targets and the camera rig.
 
 import { buildAtlas } from './atlas.ts';
 import { bindPointer, keyMove } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 import { ChannelGuide } from './guide.ts';
-import { type Layout, nextLayout, nextMode, routeKey, surf } from './keys.ts';
+import { bindKeyboard } from './keyboard.ts';
+import { type Layout, nextLayout, nextMode, surf } from './keys.ts';
 import { openingPlan } from './panes/first-visit.ts';
 import {
   buildEmptySlot,
   buildMonitor,
   type MonitorAction,
   type MonitorFrame,
+  orderTiles,
+  showControls,
 } from './panes/monitor.ts';
 import { DEFAULT_PANES, PaneSet } from './panes/pane-set.ts';
 import { createPaneView, type PaneView } from './panes/pane-view.ts';
 import { browserStorage, readSaved, writeSaved } from './panes/saved.ts';
 import { GATE_REFILL_MS, SubscribeGate } from './panes/subscribe-gate.ts';
-import { planWall } from './panes/wall-layout.ts';
+import { freeChannel, planWall } from './panes/wall-layout.ts';
 import type { SocketLike } from './session.ts';
+import { loadTargets, showLoadFailure } from './startup.ts';
 import { aggregateStatus, type StatusInfo, statusLine } from './status.ts';
-import {
-  labelFor,
-  type TargetAgent,
-  type TargetsOutcome,
-  targetsFetchFailed,
-  targetsNotice,
-  targetsOutcome,
-} from './targets.ts';
+import { labelFor, type TargetAgent, targetsNotice } from './targets.ts';
 
 const meta = (name: string): string =>
   document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? '';
@@ -59,40 +56,9 @@ function browserSocket(url: string): SocketLike {
   } as SocketLike;
 }
 
-async function loadTargets(): Promise<TargetsOutcome> {
-  try {
-    const r = await fetch('/kino/targets', { credentials: 'same-origin' });
-    const body: unknown = await r.json().catch(() => null);
-    return targetsOutcome(r.status, r.headers.get('Retry-After'), body);
-  } catch {
-    return targetsFetchFailed();
-  }
-}
-
 /** One polite announcement for screen readers, said once when it becomes true. */
 function announce(text: string): void {
   el('say').textContent = text;
-}
-
-/** A visible failure message with a Retry button; the button waits out Retry-After. */
-function showLoadFailure(notice: HTMLElement, message: string, wait: number | null): void {
-  const text = document.createElement('span');
-  text.textContent = message;
-  const retry = document.createElement('button');
-  retry.type = 'button';
-  retry.textContent = 'Retry';
-  let left = wait ?? 0;
-  const tick = (): void => {
-    retry.disabled = left > 0;
-    retry.textContent = left > 0 ? `Retry (${left}s)` : 'Retry';
-    if (left > 0) {
-      left -= 1;
-      setTimeout(tick, 1000);
-    }
-  };
-  tick();
-  retry.addEventListener('click', () => void main());
-  notice.replaceChildren(text, ' ', retry);
 }
 
 interface Monitor {
@@ -128,7 +94,8 @@ async function main(): Promise<void> {
   });
   notice.replaceChildren();
   const outcome = await loadTargets();
-  if (!outcome.ok) return showLoadFailure(notice, outcome.message, outcome.retryAfterSeconds);
+  if (!outcome.ok)
+    return showLoadFailure(notice, outcome.message, outcome.retryAfterSeconds, () => void main());
   const targets = outcome.targets;
   notice.textContent = targetsNotice(targets) ?? '';
   if (!targets.signedIn && targets.enabled) {
@@ -170,7 +137,7 @@ async function main(): Promise<void> {
   }
   const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/kino/ws`;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const narrowQuery = matchMedia('(max-width: 720px)');
+  const narrowQuery = matchMedia('(width < 700px)');
   const storage = browserStorage();
   const gate = new SubscribeGate({
     now: () => performance.now(),
@@ -192,6 +159,7 @@ async function main(): Promise<void> {
       monitors: order().map((m) => ({ target: m.view.target, mode: m.view.mode })),
     });
 
+  const slots = new Map<number, HTMLElement>();
   const setActive = (id: number | null): void => {
     if (active !== null && active !== id) {
       const prev = monitors.get(active);
@@ -204,9 +172,10 @@ async function main(): Promise<void> {
 
   const layoutButtons = document.querySelectorAll<HTMLButtonElement>('[data-layout]');
   function layoutWall(): void {
+    const byChannel = new Map(order().map((m) => [m.channel, m]));
     const plan = planWall({
-      ids: order().map((m) => m.id),
-      active,
+      ids: [...byChannel.keys()],
+      active: active === null ? null : (monitors.get(active)?.channel ?? null),
       layout,
       cap: DEFAULT_PANES,
       narrow: narrowQuery.matches,
@@ -214,28 +183,38 @@ async function main(): Promise<void> {
     wallEl.style.gridTemplateColumns = plan.columns;
     wallEl.style.gridTemplateRows = plan.rows;
     wallEl.dataset.layout = layout;
-    const keep: HTMLElement[] = [];
+    const keep = new Map<number, HTMLElement>();
+    const vacancies = Array.from({ length: DEFAULT_PANES }, (_, i) => i + 1).filter(
+      (channel) => !byChannel.has(channel),
+    );
+    const fullGrid = plan.cells.length === DEFAULT_PANES && (layout === 'wall' || active === null);
     for (const cell of plan.cells) {
-      const node =
-        cell.id === null
-          ? buildEmptySlot(() => openGuide(true))
-          : (monitors.get(cell.id) as Monitor).frame.root;
-      node.style.gridArea = cell.area;
+      const channel = cell.id ?? (vacancies.shift() as number);
+      const monitor = byChannel.get(channel);
+      let node = monitor?.frame.root ?? slots.get(channel);
+      if (!node) {
+        node = buildEmptySlot(openGuide, channel);
+        slots.set(channel, node);
+      }
+      // Wall slots keep their channel number after a neighbour is cleared.
+      node.style.gridArea = fullGrid ? (plan.cells[channel - 1]?.area ?? cell.area) : cell.area;
       node.hidden = false;
-      if (cell.id !== null) (monitors.get(cell.id) as Monitor).frame.setFeatured(cell.featured);
-      keep.push(node);
+      monitor?.frame.setFeatured(cell.featured);
+      keep.set(channel, node);
     }
-    for (const id of plan.hidden) {
-      const m = monitors.get(id) as Monitor;
+    for (const channel of plan.hidden) {
+      const m = byChannel.get(channel) as Monitor;
       m.frame.root.hidden = true;
-      keep.push(m.frame.root);
+      keep.set(channel, m.frame.root);
     }
-    // Monitors stay in the DOM in channel order (their canvases keep their WebGL contexts); empty slots are rebuilt.
-    for (const child of [...wallEl.children])
-      if (!keep.includes(child as HTMLElement)) child.remove();
-    for (const node of keep) if (node.parentElement !== wallEl) wallEl.appendChild(node);
+    // Tab order follows the channel numbers; monitors already on the wall are not moved.
+    orderTiles(
+      wallEl,
+      [...keep].sort((a, b) => a[0] - b[0]).map(([, node]) => node),
+    );
     for (const b of layoutButtons)
       b.setAttribute('aria-pressed', String(b.dataset.layout === layout));
+    drawSelection();
   }
 
   const setLayout = (l: Layout): void => {
@@ -248,6 +227,7 @@ async function main(): Promise<void> {
   const retune = (m: Monitor, target: string, settle: boolean): void => {
     m.view.setTarget(target, settle ? SURF_SETTLE_MS : 0);
     save();
+    drawSelection();
     announce(`CH ${m.channel}: ${labelOf(target)}`);
   };
 
@@ -257,6 +237,7 @@ async function main(): Promise<void> {
     switch (a.kind) {
       case 'mode':
         m.view.setMode(a.mode);
+        drawZoom(m);
         save();
         break;
       case 'rotate':
@@ -264,6 +245,11 @@ async function main(): Promise<void> {
         break;
       case 'zoom':
         rig.zoomStep(a.steps);
+        drawZoom(m);
+        break;
+      case 'zoom-level':
+        if (rig.mode === 'follow') rig.zoomStep(a.level - rig.chase.zoom);
+        drawZoom(m);
         break;
       case 'recentre':
         rig.recentre();
@@ -290,10 +276,10 @@ async function main(): Promise<void> {
 
   /** The first-subscribe delay for the monitor being opened (a restored wall spaces them out). */
   let openDelay = 0;
+  let openChannel: number | undefined;
   const panes = new PaneSet((id, target, mode) => {
     const used = new Set([...monitors.values()].map((x) => x.channel));
-    let channel = 1;
-    while (used.has(channel)) channel++;
+    const channel = freeChannel(used, openChannel);
     let self: Monitor | null = null;
     const frame = buildMonitor((a) => self && action(self, a));
     frame.setChannel(channel);
@@ -312,10 +298,14 @@ async function main(): Promise<void> {
         showBar();
       },
       // The server kept the old agent (a refused retune): remember the wall as it really is.
-      onTargetChanged: () => save(),
+      onTargetChanged: () => {
+        save();
+        drawSelection();
+      },
     });
     bindPointer(frame.canvas, () => view.rig, { onActivate: () => active !== id && setActive(id) });
     self = { id, channel, frame, view };
+    drawZoom(self);
     monitors.set(id, self);
     return {
       setTarget: (t) => view.setTarget(t),
@@ -332,10 +322,17 @@ async function main(): Promise<void> {
     };
   });
 
-  const openMonitor = (target: string, mode: CameraMode = 'follow', delayMs = 0): void => {
+  const openMonitor = (
+    target: string,
+    mode: CameraMode = 'follow',
+    delayMs = 0,
+    channel?: number,
+  ): void => {
     openDelay = delayMs;
+    openChannel = channel;
     const id = panes.open(target, mode);
     openDelay = 0;
+    openChannel = undefined;
     if (id === null) {
       notice.textContent = `All ${DEFAULT_PANES} monitors are in use: close one first.`;
       return;
@@ -346,105 +343,106 @@ async function main(): Promise<void> {
     announce(`CH ${(monitors.get(id) as Monitor).channel}: ${labelOf(target)}`);
   };
 
-  const guide = new ChannelGuide(el<HTMLDialogElement>('guide'), agents, {
-    tune(agentId) {
-      const m = active !== null ? monitors.get(active) : undefined;
-      if (m) retune(m, agentId, false);
-      else openMonitor(agentId);
+  const guideTrigger = el<HTMLButtonElement>('open-guide');
+  const guide = new ChannelGuide(
+    el<HTMLDialogElement>('guide'),
+    el('guide-inline'),
+    guideTrigger,
+    narrowQuery,
+    agents,
+    {
+      tune(agentId) {
+        const m = active !== null ? monitors.get(active) : undefined;
+        if (m) retune(m, agentId, false);
+        else openMonitor(agentId);
+      },
+      watchNew: (agentId, channel) => openMonitor(agentId, 'follow', 0, channel),
     },
-    watchNew: (agentId) => openMonitor(agentId),
-  });
-  /** Opens the channel guide; from an empty slot (`newMonitor`), a choice fills a new monitor. */
-  function openGuide(newMonitor = false): void {
+  );
+  const focusTitle = el('focus-title');
+  const cameraControls = el('camera-controls');
+  const clear = el<HTMLButtonElement>('clear-monitor');
+  const drawZoom = ({ frame, view: { rig } }: Monitor): void =>
+    frame.setZoom(rig.mode === 'follow' ? rig.chase.zoom : null);
+
+  function drawSelection(): void {
     const onAir = new Map<string, number[]>();
     for (const m of order())
       onAir.set(m.view.target, [...(onAir.get(m.view.target) ?? []), m.channel]);
     const a = active !== null ? monitors.get(active) : undefined;
-    guide.open(
-      {
-        onAir,
-        activeChannel: a?.channel ?? null,
-        canOpen: monitors.size < DEFAULT_PANES,
-        newMonitor,
-      },
-      labelOf,
-    );
+    guide.update({
+      onAir,
+      activeChannel: a?.channel ?? null,
+      canOpen: monitors.size < DEFAULT_PANES,
+    });
+    focusTitle.textContent = a
+      ? `CH ${a.channel} · ${labelOf(a.view.target)}`
+      : 'No channel selected';
+    clear.disabled = a === undefined;
+    showControls(cameraControls, a?.frame.controls ?? null, focusTitle);
   }
+
+  /** Opens the phone sheet or focuses the choices in the wide pane. */
+  function openGuide(channel?: number, opener?: HTMLElement): void {
+    guide.open(channel, opener ?? guideTrigger);
+  }
+
+  clear.addEventListener('click', () => {
+    const m = active !== null ? monitors.get(active) : undefined;
+    if (m) action(m, { kind: 'close' });
+    if (clear.disabled) focusTitle.focus();
+  });
 
   const help = el<HTMLDialogElement>('help');
   help.querySelector('.help-close')?.addEventListener('click', () => help.close());
-  el('open-guide').addEventListener('click', () => openGuide());
+  guideTrigger.addEventListener('click', () => openGuide());
   el('open-help').addEventListener('click', () => help.showModal());
   for (const b of layoutButtons)
     b.addEventListener('click', () => setLayout(b.dataset.layout as Layout));
   narrowQuery.addEventListener('change', layoutWall);
 
   // The keyboard drives the active monitor only.
-  const held = new Set<string>();
-  const syncMove = (): void => {
-    const m = active !== null ? monitors.get(active) : undefined;
-    if (m)
-      m.view.rig.move =
-        m.view.rig.mode === 'free' ? keyMove(held) : { right: 0, up: 0, forward: 0 };
-  };
-  addEventListener('keydown', (e) => {
-    const t = e.target as HTMLElement | null;
-    if (help.open || guide.isOpen || t?.closest('input, select, textarea')) return;
-    const m = active !== null ? monitors.get(active) : undefined;
-    const route = routeKey({
-      key: e.key,
-      ctrl: e.ctrlKey,
-      meta: e.metaKey,
-      alt: e.altKey,
-      repeat: e.repeat,
-      onButton: (t?.closest('button, a, summary') ?? null) !== null,
-      freeFly: m?.view.rig.mode === 'free',
-    });
-    if (route.preventDefault) e.preventDefault();
-    if (route.kind === 'move') {
-      held.add(route.key);
-      syncMove();
-      return;
-    }
-    if (route.kind === 'ignore') return;
-    const cmd = route.command;
-    switch (cmd.kind) {
-      case 'select': {
-        const pick = order().find((x) => x.channel === cmd.index + 1);
-        if (pick) setActive(pick.id);
-        return;
+  const activeMonitor = (): Monitor | undefined =>
+    active !== null ? monitors.get(active) : undefined;
+  bindKeyboard(window, {
+    modal: () => help.open || guide.isOpen,
+    freeFly: () => activeMonitor()?.view.rig.mode === 'free',
+    move(held) {
+      const rig = activeMonitor()?.view.rig;
+      if (rig) rig.move = rig.mode === 'free' ? keyMove(held) : { right: 0, up: 0, forward: 0 };
+    },
+    run(cmd) {
+      const m = activeMonitor();
+      switch (cmd.kind) {
+        case 'select': {
+          const pick = order().find((x) => x.channel === cmd.index + 1);
+          if (pick) setActive(pick.id);
+          return;
+        }
+        case 'cycle-mode':
+          if (m) action(m, { kind: 'mode', mode: nextMode(m.view.mode) });
+          return;
+        case 'cycle-layout':
+          return setLayout(nextLayout(layout));
+        case 'guide':
+          return openGuide();
+        case 'help':
+          return help.showModal();
+        case 'escape':
+          return;
+        case 'mode':
+        case 'rotate':
+        case 'zoom':
+        case 'recentre':
+        case 'surf':
+        case 'solo':
+        case 'info':
+        case 'close':
+          if (m) action(m, cmd);
+          else if (cmd.kind !== 'close') openGuide();
+          return;
       }
-      case 'cycle-mode':
-        if (m) action(m, { kind: 'mode', mode: nextMode(m.view.mode) });
-        return;
-      case 'cycle-layout':
-        return setLayout(nextLayout(layout));
-      case 'guide':
-        return openGuide();
-      case 'help':
-        return help.showModal();
-      case 'escape':
-        return;
-      case 'mode':
-      case 'rotate':
-      case 'zoom':
-      case 'recentre':
-      case 'surf':
-      case 'solo':
-      case 'info':
-      case 'close':
-        if (m) action(m, cmd);
-        else if (cmd.kind !== 'close') openGuide();
-        return;
-    }
-  });
-  addEventListener('keyup', (e) => {
-    held.delete(e.key.toLowerCase());
-    syncMove();
-  });
-  addEventListener('blur', () => {
-    held.clear();
-    syncMove();
+    },
   });
 
   // The wall the viewer left (one monitor per refill), or the first agent on CH 1 for a first visit.
@@ -457,7 +455,11 @@ async function main(): Promise<void> {
   if (active === null) layoutWall();
 
   const loop = (now: number): void => {
-    for (const m of monitors.values()) if (!m.frame.root.hidden) m.view.frame(now);
+    for (const m of monitors.values()) {
+      if (m.frame.root.hidden) continue;
+      drawZoom(m);
+      m.view.frame(now);
+    }
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

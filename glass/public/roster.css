@@ -134,6 +134,10 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  #tab-kino {
+    grid-column: 2;
+  }
+
   #tab-map {
     grid-column: 3;
   }

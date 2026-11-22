@@ -39,6 +39,18 @@ describe('Kino preview', () => {
     expect(targets.agents).toHaveLength(AGENTS.length);
   });
 
+  it('serves the shared typefaces and the sigil module under the Kino page policy', async () => {
+    const page = await fetch(`http://${base}/kino/`);
+    expect(page.headers.get('content-security-policy')).toContain("font-src 'self'");
+    for (const path of [
+      '/js/fonts.css',
+      '/js/fonts/dm-mono-latin-400-normal.woff2',
+      '/js/roster.css',
+      '/js/render-sigil.ts',
+    ])
+      expect((await fetch(`http://${base}${path}`)).status, path).toBe(200);
+  });
+
   it('invents a world and agents the feed contract accepts', () => {
     const sections = sectionMessages();
     for (const s of sections.slice(0, 6)) {
