@@ -21,7 +21,7 @@ Ledger: [README.md](README.md). Rules: decisions [0420](../../decisions/0420-age
   - `op:cancel`: `plan_id` or `"all"`.
 - Cell failure codes: `done_already`, `changed` (stale), `blocked`, `no_reference`, `out_of_reach`, `not_loaded`, `missing_materials`, `no_tool`, `unbreakable`, `state_unachievable`, `timeout`, `refused`.
 - Event `plan_progress`: `{plan_id, total, done, placed, broken, skipped_by_code{}, phase, next_need?:{block,count}}`; no unseen-block data; sample indexes are the plan's own cell numbers.
-- MCP tools (free, rate limited like `see`): `survey {box, layers?}` and `plan_check {plan}`; `status` gains an `active_plan` block. All three are hidden and refused while the flag is off (`threshold/mcp/src/tools/unavailable.ts`).
+- MCP tools (free, rate limited like `see`): `survey {box, layers?}` and `plan_check {plan}`; `status` gains an `active_plan` block. While the flag is off the Body answers `not_available` and the agent sees a tool error `body_unavailable`; the MCP does not read the flag. On colo the two tools are also hidden by `show_unavailable_tools: false` in `shards/colo-mind.yaml`, which hides six unavailable tools (`threshold/mcp/src/tools/unavailable.ts`). (Corrected 2026-11-22 to the code at `building/integration` d87221c4.)
 - Dig-safety refusals (falling column, liquid, walled-in) are removed for `break`, plan and `mine` (0428, BLD-36); deaths are part of the experiment. Only physically impossible refusals remain: `out_of_reach`, `unbreakable` (bedrock and the like), `not_loaded`, `no_tool`.
 - Survey reply (the next life's read includes the predecessor's inherited map, 0424; inherited runs carry their last-seen ages and an `inherited` mark): layers by Y, each a list of run-length rows over a legend `{key: block name}`, a last-seen age per run in game minutes, the key `unknown` for any cell not seen. No owner field.
 - Flag: `body_actions.building`, default false, plumbed like `body_actions.use` (decision 0218: `golem/src/body/create-body.ts` options, `golem/src/adam/adam-config.ts`, the shard config files, the MCP flag read).
@@ -32,8 +32,8 @@ Ledger: [README.md](README.md). Rules: decisions [0420](../../decisions/0420-age
 | Window | Waves | Why one window | MANUAL |
 |---|---|---|---|
 | R1 | 0, 1 and 2 (incl. BLD-36) | contract, validator, pure libraries and cell code, all dormant (flag off, lane unregistered) | none |
-| R2 | 3, 4 and BLD-26 | lane, seen map, the Body survey endpoint; flag still off | NATS role and bucket seed (BLD-05, BLD-18) before the flag goes on |
-| R3 | 5 (BLD-21 to 23), BLD-27, BLD-37 | MCP tools, descriptions, metrics, the Glass plan-activity view (`glass/**`) | none; prompts (BLD-24) and kit (BLD-25) do not restart Bodies |
+| R2 | 3 and 4 | lane, seen map, the Body survey endpoint; flag still off | NATS role for `geldar-plans` and `geldar-seen` in the live conf (BLD-05, BLD-18) before the flag goes on; the Body creates the buckets itself, there is no seed step |
+| R3 | 5 (BLD-21 to 23), BLD-26, BLD-27, BLD-37 | MCP tools, descriptions, metrics, the Glass plan-activity view (`glass/**`) | none; prompts (BLD-24) and kit (BLD-25) do not restart Bodies |
 
 Paper go-live (BLD-31) is a config flip plus one restart, after R3 and the quality packets. Nothing needs a Paper plugin or jar: there is no enforcement (0420), and recording already exists.
 
@@ -163,7 +163,7 @@ Before dispatching a wave, ops runs for each packet branch: `git merge-tree --wr
 
 ### Merge order versus deploy windows
 
-Packets merge into the integration branch `phase1/building` as they finish, in any order that the checks above allow; nothing deploys from there. The integration branch merges to `main` only at the windows: R1 after Wave 0 and Wave 1 are merged (all dormant), R2 after Wave 3 and 4 code, R3 after the MCP packets. Work is never serialised by a window.
+Packets merge into the integration branch `building/integration` (the name in use; the older `phase1/building` is not used) as they finish, in any order that the checks above allow; nothing deploys from there. The integration branch merges to `main` only at the windows: R1 after Wave 0 and Wave 1 are merged (all dormant), R2 after Wave 3 and 4 code, R3 after the MCP packets. Work is never serialised by a window.
 
 ## Wave 1: contract, validator and pure libraries (R1, dormant)
 
@@ -233,7 +233,7 @@ Fan-out: BLD-06, 07, 08, 09 and 10 run side by side (they touch different files)
 ### BLD-08 Place: blockstate and orientation
 - Size M. Restarts: Y (R1). Depends: BLD-03.
 - Branch `phase1/bld-08-place-state`; commit `BLD-08: place with facing, axis and half`.
-- Files: `golem/src/actions/place.ts` and new `golem/src/actions/place-state.ts`: a program-only run option `placeState` (the pattern of `mineAt` in decision 0349: not an agent field of the `place` action), choosing the reference face, the look yaw and pitch and the cursor height; verifying with the block's properties; tiers T1 (axis for logs and pillars, facing for stairs, doors, furnaces, chests) and T2 (slab top or bottom, stair half); a corner stair shape is server-derived and is not forced. Unachievable property gives `state_unachievable`; the cell is not left wrong silently: the block is placed only if the achieved state matches, else not placed.
+- Files: `golem/src/actions/place.ts` and new `golem/src/actions/place-state.ts`: a program-only run option `placeState` (the pattern of `mineAt` in decision 0349: not an agent field of the `place` action), choosing the reference face, the look yaw and pitch and the cursor height; verifying with the block's properties; tiers T1 (axis for logs and pillars, facing for stairs, doors, furnaces, chests; as built on 2026-11-22, facing is refused for every kind: `FACING_VERIFIED` is empty in `place-state.ts`, so this tier is NOT met, see the README ledger) and T2 (slab top or bottom, stair half); a corner stair shape is server-derived and is not forced. Unachievable property gives `state_unachievable`; the cell is not left wrong silently: the block is placed only if the achieved state matches, else not placed.
 - Tests: fakes in `place.fakes.ts` model the click-to-state rule; log axis x, stair facing and half, slab top; an unachievable state is skipped with the code; revert test: remove the yaw choice and the facing test fails.
 - Checks: as BLD-06.
 
@@ -304,7 +304,7 @@ BLD-17 then BLD-18 are serial; BLD-19 and BLD-20 follow in parallel.
 ### BLD-17 Recorder
 - Size M. Restarts: Y (R2). Depends: BLD-03 (flag).
 - Branch `phase1/bld-17-seen-recorder`; commit `BLD-17: record the blocks the character has seen`.
-- Files: `golem/src/building/seen/recorder.ts` (every N ticks, default 10, cast the same rays as the viewport, `golem/src/perception/view/viewport.ts` with `MAX_RANGE` 24 and `DARK_RANGE` 6, from the eyes and in the facing view cone (config `building.seen_fov`, default 90 by 45 degrees; a head turn reveals more; line of sight only); record the first opaque block hit and the transparent blocks before it; add cells the Body placed or broke; a cell in an unloaded chunk is never recorded), `golem/src/building/seen/section.ts` (a 16-cube section: palette plus a last-seen value per cell), bounded work per tick (a ray budget), tests.
+- Files: `golem/src/building/seen/recorder.ts` (every N ticks, default 10, cast the same rays as the viewport, `golem/src/perception/view/viewport.ts` with `MAX_RANGE` 24 and `DARK_RANGE` 6, from the eyes and in the facing view cone (as built, the cone is the viewport's fixed 90 by 45 degrees, `golem/src/perception/view/viewport.ts`; no `building.seen_fov` config key exists; a head turn reveals more; line of sight only); record the first opaque block hit and the transparent blocks before it; add cells the Body placed or broke; a cell in an unloaded chunk is never recorded), `golem/src/building/seen/section.ts` (a 16-cube section: palette plus a last-seen value per cell), bounded work per tick (a ray budget), tests.
 - Tests: a block behind a wall is not recorded (the leak test, first half); a block in an unloaded chunk is not recorded; a block in the dark beyond 6 is not recorded; looking at a cell twice updates its last-seen time; the work per tick never exceeds the ray budget.
 - Checks: golem typecheck and test.
 
@@ -325,7 +325,7 @@ BLD-17 then BLD-18 are serial; BLD-19 and BLD-20 follow in parallel.
 ### BLD-20 Body survey endpoint
 - Size M. Restarts: Y (R2). Depends: BLD-17, BLD-02.
 - Branch `phase1/bld-20-body-survey`; commit `BLD-20: Body answers a layered run-length block read of the seen map`.
-- Files: `golem/src/building/seen/survey.ts` (box to layers by Y, run-length rows over a legend, last-seen age in game minutes, `unknown` for unseen; a reply capped at 6000 characters: a larger box answers with the nearest slice and a `truncated` marker, a payload cap, not a policy cap), the gateway handler next to the `see` and `view` handlers (`threshold/mcp/src/body-gateway.ts` has the client side; find the Body side by the snapshot request subject), tests.
+- Files: `golem/src/building/seen/survey.ts` (box to layers by Y, run-length rows over a legend, last-seen age in game minutes, `unknown` for unseen; a reply capped at 6000 characters: a larger box answers with the nearest slice and a `truncated` marker, a payload cap, not a policy cap; as built on 2026-11-22 the Body refuses a box over 32768 cells as `box_too_large` (`golem/src/building/survey-reply.ts`) and the MCP tool returns `invalid_input`, so the slice rule above is not what runs), the gateway handler next to the `see` and `view` handlers (`threshold/mcp/src/body-gateway.ts` has the client side; find the Body side by the snapshot request subject), tests.
 - Tests: run-length encode and decode round trip; a mix of seen and unseen cells reads `unknown` for the unseen; no owner field; truncation marker; revert the unknown rule and the leak test fails.
 - Checks: golem typecheck and test.
 
@@ -343,7 +343,7 @@ Fan-out: BLD-21, 22, 23 run side by side after BLD-20; BLD-24 and BLD-25 need no
 ### BLD-22 MCP `plan_check` dry run
 - Size M. Restarts: Y (R3). Depends: BLD-04, BLD-20, BLD-21.
 - Branch `phase1/bld-22-plan-check`; commit `BLD-22: plan_check dry run of a plan against the seen map and the pack`.
-- Files: `threshold/mcp/src/tools/plan-check.ts` and test; the logic is the same expansion code as the lane (imported from `player-core/src/building/`, where S2 put it; no file moves). Reply: cell count, material needs against the pack, cells predicted `unknown` (never seen), estimated ticks, steps with invalid shapes. No world data about unseen cells.
+- Files: `threshold/mcp/src/tools/plan-check.ts` and test; the logic is the same expansion code as the lane. As built (BLD-22b, 2026-11-22) the dry run runs on the Body (`golem/src/building/plan-check-reply.ts`, `PLAN_CHECK_CELL_CAP` 8192, answer `plan_too_large`); the MCP tool only forwards the plan to the Body, so the "imported from `player-core`" wiring described here was not used for the tool. Reply: cell count, material needs against the pack, cells predicted `unknown` (never seen), estimated ticks, steps with invalid shapes. No world data about unseen cells.
 - Tests: the reply for a plan equals the lane's first-pass counts on the same fakes; unseen cells are reported `unknown` and not guessed; a flag-off refusal.
 - Checks: mcp, player-core and golem typecheck and test.
 

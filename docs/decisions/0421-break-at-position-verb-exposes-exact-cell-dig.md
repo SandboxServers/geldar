@@ -3,6 +3,7 @@
 - Status: Accepted for the verb (owner ruling 2026-11-22, rulings 1 and 4); the wire shape is Proposed
 - Date: 2026-11-22
 - Spec: section 5 (Body API verbs). Supersedes the "program-only, kept out of the agent-visible schema" rule of 0349 (0349 stays Proposed; its status line becomes `Superseded by 0421` in packet BLD-06). Related: 0164, 0344.
+- Amended 2026-11-22 (BLD-docsfix2): 0349 now reads `Superseded in part by 0421` (its status line and the decisions README row say so). The line above is the ruling as written and is kept.
 
 ## Decision
 
