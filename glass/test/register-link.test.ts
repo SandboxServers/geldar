@@ -1,7 +1,8 @@
 /**
  * The sign-in link on the Thought Stream page. It is one plain same-origin anchor to the relative path
  * /register/ (Caddy sends /register* to the register service). It has no script, form, cookie, target or
- * tracking attribute, and the page keeps its read-only banner above it.
+ * tracking attribute, and the page keeps its read-only banner above it. It is folded under "More" with the
+ * lesser filters and "About this page", so it costs a phone's header no height.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -28,11 +29,12 @@ describe('the sign-in link on the Thought Stream page', () => {
 
   it('sits in its own paragraph with no form or script around it', () => {
     expect(HTML).toContain('<p class="account"><a href="/register/">Sign in / Register</a></p>');
+    expect(HTML).not.toMatch(/<form\b/i);
     expect(HTML).not.toMatch(/href="https?:\/\/[^"]*register/);
   });
 
   it('comes after the read-only banner, which is still rendered', () => {
-    expect(HTML).toContain('Read-only. For human observers only.');
+    expect(HTML).toContain('One-way glass. You can read; nothing you do here reaches the agents.');
     expect(HTML.indexOf('class="banner"')).toBeLessThan(HTML.indexOf('href="/register/"'));
   });
 

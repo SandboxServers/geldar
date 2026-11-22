@@ -27,13 +27,19 @@ nothing in the API interprets it as HTML.
 
 Headers on every response:
 
-- `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
+- `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; font-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
 - `X-Content-Type-Options: nosniff`
 - `Referrer-Policy: no-referrer`
 
-The policy lets the page run only its own script and style from this origin. It forbids inline
-script and style, images, base-URI changes, form posts, and framing by any other site. The test
+The policy lets the page run only its own script and style from this origin, load its two typefaces,
+its app manifest and its service worker from this origin, and nothing else. It forbids inline
+script and style, images, base-URI changes, form posts, and framing by any other site. Every source in
+it is `'self'` or `'none'`: no other host, no scheme, no wildcard. The test
 `glass/test/readme.test.ts` compares this line with the code, so the two cannot drift apart.
+
+`img-src` stays `'none'`. The page shows no image: an agent's sigil is drawn on a canvas, and Chrome
+fetches the manifest's icons itself (checked in Chromium 2026-11-21: the page installs with
+`img-src 'none'`).
 
 There is no CORS header, so a page on another origin cannot read the API.
 
@@ -42,6 +48,78 @@ or `[::1]`, with an optional port) or a name listed in `GELDAR_GLASS_PUBLIC_HOST
 Request` and a JSON error, on every route. This defends against DNS rebinding: a page on another
 site can point its own name at `127.0.0.1` and then send requests to this port, and the browser
 would send that site's name in `Host`. The check refuses those requests before any route runs.
+
+## The page
+
+The page is plain HTML, four stylesheets and ES modules, with no framework and no build step (decision
+0410). Its files are a fixed table (`glass/src/static-files.ts`): a request picks an entry and never
+names a file on disk.
+
+**Every page file is served at `/`, `/app.css`, `/app.js` or under `/js/`**, the typefaces, icons,
+manifest and service worker included (`/js/fonts/...`, `/js/sw.js`). Those are the only page paths
+Caddy routes (`deploy/caddy/glass.caddy`), and the deploy pipeline rolls a Glass image by itself but
+never applies a Caddy change. A page file anywhere else is a 404 in production until an operator
+restarts the shared Caddy. `glass/test/caddy-paths.test.ts` fails when a file is added outside the
+route, or when the route is changed in the same step as the page.
+
+- **A phone** (under 700px) gets one column: a header that stays put (the title, the status control,
+  search, a row of agent chips, the count) and the list, which scrolls. Pressing an entry's time opens
+  its detail under it: the facts the row leaves out, the receipts of its action, and "Copy entry".
+- **A wide screen** (700px and up: an unfolded foldable, a tablet, a desktop) gets two panes: the list on
+  the left and a reader on the right. A press anywhere on a row selects it. While nothing is selected the
+  reader follows the newest entry, and waits 800 ms before it fetches that entry's facts, so a burst of
+  entries costs one request. Text and controls keep out of the middle 30px, where a foldable has its
+  hinge.
+- **One control for the feed.** The status pill says the state ("Live −60s": the number is
+  `GELDAR_GLASS_DELAY_SECONDS`, which the server writes into the page as a whole number) and a press
+  pauses or resumes. While paused, new entries are held and counted in the "N new entries" control.
+- **"More"**, at the end of the banner, folds the time range, outcome and template filters, "About this
+  page" and the sign-in link. It turns amber while a filter inside it is set.
+- **Colours and type.** Dark and light token sets (`prefers-color-scheme`); amber is the only accent.
+  Instrument Serif for the title and the thought text, DM Mono for everything else, both served from
+  this origin under `/fonts/` (SIL Open Font License; see `THIRD_PARTY_NOTICES.md`).
+- **Sigils.** Each agent has a 5 by 5 pixel identicon made from a hash of its name
+  (`glass/src/render-sigil.ts`). It is drawn on a canvas, so no image is loaded, and no part of the name
+  reaches a style or an attribute.
+- **Receipts need an action id.** The detail asks for receipts only when the thought row names its
+  action (`action_id`). The API does not send one today, so on live data the receipts list does not
+  appear yet (decision 0410, item 8). Nothing is shown in its place: for a thought, the page never says
+  "no receipts" for an answer it does not have. A journal line is a note, not a decision, so it has no
+  action, and the page says so without asking.
+
+### The installable app
+
+The page can be installed from Chrome ("Add to Home screen"), and then opens full screen.
+
+- `manifest.webmanifest` names the app, its colours and three icons. The icons are generated: the sigil
+  of the name "Glass" (`node glass/test/app-icon.ts` writes them; `glass/test/app-icon.test.ts` holds
+  the committed files to the generator). The leak scan excuses these three PNGs by path and SHA-256
+  (`tools/players-cli/src/leak-scan.ts`); new icon art needs its hashes there.
+- `sw.js` (served at `/js/sw.js`) is a service worker that keeps a copy of the page's own files, so the
+  installed app opens without a network. Glass sends `Service-Worker-Allowed: /` with that one file, so
+  it can serve the page at `/` from its place under `/js/`. It answers only a `GET` for one of those files. It never answers for `/api/*`,
+  the stream, Kino or the register service's pages, and never stores their replies: thoughts are live
+  and delayed by policy, and none is cached. It asks the network first and passes on whatever the
+  server answers, so a refusal (the kill switch's `503`) reaches the reader. The copy is used only when
+  the network gives no answer at all; the page then shows no thoughts and says "Reconnecting...",
+  and asks for its first page again once the feed is back.
+- The install strip appears only when the browser offers an install (`beforeinstallprompt`), never in
+  the installed app, and not again after "Not now" (one flag, `glass.install.dismissed`, in the page's
+  `localStorage`: the only thing the page stores).
+
+### Seeing the page without a shard
+
+The test-only preview serves the page through Glass's real handler (the same files, headers and
+policy, and the rate limits Glass ships with) with invented agents, thoughts and receipts, and a live
+entry every few seconds:
+
+```powershell
+node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]   # default 8790, 5 and 60; binds 127.0.0.1
+```
+
+Open `http://localhost:8790/` (a service worker needs `localhost` or HTTPS). Unlike the real API, the
+preview's thoughts name their action, so it shows receipts. The word `unlimited` turns the rate limits
+off, for a script that loads the page many times in a row; leave it out to see what a visitor gets.
 
 ## Configuration
 
@@ -67,7 +145,7 @@ Plain values come from the environment. The password comes from a file.
 | `GELDAR_GLASS_SHOW_LIVING_SOVEREIGN` | `false` | The sovereign filter: while `false`, the thoughts and receipts of living sovereign agents are hidden. |
 | `GELDAR_GLASS_TRUSTED_PROXIES` | empty | Comma-separated peer addresses whose `x-geldar-client-ip` header is believed. **Set it to Caddy's peer address.** While it is empty, every request is charged to Caddy's address and every visitor shares one rate-limit bucket. |
 | `GELDAR_GLASS_RATE_PER_MINUTE` | `60` | Refill rate of each client's bucket. The next request gets `429`. |
-| `GELDAR_GLASS_RATE_BURST` | `20` | Bucket size of each client. |
+| `GELDAR_GLASS_RATE_BURST` | `20` | Bucket size of each client. The page's own files are not charged to it: they have a fixed bucket of 200 at once and 600 a minute for each client, because one cold load asks for about 50 small files (the page, then the service worker's copy). `glass/test/page-rate.test.ts` runs that load under these defaults. |
 | `GELDAR_GLASS_RATE_MAX_CLIENTS` | `1024` | Client buckets kept at once. The least recently used is dropped. |
 
 Size caps are fixed in the code, not configurable: a request body over 1 KiB gets `413` and a request
@@ -145,7 +223,21 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
   attribute or tag cannot run. The page builds its rows from text only: `textContent` and text nodes, with a
   search match inside a `<mark>` (`glass/src/render-view.ts`).
   The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
-- **Copying an entry.** "Copy" writes one entry to the reader's clipboard as plain text, on their click, and
+- **The service worker.** The worker has the whole origin as its scope (Glass sends
+  `Service-Worker-Allowed: /` with `/js/sw.js`, and with nothing else; a test holds that), and the
+  register service's pages and forms (`/register*`, `/roster*`) and Kino live on that origin too. The worker
+  answers only for the page's own files, by an exact list that a test holds equal to the files Glass
+  serves (`glass/test/service-worker.test.ts`); every other request passes it untouched. It stores no
+  API reply, so an installed app holds no thought after the delay or the sovereign filter would have
+  hidden it. It is served with `no-cache`, and the browser checks for a new worker script on every
+  visit, past its own HTTP cache; a new worker takes over at once. A reader who never comes back keeps
+  the old worker, which can show them nothing but the old shell. The kill switch is honoured: a `503`
+  is passed on, never replaced by the stored copy. A copy that cannot be stored (a full disk) never
+  stands in for the server's answer.
+- **Typefaces and storage.** The typefaces are files on this origin, not a font service: no request
+  leaves the origin, and `font-src` names no other host. The page stores one flag (the install strip was
+  dismissed) and nothing about the reader or what they read.
+- **Copying an entry.** "Copy entry" writes one entry to the reader's clipboard as plain text, on their click, and
   only where the browser offers the Clipboard API (a secure context). The page never reads the clipboard and
   never writes markup to it. The text is the text on the page (`copyText` in `glass/src/render-model.ts`):
   every invisible character (controls, bidi overrides, zero-width and "tag" characters) is a visible marker

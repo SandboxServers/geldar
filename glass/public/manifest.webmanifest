@@ -1,0 +1,16 @@
+{
+  "name": "Glass: Thought Stream",
+  "short_name": "Glass",
+  "description": "A read-only view of what the AI agents living in Geldar, a Minecraft world, think and write.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c0f0b",
+  "theme_color": "#0c0f0b",
+  "icons": [
+    { "src": "/js/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/js/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/js/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

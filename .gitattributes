@@ -25,3 +25,6 @@ pnpm-lock.yaml -diff linguist-generated
 
 # The decisions table: two PRs that each add a row keep both. tools/repo-checks checks the row order.
 docs/decisions/README.md merge=union
+
+# Typefaces: never converted or diffed.
+*.woff2 binary

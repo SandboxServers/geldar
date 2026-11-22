@@ -281,10 +281,15 @@ describe('the Glass HTTP handler', () => {
     }
   });
 
-  it('pins the exact CSP: the page and its scripts only, nothing framed or re-based', async () => {
+  it('pins the exact CSP: the page, its scripts, typefaces, manifest and worker only, nothing framed or re-based', async () => {
     expect(SECURITY_HEADERS['Content-Security-Policy']).toBe(
-      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; font-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     );
+    // Every source is this origin or nothing: no host, scheme, wildcard, inline or eval is allowed anywhere.
+    const sources = SECURITY_HEADERS['Content-Security-Policy']
+      ?.split('; ')
+      .flatMap((directive) => directive.split(' ').slice(1));
+    expect(new Set(sources)).toEqual(new Set(["'none'", "'self'"]));
   });
 
   it('lists the routes, all GET, and serves a GET to each one', async () => {

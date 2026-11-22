@@ -29,6 +29,11 @@ export interface ThoughtView {
   kind: 'thought' | 'journal';
   wakeReason: string;
   plan: string;
+  /** The world day and tick of the thought. Null for a journal line, and for a live frame, which carries neither. */
+  worldDay: number | null;
+  worldTick: number | null;
+  /** The action the thought led to, when the API names one. Empty otherwise: its receipts cannot be asked for. */
+  actionId: string;
 }
 
 export interface ThoughtFilter {
@@ -54,6 +59,12 @@ function planOf(parsed: unknown): string {
   return '';
 }
 
+/** A whole number from the API. Postgres sends a BIGINT as digits in a string. Anything else is null. */
+function whole(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  return typeof value === 'string' && /^\d{1,15}$/.test(value) ? Number(value) : null;
+}
+
 /** Maps one API row (a list row, a stream frame or a detail row) to the view the page keeps. */
 export function toView(row: Row): ThoughtView {
   const at = text(row.at);
@@ -72,6 +83,9 @@ export function toView(row: Row): ThoughtView {
     kind: journal ? 'journal' : 'thought',
     wakeReason: text(row.wake_reason),
     plan: journal ? text(row.text) : planOf(parsed),
+    worldDay: whole(row.world_day),
+    worldTick: whole(row.world_tick),
+    actionId: typeof row.action_id === 'string' ? row.action_id : '',
   };
 }
 
@@ -231,6 +245,67 @@ export function appendOlder(list: ThoughtView[], older: ThoughtView[]): ThoughtV
   const ids = new Set(list.map((v) => v.id));
   const fresh = older.filter((v) => !ids.has(v.id));
   return [...list, ...fresh].slice(0, LIST_CAP);
+}
+
+/** The entry the reader pane shows: the selected one while it is on the page, otherwise the newest shown. */
+export function readerEntry(shown: ThoughtView[], selectedId: string): ThoughtView | undefined {
+  return shown.find((view) => view.id === selectedId) ?? shown[0];
+}
+
+/** The public delay the server wrote into the page, in whole seconds. Anything but plain digits is zero. */
+export function readDelay(raw: string | null | undefined): number {
+  return typeof raw === 'string' && /^\d{1,6}$/.test(raw) ? Number(raw) : 0;
+}
+
+/** The fixed words of the status control. `live` carries the public delay when there is one. */
+export function statusLabel(status: string, delaySeconds: number): string {
+  if (status === 'live') return delaySeconds > 0 ? `Live \u2212${delaySeconds}s` : 'Live';
+  if (status === 'connecting') return 'Connecting...';
+  if (status === 'reconnecting') return 'Reconnecting...';
+  if (status === 'paused') return 'Paused';
+  if (status === 'closed') return 'Closed';
+  return status;
+}
+
+/** How many entries wait behind the "new entries" control, in words. */
+export function freshLabel(count: number): string {
+  return count === 1 ? '1 new entry' : `${count} new entries`;
+}
+
+export interface ReceiptLine {
+  /** What was done: the kind, the item and, above one, the count. */
+  action: string;
+  /** The receipt's phase, as the Record has it: prepared, committed or aborted. */
+  outcome: string;
+  /** How the phase is coloured: committed is good, aborted is bad, anything else is neither. */
+  tone: 'ok' | 'bad' | 'other';
+  /** The credits the receipt moved, or empty when it names none. */
+  amount: string;
+}
+
+/** A value from a receipt row as text. Null and absent become empty. */
+function field(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+/** One receipt as the three cells the page shows. Every part is world text, shown through display(). */
+export function receiptLine(receipt: Row): ReceiptLine {
+  const count = whole(receipt.count);
+  const action = [
+    field(receipt.kind),
+    field(receipt.item),
+    count !== null && count > 1 ? `\u00d7${count}` : '',
+  ]
+    .filter((part) => part !== '')
+    .join(' ');
+  const outcome = field(receipt.phase);
+  const credits = whole(receipt.credits);
+  return {
+    action,
+    outcome,
+    tone: outcome === 'committed' ? 'ok' : outcome === 'aborted' ? 'bad' : 'other',
+    amount: credits === null ? '' : `${credits} cr`,
+  };
 }
 
 /** The reconnect delay after `attempt` failures: 500 ms, doubling, at most 30 s. */

@@ -204,11 +204,10 @@ describe('journal rows', () => {
     });
     const opened: string[] = [];
     renderRow(doc as unknown as Doc, view, (id) => opened.push(id));
-    const spans = made.filter((e) => e.tag === 'span');
-    const label = spans.find((s) => s.className.startsWith('outcome'));
-    expect(label?.textContent).toBe('journal');
-    expect(label?.className).not.toContain('unparsed');
-    const body = spans.find((s) => s.className.includes('journal-text'));
+    const label = made.find((e) => e.className === 'kind');
+    expect(label?.textContent).toBe('journal \u00b7 written for itself');
+    expect(made.some((e) => e.className === 'unparsed' || e.className === 'wake')).toBe(false);
+    const body = made.find((e) => e.className.includes('journal-text'));
     expect(body?.textContent).toBe(`${long.slice(0, 600)}...`);
     const more = made.find((e) => e.tag === 'button' && e.className === 'more');
     expect(more?.textContent).toBe('Show more');
@@ -282,6 +281,7 @@ class FakeEl {
   addEventListener(_type: 'click', listener: () => void): void {
     this.handler = listener;
   }
+  setAttribute(): void {}
   click(): void {
     this.handler?.();
   }

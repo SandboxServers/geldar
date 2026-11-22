@@ -1,0 +1,287 @@
+/*
+ * The entries of the Thought Stream page: the agent sigils, the rows of the list, the detail under a row,
+ * its receipts, and the controls at the head and foot of the list. The tokens are in app.css.
+ */
+/* Sigils: a 7 by 7 bitmap, scaled up with hard edges. */
+.sigil {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.sigil-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+.sigil-row {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+}
+
+.sigil-reader {
+  width: 56px;
+  height: 56px;
+  border-radius: 5px;
+}
+
+.sigil.dead {
+  filter: grayscale(1) brightness(0.8);
+}
+
+/* The list: the sigil, who and when on one line, what woke the thought, then the text. */
+.list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 18px 24px;
+  overflow-y: auto;
+  scrollbar-color: var(--rule) transparent;
+  scrollbar-width: thin;
+}
+
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  min-width: 0;
+  margin: 0 -18px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.who {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+}
+
+.who span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.died,
+.mode {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The time is the button that opens the detail under the entry; "Show more" opens a long journal line. */
+button.when,
+button.more {
+  flex: none;
+  min-height: 44px;
+  padding: 0 0 0 12px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+button.when {
+  font-variant-numeric: tabular-nums;
+}
+
+button.more {
+  margin-left: 38px;
+  padding: 0;
+}
+
+button.when:hover,
+button.more:hover {
+  color: var(--fg);
+}
+
+.wake,
+.kind {
+  margin-top: 2px;
+  padding-left: 38px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.wake {
+  color: var(--accent);
+}
+
+.kind {
+  color: var(--muted);
+}
+
+.unparsed {
+  margin: 8px 0 0 38px;
+  color: var(--bad);
+}
+
+.plan {
+  margin: 8px 0 0;
+  padding-left: 38px;
+  font: 400 21px/1.3 "Instrument Serif", serif;
+  text-wrap: pretty;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.journal-text {
+  font-style: italic;
+}
+
+mark {
+  border-radius: 2px;
+  background: var(--mark);
+  color: var(--mark-fg);
+}
+
+/* The detail: a card under its entry on a phone, the foot of the reader on a wide screen. */
+.detail {
+  margin: 12px 0 0 38px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--field);
+  font-size: 11.5px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.facts .bad {
+  color: var(--bad);
+}
+
+.detail h3 {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font: inherit;
+}
+
+.receipts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  gap: 0 14px;
+}
+
+.receipts span {
+  padding: 5px 0;
+  border-top: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+}
+
+.receipts .outcome {
+  color: var(--accent);
+}
+
+.receipts .outcome.ok {
+  color: var(--live);
+}
+
+.receipts .outcome.bad {
+  color: var(--bad);
+}
+
+.receipts .amount {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.none,
+.note {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+button.copy {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: none;
+  white-space: nowrap;
+}
+
+button.copy:active {
+  border-color: var(--accent);
+}
+
+.empty {
+  margin: 40px 0;
+  color: var(--muted);
+  font: italic 400 22px/1.3 "Instrument Serif", serif;
+  text-align: center;
+}
+
+#older,
+#fresh {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+  background: none;
+  white-space: nowrap;
+}
+
+#older {
+  display: block;
+  margin: 20px auto 0;
+}
+
+#older[hidden],
+.empty[hidden] {
+  display: none;
+}
+
+/* "N new entries": over the top of the list pane, so it is in reach wherever the reader has scrolled to. */
+#fresh {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 5;
+  max-width: calc(100% - 36px);
+  border-color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 8px 24px var(--shade);
+  color: var(--accent);
+  transform: translateX(-50%);
+}
+
+#fresh[hidden] {
+  display: none;
+}

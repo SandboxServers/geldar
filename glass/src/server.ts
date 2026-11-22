@@ -2,14 +2,13 @@
 import { createServer, type Server } from 'node:http';
 import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
-import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
 import { thoughtsAndJournalAfter } from './journal.ts';
 import { KinoAudit, sqlAuditStore } from './kino/audit.ts';
 import { startAuditPurge } from './kino/purge.ts';
 import type { FeedSource } from './kino/relay.ts';
 import { buildKino, loadKinoEnv } from './kino/wiring.ts';
-import { type PublicPolicy, visibilityAt } from './policy.ts';
+import { buildLimiters, type PublicPolicy, visibilityAt } from './policy.ts';
 import { type SqlClient, streamStartCursor, type ThoughtCursor } from './query.ts';
 import { SseHub } from './sse.ts';
 
@@ -69,23 +68,10 @@ export function buildGlass(
   pool.on('error', () => {
     // An idle client failed. pg retires it; the error text can name the host, so it is not logged.
   });
-  const limiter = new RateLimiter({ ...config.rateLimit, now: () => Date.now() });
   const policy: PublicPolicy = {
     trustedProxies: new Set(config.trustedProxies),
     publicHosts: new Set(config.publicHosts ?? []),
-    limiter,
-    kinoStaticLimiter: new RateLimiter({
-      perMinute: 600,
-      burst: 200,
-      maxClients: config.rateLimit.maxClients,
-      now: () => Date.now(),
-    }),
-    kinoTargetsLimiter: new RateLimiter({
-      perMinute: 30,
-      burst: 10,
-      maxClients: config.rateLimit.maxClients,
-      now: () => Date.now(),
-    }),
+    ...buildLimiters(config.rateLimit),
     delaySeconds: config.delaySeconds,
     showLivingSovereign: config.showLivingSovereign,
     enabled: () => config.enabled,

@@ -8,6 +8,7 @@ import { assertLoopback, type GlassConfig } from '../src/config.ts';
 import { SECURITY_HEADERS } from '../src/http.ts';
 import { ROUTES } from '../src/routes.ts';
 import { buildGlass } from '../src/server.ts';
+import { STATIC_FILES } from '../src/static-files.ts';
 import { type Running, send, startGlass } from './harness.ts';
 
 /** A stream request whose socket stays open until the test destroys it. */
@@ -24,7 +25,8 @@ function openStream(port: number): ClientRequest {
 }
 
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE'];
-const PAGE_PATHS = ['/', '/app.css', '/app.js', '/js/render-model.ts', '/js/render-view.ts'];
+// Every file of the page, the worker, the manifest, the typefaces and the icons included.
+const PAGE_PATHS = [...STATIC_FILES.keys()];
 const UNKNOWN_PATHS = ['/nope', '/api', '/api/thoughts/', '/api/agents/x/y'];
 
 /** Every route path with each `:param` filled in, plus the page paths. */

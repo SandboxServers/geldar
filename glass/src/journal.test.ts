@@ -2,8 +2,9 @@ import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { listThoughtsWithJournal, microsOf, thoughtsAndJournalAfter } from './journal.ts';
 import type { Row, SqlClient } from './query.ts';
+import { renderDetail } from './render-detail.ts';
 import { filterThoughts, toView } from './render-model.ts';
-import { type Doc, renderDetail, renderRow } from './render-view.ts';
+import { type Doc, renderRow } from './render-view.ts';
 
 type Call = { text: string; values: unknown[] };
 

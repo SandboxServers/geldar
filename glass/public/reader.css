@@ -1,0 +1,136 @@
+/*
+ * The wide layout of the Thought Stream page, from 700px: the list on the left and the selected entry as
+ * a reader on the right. The tokens and the parts both panes share are in app.css.
+ */
+@media (min-width: 700px) {
+  .app {
+    flex-direction: row;
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .stream {
+    flex: none;
+    width: 50%;
+  }
+
+  /* Padding keeps text and controls out of the middle 30px, where a foldable has its hinge. */
+  .reader {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    padding: 20px 26px 28px 34px;
+    overflow-y: auto;
+    scrollbar-color: var(--rule) transparent;
+    scrollbar-width: thin;
+  }
+
+  #fresh {
+    left: 25%;
+  }
+
+  /* Rows do not open in place here: a press anywhere selects the entry for the reader. */
+  .entry {
+    cursor: pointer;
+  }
+
+  .entry.selected {
+    background: var(--field);
+  }
+
+  .reader-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .reader-title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .reader-name {
+    margin: 0;
+    font: 400 44px/1 "Instrument Serif", serif;
+    overflow-wrap: anywhere;
+  }
+
+  .reader-sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .reader .wake,
+  .reader .kind {
+    margin-top: 22px;
+    padding-left: 0;
+  }
+
+  .reader .unparsed {
+    margin: 10px 0 0;
+    font-size: 13px;
+  }
+
+  .reader .plan {
+    margin-top: 10px;
+    padding-left: 0;
+    font-size: 34px;
+    line-height: 1.2;
+  }
+
+  .reader .detail {
+    margin: 26px 0 0;
+    padding: 14px 0 0;
+    border: 0;
+    border-top: 1px solid var(--rule);
+    border-radius: 0;
+    background: none;
+    font-size: 12px;
+  }
+
+  .reader .facts {
+    gap: 4px 18px;
+  }
+
+  .reader .detail h3 {
+    margin-top: 22px;
+  }
+
+  .reader .receipts {
+    gap: 0 16px;
+  }
+
+  .reader .receipts span {
+    padding: 7px 0;
+  }
+
+  .reader .none,
+  .reader .note {
+    margin-top: 22px;
+  }
+
+  .reader button.copy {
+    margin-top: 18px;
+    padding: 0 16px;
+  }
+}
+
+/*
+ * A foldable held half open reports its two screens. Each pane then takes exactly one of them, and the
+ * reader starts after the hinge. Where the browser reports nothing, the 50% split above stands.
+ */
+@media (min-width: 700px) and (horizontal-viewport-segments: 2) {
+  .app {
+    max-width: none;
+  }
+
+  .stream {
+    width: env(viewport-segment-right 0 0, 50%);
+  }
+
+  .reader {
+    margin-left: calc(env(viewport-segment-left 1 0, 50%) - env(viewport-segment-right 0 0, 50%));
+  }
+}

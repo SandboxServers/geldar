@@ -48,8 +48,7 @@ const PAGE_TAGS = new Set([
   'PRE',
   'P',
   'DIV',
-  'SELECT',
-  'OPTION',
+  'CANVAS',
 ]);
 
 function newPage(): { win: Window; doc: Doc } {
@@ -150,9 +149,11 @@ describe('adversarial fixtures through the page', () => {
         expect(PAGE_TAGS.has(el.tagName), `tag ${el.tagName}`).toBe(true);
         for (const attr of [...el.attributes]) {
           expect(attr.name.startsWith('on'), `handler ${attr.name}`).toBe(false);
-          expect(['class', 'type', 'value'].includes(attr.name), `attribute ${attr.name}`).toBe(
-            true,
-          );
+          // A sigil canvas carries its fixed size and aria-hidden; nothing else has an attribute but class and type.
+          expect(
+            ['class', 'type', 'width', 'height', 'aria-hidden'].includes(attr.name),
+            `attribute ${attr.name}`,
+          ).toBe(true);
         }
       }
       expect(

@@ -19,8 +19,19 @@ afterEach(async () => {
 });
 
 describe('no board on Glass', () => {
-  it('serves only index.html, app.css and app.js as static files', () => {
-    expect(readdirSync(PUBLIC_DIR).sort()).toEqual(['app.css', 'app.js', 'index.html']);
+  it('keeps only the page, its styles and scripts, the app manifest, the typefaces and the icons as static files', () => {
+    expect(readdirSync(PUBLIC_DIR).sort()).toEqual([
+      'app.css',
+      'app.js',
+      'entries.css',
+      'fonts',
+      'fonts.css',
+      'icons',
+      'index.html',
+      'manifest.webmanifest',
+      'reader.css',
+      'sw.js',
+    ]);
   });
 
   it.each([

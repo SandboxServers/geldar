@@ -12,9 +12,10 @@ import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { createHandler } from './http.ts';
 import type { SqlClient } from './query.ts';
+import { renderDetail } from './render-detail.ts';
 import { hostileRow } from './render-fixtures.ts';
 import { display, toView } from './render-model.ts';
-import { type Doc, renderDetail, renderRow } from './render-view.ts';
+import { type Doc, renderRow } from './render-view.ts';
 import type { SseHub } from './sse.ts';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
@@ -34,7 +35,10 @@ const FORBIDDEN: RegExp[] = [
 /** Every file under glass/public, and every render module (its tests are not served). */
 function pageSources(): string[] {
   const served = readdirSync(PUBLIC, { recursive: true }) as string[];
-  const files = served.map((name) => join(PUBLIC, name)).filter((path) => statSync(path).isFile());
+  // The typefaces and icons are bytes, not source: only the text files can hold code.
+  const files = served
+    .map((name) => join(PUBLIC, name))
+    .filter((path) => statSync(path).isFile() && /\.(html|css|js|webmanifest)$/.test(path));
   const renders = readdirSync(SRC)
     .filter((name) => /^render-.*\.ts$/.test(name) && !name.endsWith('.test.ts'))
     .map((name) => join(SRC, name));
@@ -56,6 +60,8 @@ describe('page sources', () => {
   it('use no markup-from-string or code-from-string API', () => {
     const sources = pageSources();
     expect(sources.some((file) => file.endsWith('app.js'))).toBe(true);
+    expect(sources.some((file) => file.endsWith('sw.js'))).toBe(true);
+    expect(sources.some((file) => file.endsWith('render-detail.ts'))).toBe(true);
     expect(sources.some((file) => file.endsWith('render-view.ts'))).toBe(true);
     const hits = sources.flatMap(hitsIn);
     expect(hits).toEqual([]);
@@ -97,9 +103,15 @@ describe('index.html', () => {
     expect(html).toContain('<script type="module" src="/app.js"></script>');
   });
 
-  it('links one stylesheet from this origin', () => {
+  it('links only its own manifest and stylesheets, all from this origin', () => {
     const links = html.match(/<link\b[^>]*>/gi) ?? [];
-    expect(links).toEqual(['<link rel="stylesheet" href="/app.css" />']);
+    expect(links).toEqual([
+      '<link rel="manifest" href="/js/manifest.webmanifest" />',
+      '<link rel="stylesheet" href="/js/fonts.css" />',
+      '<link rel="stylesheet" href="/app.css" />',
+      '<link rel="stylesheet" href="/js/entries.css" />',
+      '<link rel="stylesheet" href="/js/reader.css" media="(min-width: 700px)" />',
+    ]);
   });
 });
 

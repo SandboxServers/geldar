@@ -56,13 +56,8 @@ glass.{$GELDAR_DOMAIN} {
 		}
 	}
 
-	# The page and its assets. Glass serves `/`, `/app.css`, `/app.js` and `/js/*` today (glass/src/http.ts). The
-	# other paths are the files of the redesigned page (PR #892): three more stylesheets, the service worker and
-	# manifest of the installable app, the typefaces and the app icons. They are routed here first, because the
-	# deploy pipeline rolls a new Glass image by itself but never applies a Caddy change: a new page behind the old
-	# route would lose its styles. Until that Glass is deployed, Glass answers 404 for these paths itself, as Caddy
-	# did. Glass serves a fixed table of files, so a routed path can reach nothing else.
-	@glass_page path / /fonts.css /app.css /entries.css /reader.css /app.js /sw.js /manifest.webmanifest /js/* /fonts/* /icons/*
+	# The page and its assets (glass/src/http.ts serves exactly these files).
+	@glass_page path / /app.css /app.js /js/*
 	handle @glass_page {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
 			header_up Host localhost
