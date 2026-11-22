@@ -22,6 +22,14 @@ export interface AccountDeleteDeps {
   readonly findOwner: (identityHash: string) => Promise<{ readonly banned: boolean } | null>;
   /** The owner's players (the store's listPlayers). Each one's body is stopped before the erase. */
   readonly listPlayers: (identityHash: string) => Promise<readonly DeletablePlayer[]>;
+  /**
+   * The owner's players that the operator moved in (a register_audit row 'player.set_owner' names them), one entry
+   * each with its status. A live one refuses the delete (C7 delete-guard). Optional only for test fakes: the production
+   * deps (accountDeleteDeps) always carry it, and a missing one skips the check.
+   */
+  readonly movedInPlayers?: (
+    identityHash: string,
+  ) => Promise<readonly { readonly status: string }[]>;
   /** register_account_delete: true when the account was removed, false when there was nothing to remove (a no-op). */
   readonly eraseAccount: (identityHash: string) => Promise<boolean>;
   /** The Set-Cookie values that clear the session cookies: the __Host- name and the legacy names. */
@@ -36,7 +44,16 @@ export interface AccountDeleteDeps {
 }
 
 /** What the shared delete did. Only 'deleted' removed anything. */
-export type AccountDeleteOutcome = 'deleted' | 'unauthenticated' | 'conflict' | 'body_unavailable';
+export type AccountDeleteOutcome =
+  | 'deleted'
+  | 'unauthenticated'
+  | 'conflict'
+  | 'body_unavailable'
+  | 'moved_in';
+
+/** The refusal text for a moved-in player. It names no player and says what to do; nothing was removed. */
+export const MOVED_IN_DETAIL =
+  'A player was moved to this account by the operator. Ask the operator to move it away, then delete again. Nothing was deleted.';
 
 /** Reads the confirm field of the JSON body. Null when the body is too long, not JSON or has no string confirm. */
 async function readConfirm(req: IncomingMessage): Promise<string | null> {
@@ -60,7 +77,8 @@ async function readConfirm(req: IncomingMessage): Promise<string | null> {
 
 /**
  * The shared delete (C7-09a). The caller has checked the typed phrase and the credential. Order: the owner (missing or
- * banned is 'unauthenticated' with nothing read further), the owner's body slot (held by a body operation is 'conflict'),
+ * banned is 'unauthenticated' with nothing read further), a live moved-in player ('moved_in', nothing stopped or removed),
+ * the owner's body slot (held by a body operation is 'conflict'),
  * every non-retired player's body stopped (a stop that is not ok is 'body_unavailable' and NOTHING is removed), and only
  * then the erase: it removes the roster rows, so it must come after the stops. The erase is one database transaction; a
  * database error throws to the caller. The slot is released in every case.
@@ -72,6 +90,12 @@ export async function deleteAccountData(
 ): Promise<AccountDeleteOutcome> {
   const owner = await deps.findOwner(identityHash);
   if (owner === null || owner.banned) return 'unauthenticated';
+  const moved = deps.movedInPlayers ? await deps.movedInPlayers(identityHash) : [];
+  if (moved.some((player) => player.status !== 'retired')) {
+    // The log line names no player and no owner (the operator reads the register audit for the ids).
+    deps.log?.('account delete refused reason=moved-in');
+    return 'moved_in';
+  }
   const link = deps.body;
   if (link?.slot.has(ownerId)) return 'conflict';
   link?.slot.add(ownerId);
@@ -127,6 +151,7 @@ export function accountDeleteRoutes(deps: AccountDeleteDeps): readonly ApiRoute[
           });
         }
         if (outcome === 'unauthenticated') return sendProblem(ctx.res, 'unauthenticated');
+        if (outcome === 'moved_in') return sendProblem(ctx.res, 'conflict', {}, MOVED_IN_DETAIL);
         ctx.res.writeHead(204, {
           'cache-control': 'no-store',
           'set-cookie': [...deps.clearCookies],
@@ -147,6 +172,7 @@ export function accountDeleteDeps(
     findOwner(identityHash: string): Promise<{ readonly banned: boolean } | null>;
     listPlayers(identityHash: string): Promise<readonly DeletablePlayer[]>;
     eraseAccount(identityHash: string): Promise<boolean>;
+    movedInPlayers(identityHash: string): Promise<readonly { readonly status: string }[]>;
   },
   body: BodyStopLink | null,
   clearCookies: readonly string[],
@@ -156,6 +182,7 @@ export function accountDeleteDeps(
     findOwner: (identityHash) => store.findOwner(identityHash),
     listPlayers: (identityHash) => store.listPlayers(identityHash),
     eraseAccount: (identityHash) => store.eraseAccount(identityHash),
+    movedInPlayers: (identityHash) => store.movedInPlayers(identityHash),
     clearCookies,
     body,
     log,

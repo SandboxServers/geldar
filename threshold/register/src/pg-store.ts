@@ -287,6 +287,21 @@ export class PgStore implements Store, SessionStore {
   }
 
   /**
+   * The owner's players that the operator moved in: each live or retired player of the identity that has a
+   * register_audit row 'player.set_owner' (written by the mcp-tokens player set-owner verb, one per move; the table is
+   * append-only). Reads through register_list_players and the SELECT grant on register_audit (0025); no SQL is added.
+   */
+  async movedInPlayers(identityHash: string): Promise<{ readonly status: string }[]> {
+    const r = await this.pool.query(
+      `SELECT p.status FROM register_list_players($1) AS p
+       WHERE EXISTS (SELECT 1 FROM register_audit a
+                     WHERE a.action = 'player.set_owner' AND a.target = p.player_id)`,
+      [hex(identityHash)],
+    );
+    return r.rows.map((row) => ({ status: String(row.status) }));
+  }
+
+  /**
    * The owner's data export (register_owner_export, migrations 0062 and 0065): the document as JSON text, or null when
    * the identity has no owner row. The text is cast in SQL, so the driver does not parse it and the route writes it as
    * it is. It runs on a dedicated client in one transaction with a 60 s statement_timeout (SET LOCAL), so a slow export

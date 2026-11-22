@@ -37,6 +37,23 @@ Before the transaction the register stops every non-retired player's body throug
 retire route uses). If a stop fails the route answers 503 and nothing is removed. With NATS not configured no managed
 body can exist, so the stop is skipped.
 
+## A player the operator moved in refuses the delete
+
+A player that the operator moved to an owner with `mcp-tokens player set-owner` (delete-guard, C7) carries one
+`register_audit` row, action `player.set_owner`, target the player id. While the owner has any non-retired player with
+that row, the delete is refused before anything else runs: `POST` answers 409 with a problem (`conflict`, detail "A
+player was moved to this account by the operator"), the account page shows the same text, no body is stopped, nothing
+is erased, and the only log line is `account delete refused reason=moved-in` (no name, no id, no owner id).
+
+A retired moved-in player does not block. A player that was moved in and later moved out is no longer on the owner, so
+it does not block either. Self-registered players carry no such row and never block.
+
+To clear the block the operator moves the player away (`player set-owner` to another owner, which writes its own
+audit row), or the owner asks the operator to retire it. The register audit rows stay: the table is append-only.
+
+The check does not cover players the operator added with `player-add` for an owner (no move row). The operator must
+check those by hand before the owner deletes.
+
 ## Accounts deleted under 0039 (before 0040)
 
 Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
