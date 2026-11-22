@@ -7,10 +7,11 @@ import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { useHandler } from '../actions/use.ts';
 import { setSwimEnabled } from '../actions/water-rules.ts';
-import { createPlanLane } from '../building/lane.ts';
 import { planHandler } from '../building/queue-action.ts';
+import { createPlanExpand } from '../building/wire-expand.ts';
+import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
-import { cancelForDeath } from './death-cancel.ts';
+import { cancelForDeath, type DeathTarget } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
 import { InflightStore } from './inflight.ts';
 import type { ProgramRegistry } from './program.ts';
@@ -90,6 +91,8 @@ export interface Body {
   records: RecordSink;
   /** The checkpoint writer, when checkpoints was given. */
   checkpoints: CheckpointStore | null;
+  /** The plan queue and lane, when body_actions.building is on; null when it is off. */
+  plan: LaneWiring | null;
 }
 
 /**
@@ -147,6 +150,8 @@ export function createBody(options: CreateBodyOptions): Body {
           flushable: records,
           ...(options.checkpoints.log === undefined ? {} : { log: options.checkpoints.log }),
         });
+  // The plan lane is built only with body_actions.building on; it steps after the reflexes each tick.
+  let plan: LaneWiring | null = null;
   const built = new BodyRuntime({
     lifeId: options.lifeId,
     bodyGeneration: options.bodyGeneration,
@@ -159,6 +164,13 @@ export function createBody(options: CreateBodyOptions): Body {
     programs: options.programs ?? createProgramRegistry(),
     ...(options.view === undefined ? {} : { view: options.view }),
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
+    ...(options.building === true
+      ? {
+          tickHook: async (tick: number, reflexBusy: boolean) => {
+            await plan?.onTick(tick, reflexBusy);
+          },
+        }
+      : {}),
   });
   runtime = built;
   // The swim flag is read by goto and the planner at walk time; set it before the first walk.
@@ -178,8 +190,22 @@ export function createBody(options: CreateBodyOptions): Body {
   built.actions.register(useHandler(options.use ?? false));
   // break and plan follow body_actions.building (BLD-S3a, decision 0218 plumbing; default off).
   built.actions.register(breakHandler(options.building ?? false));
-  built.actions.register(planHandler(options.building ?? false));
-  createPlanLane(options.building ?? false);
+  if (options.building === true) {
+    // The origin `here` is the feet, as the floor of the bot's position.
+    const feet = () => {
+      const p = options.bot.entity?.position;
+      return p
+        ? { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }
+        : { x: 0, y: 0, z: 0 };
+    };
+    plan = createLaneWiring({
+      lifeId: options.lifeId,
+      bot: options.bot,
+      runtime: built,
+      expand: createPlanExpand(feet),
+    });
+  }
+  built.actions.register(planHandler(options.building ?? false, plan?.queue ?? null));
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,
@@ -205,9 +231,16 @@ export function createBody(options: CreateBodyOptions): Body {
     options.timeScale === undefined ? {} : { timeScale: options.timeScale },
   );
   // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
+  // The plan queue is cleared with the executor: its lane drops the plan and aborts the cell.
+  const deathTarget: DeathTarget = {
+    endForDeath: (revision) =>
+      Promise.all([executor.endForDeath(revision), plan?.queue.cancel('all')]).then(
+        () => undefined,
+      ),
+  };
   if (typeof options.bot.on === 'function') {
     options.bot.on('death', () => {
-      cancelForDeath(executor, options.currentRevision).catch((error: unknown) => {
+      cancelForDeath(deathTarget, options.currentRevision).catch((error: unknown) => {
         console.warn(`death hook failed: ${String(error)}`);
       });
     });
@@ -240,7 +273,7 @@ export function createBody(options: CreateBodyOptions): Body {
       reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });
-  return { runtime: built, executor, tap, records, checkpoints };
+  return { runtime: built, executor, tap, records, checkpoints, plan };
 }
 
 /** True for a value that names a verb; `runAction` also reports actions that failed validation. */

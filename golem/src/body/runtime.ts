@@ -15,6 +15,13 @@ import { type BodyView, createBodyView } from './view.ts';
  */
 export type TickSource = (listener: (worldAge: number) => void) => () => void;
 
+/**
+ * A hook run once per world tick after the reflexes. `reflexBusy` is true when a reflex started on
+ * this tick or is still running, so the hook can hold its own work back. Not called while a
+ * previous run of the hook is still pending (a tick is skipped rather than queued).
+ */
+export type TickHook = (tick: number, reflexBusy: boolean) => Promise<void>;
+
 /** Longest wall wait (at time scale 1) for an aborted handler to return before the next action. */
 const HANDLER_GRACE_MS = 2000;
 
@@ -58,6 +65,8 @@ export interface BodyRuntimeOptions {
   timeScale?: number;
   /** Check each completed action for a measured effect (`no_effect`). Default true. */
   receipts?: boolean;
+  /** Run once per world tick after the reflexes (see `TickHook`). Left out, nothing extra runs. */
+  tickHook?: TickHook;
 }
 
 /**
@@ -85,6 +94,9 @@ export class BodyRuntime {
   /** `20 / target TPS`: scales the wall limits of every action run. */
   readonly timeScale: number;
   private readonly receipts: boolean;
+  private readonly tickHook: TickHook | undefined;
+  /** True while a tick hook run is pending; a tick that finds one pending skips the hook. */
+  private hookPending = false;
   private readonly ownedView: { dispose(): void } | null;
   private readonly stopController = new AbortController();
   private unsubscribe: (() => void) | null = null;
@@ -113,6 +125,7 @@ export class BodyRuntime {
     this.ticks = options.ticks;
     this.timeScale = sanitiseTimeScale(options.timeScale);
     this.receipts = options.receipts ?? true;
+    this.tickHook = options.tickHook;
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
     this.ownedView = tracked;
     this.view = options.view ?? (tracked as BodyView);
@@ -133,15 +146,31 @@ export class BodyRuntime {
     return this.unsubscribe !== null;
   }
 
-  /** Starts the loop: every world tick goes to the reflex runner. A second start is a no-op. */
+  /**
+   * Starts the loop: every world tick goes to the reflex runner, then to the tick hook (once the
+   * reflexes of that tick have ended). A second start is a no-op.
+   */
   start(): void {
     if (this.stopped) throw new Error('body runtime already stopped');
     if (this.unsubscribe) return;
     this.unsubscribe = this.ticks((tick) => {
-      this.reflexRunner.onTick(tick).catch((error: unknown) => {
+      const reflexes = this.reflexRunner.onTick(tick).catch((error: unknown) => {
         // The runner records reflex failures itself; reaching here is a bug in the runner or sink.
         console.warn(`reflex runner failed: ${error instanceof Error ? error.message : error}`);
       });
+      // Read at once: a reflex that fired on this tick is running now (onTick sets it synchronously).
+      const reflexBusy = this.reflexRunner.busy;
+      const hook = this.tickHook;
+      if (hook === undefined || this.hookPending) return;
+      this.hookPending = true;
+      reflexes
+        .then(() => hook(tick, reflexBusy))
+        .catch((error: unknown) => {
+          console.warn(`tick hook failed: ${error instanceof Error ? error.message : error}`);
+        })
+        .finally(() => {
+          this.hookPending = false;
+        });
     });
   }
 
