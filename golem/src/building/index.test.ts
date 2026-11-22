@@ -9,8 +9,6 @@ const STUBS = [
   'doCell',
   'countMaterials',
   'standFor',
-  'scaffoldFor',
-  'hazardAt',
   'laneStateOf',
   'enqueuePlan',
   'contendFor',
