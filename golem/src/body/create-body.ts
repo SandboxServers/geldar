@@ -10,6 +10,11 @@ import { setSwimEnabled } from '../actions/water-rules.ts';
 import { planHandler } from '../building/queue-action.ts';
 import { createPlanExpand } from '../building/wire-expand.ts';
 import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
+import {
+  createSeenWiring,
+  type SeenWiring,
+  type SeenWiringOptions,
+} from '../building/wire-seen.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { cancelForDeath, type DeathTarget } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
@@ -50,6 +55,8 @@ export interface CreateBodyOptions {
   use?: boolean;
   /** The shard's `body_actions.building` flag; break and plan are refused while off. Default: off. */
   building?: boolean;
+  /** The seen store's bucket and the predecessor life; with the building flag on only. Left out: in memory. */
+  seen?: Partial<Pick<SeenWiringOptions, 'kv' | 'agentId' | 'predecessor' | 'log'>>;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -93,6 +100,8 @@ export interface Body {
   checkpoints: CheckpointStore | null;
   /** The plan queue and lane, when body_actions.building is on; null when it is off. */
   plan: LaneWiring | null;
+  /** The seen-block map and its store, when body_actions.building is on; null when it is off. */
+  seen: SeenWiring | null;
 }
 
 /**
@@ -273,7 +282,17 @@ export function createBody(options: CreateBodyOptions): Body {
       reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });
-  return { runtime: built, executor, tap, records, checkpoints, plan };
+  // The seen map is kept only with body_actions.building on (BLD-38d); off, nothing is constructed.
+  const seen: SeenWiring | null =
+    options.building === true
+      ? createSeenWiring({
+          bot: options.bot,
+          ticks: options.ticks,
+          lifeId: options.lifeId,
+          ...(options.seen ?? {}),
+        })
+      : null;
+  return { runtime: built, executor, tap, records, checkpoints, plan, seen };
 }
 
 /** True for a value that names a verb; `runAction` also reports actions that failed validation. */
