@@ -8,7 +8,6 @@ import {
   clickedProperties,
   pitchFor,
   planPlaceState,
-  stateMatches,
   yawForFacing,
   yawToward,
 } from './place-state.ts';
@@ -20,17 +19,33 @@ const WEST = new Vec3(-1, 0, 0);
 const SOUTH = new Vec3(0, 0, 1);
 
 describe('place state: tiers', () => {
-  it('gives logs an axis, stairs a facing and half, slabs a half only', () => {
+  it('gives logs an axis, stairs and slabs a half, and takes no state for other blocks', () => {
     expect(allowedKeys('oak_log')).toEqual(['axis']);
     expect(allowedKeys('stone')).toEqual([]);
-    expect(allowedKeys('oak_stairs')).toEqual(['facing', 'half']);
+    expect(allowedKeys('oak_stairs')).toEqual(['half']);
     expect(allowedKeys('oak_slab')).toEqual(['half']);
-    expect(allowedKeys('furnace')).toEqual(['facing']);
+    expect(allowedKeys('furnace')).toEqual([]);
   });
 
   it('refuses a state the block does not take', () => {
     expect(planPlaceState('stone', { axis: 'x' }, [EAST])).toBeNull();
     expect(planPlaceState('oak_log', { facing: 'north' }, [EAST])).toBeNull();
+  });
+});
+
+describe('place state: facing kinds are refused until verified', () => {
+  const FACING_KINDS = [
+    'oak_stairs',
+    'oak_door',
+    'furnace',
+    'chest',
+    'trapped_chest',
+    'ender_chest',
+  ];
+
+  it.each(FACING_KINDS)('takes no facing for %s, so a facing request is refused', (block) => {
+    expect(allowedKeys(block)).not.toContain('facing');
+    expect(planPlaceState(block, { facing: 'north' }, [UP, EAST, SOUTH])).toBeNull();
   });
 });
 
@@ -50,19 +65,9 @@ describe('place state: log axis', () => {
 });
 
 describe('place state: stair facing and half', () => {
-  it('faces a stair the way the bot looks, so a south stair is placed looking south', () => {
-    const plan = planPlaceState('oak_stairs', { facing: 'south', half: 'top' }, [UP]);
-    expect(plan).not.toBeNull();
-    // Yaw pi looks at +z (south), the facing the stair takes.
-    expect(cardinalOfYaw(plan?.yaw ?? 0)).toBe('south');
-    expect(Math.cos(plan?.yaw ?? 0)).toBeCloseTo(-1);
-    expect(
-      stateMatches(
-        'oak_stairs',
-        { facing: 'south', half: 'top' },
-        clickedProperties('oak_stairs', UP, plan?.yaw ?? 0, plan?.cursorY ?? 0),
-      ),
-    ).toBe(true);
+  it('refuses a stair facing, with or without a half, since no stair facing is verified', () => {
+    expect(planPlaceState('oak_stairs', { facing: 'south', half: 'top' }, [UP])).toBeNull();
+    expect(planPlaceState('oak_stairs', { facing: 'south' }, [UP])).toBeNull();
   });
 
   it('takes the top half from a block above it, and the bottom half from one below', () => {

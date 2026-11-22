@@ -32,7 +32,7 @@ describe('place: the place action against a real server', () => {
     });
   });
 
-  it('places a stair facing east, the way the bot looks', async () => {
+  it('refuses a stair facing as state_unachievable and places nothing (no verified facing rule)', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       const { x: cx, z: cz } = arena.center;
       await ctl.command(`kill @e[type=item,x=${cx},y=200,z=${cz},distance=..40]`);
@@ -44,10 +44,12 @@ describe('place: the place action against a real server', () => {
         { do: 'place', block: 'oak_stairs', at: target },
         { placeState: { facing: 'east', half: 'bottom' } },
       );
-      expect(run.state).toBe('completed');
-      const placed = bot.blockAt(new Vec3(target.x, target.y, target.z));
-      expect(placed?.name).toBe('oak_stairs');
-      expect(placed?.getProperties().facing).toBe('east');
+      expect(run.result, JSON.stringify(run.result)).toMatchObject({
+        status: 'failed',
+        reason: 'state_unachievable',
+      });
+      expect(bot.blockAt(new Vec3(target.x, target.y, target.z))?.name).not.toBe('oak_stairs');
+      expect(await heldCount(ctl, BOT, 'oak_stairs')).toBe(1);
     });
   });
 

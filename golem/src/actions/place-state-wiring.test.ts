@@ -31,7 +31,7 @@ describe('place with a block state', () => {
     expect(stateAt(fake, new Vec3(2, 64, 0))).toEqual({ axis: 'x' });
   });
 
-  it('turns the bot toward the facing it asks for before the click, then places the stair', async () => {
+  it('refuses a stair facing before any look or click, since no stair facing is verified', async () => {
     // The target is (2,64,0); stone lies above it, so the top face gives a top half.
     const fake = fakeBot({
       items: ['oak_stairs'],
@@ -41,9 +41,19 @@ describe('place with a block state', () => {
       facing: 'east',
       half: 'top',
     });
+    expect(result).toMatchObject({ status: 'failed', reason: STATE_UNACHIEVABLE });
+    expect(fake.look).not.toHaveBeenCalled();
+    expect(stateAt(fake, new Vec3(2, 64, 0))).toEqual({});
+  });
+
+  it('places a stair with a half and no facing, from the block above it', async () => {
+    const fake = fakeBot({
+      items: ['oak_stairs'],
+      blocks: { '2,65,0': 'stone' },
+    });
+    const result = await placeWithState(fake, 'oak_stairs', new Vec3(2, 64, 0), { half: 'top' });
     expect(result.status).toBe('completed');
-    expect(fake.look).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), true);
-    expect(stateAt(fake, new Vec3(2, 64, 0))).toEqual({ facing: 'east', half: 'top' });
+    expect(stateAt(fake, new Vec3(2, 64, 0))).toEqual({ half: 'top' });
   });
 
   it('places a top slab on a block above the target', async () => {
