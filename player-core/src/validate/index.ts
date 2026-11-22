@@ -27,6 +27,7 @@ export function createOutputValidator(options: OutputValidatorOptions = {}): Out
     sayMaxChars: options.sayMaxChars ?? DEFAULT_BOUNDS.sayMaxChars,
     maxWorldTicks: options.maxWorldTicks ?? DEFAULT_BOUNDS.maxWorldTicks,
     maxBlockOperations: options.maxBlockOperations ?? DEFAULT_BOUNDS.maxBlockOperations,
+    buildingOn: options.buildingOn ?? DEFAULT_BOUNDS.buildingOn,
   };
   const input: InputOptions = {
     constrainedOutput: options.constrainedOutput ?? true,
