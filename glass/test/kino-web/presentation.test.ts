@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { STATIC_FILES } from '../../src/static-files.ts';
 
 const root = new URL('../../', import.meta.url);
 const html = readFileSync(new URL('web/kino/index.html', root), 'utf8');
@@ -85,8 +86,33 @@ describe('Kino shares the Glass design', () => {
     expect(html.match(/aria-live=/g)).toHaveLength(1);
   });
 
+  it('maps every module Kino imports from outside /kino/ to a file the Glass page serves', () => {
+    const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '{}')
+      .imports as Record<string, string>;
+    const dir = new URL('web/kino/', root);
+    const outside: string[] = [];
+    for (const file of readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
+      if (!file.endsWith('.ts')) continue;
+      const source = readFileSync(new URL(file, dir), 'utf8');
+      // The browser resolves a relative import against the module's own address under /kino/. A
+      // type-only import is gone by then.
+      for (const [, spec] of source.matchAll(/^import (?!type )[^'"]*['"](\.[^'"]+)['"];$/gm)) {
+        const path = new URL(spec as string, `https://glass.example.test/kino/${file}`).pathname;
+        if (!path.startsWith('/kino/')) outside.push(path);
+      }
+    }
+    // The channel guide draws the Glass sigil; without this entry the page does not load at all.
+    expect([...new Set(outside)]).toEqual(['/src/render-sigil.ts']);
+    for (const path of outside) expect(STATIC_FILES.has(map[path] ?? '')).toBe(true);
+    expect(map['/src/render-sigil.ts']).toBe('/js/render-sigil.ts');
+  });
+
   it('uses the camera controls and zoom of only the focused monitor', () => {
-    expect(main).toContain('cameraControls.replaceChildren(...(a ? [a.frame.controls] : []))');
+    expect(main).toContain('showControls(cameraControls, a?.frame.controls ?? null, focusTitle)');
+    // The page's wiring of a numbered vacancy: its card, the guide's choice, the channel taken.
+    expect(main).toContain('buildEmptySlot(openGuide, channel)');
+    expect(main).toContain("openMonitor(agentId, 'follow', 0, channel)");
+    expect(main).toContain('freeChannel(used, openChannel)');
     expect(main).toContain("if (rig.mode === 'follow') rig.zoomStep(a.level - rig.chase.zoom)");
     expect(main).toContain("frame.setZoom(rig.mode === 'follow' ? rig.chase.zoom : null)");
     expect(main).toContain("if (m) action(m, { kind: 'close' })");

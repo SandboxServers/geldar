@@ -172,13 +172,85 @@ describe('monitor frame', () => {
     expect(box.childElementCount).toBe(0);
   });
 
-  it('builds an empty slot that asks to tune in', () => {
-    let tuned = 0;
-    const slot = mod.buildEmptySlot(() => tuned++, 4);
+  it('builds an empty slot that asks to tune in its own channel, from its own button', () => {
+    const tuned: [number, HTMLButtonElement][] = [];
+    const slot = mod.buildEmptySlot((channel, button) => tuned.push([channel, button]), 4);
     expect(slot.textContent).toBe('CH 4no channel');
-    expect(slot.querySelector('button')?.getAttribute('aria-label')).toContain('No signal');
-    (slot.querySelector('button') as HTMLButtonElement).click();
-    expect(tuned).toBe(1);
+    const button = slot.querySelector('button') as HTMLButtonElement;
+    expect(button.getAttribute('aria-label')).toContain('No signal');
+    button.click();
+    expect(tuned).toEqual([[4, button]]);
+  });
+});
+
+describe('the wall and the dock', () => {
+  const tile = (name: string): HTMLElement => {
+    const t = document.createElement('section');
+    t.textContent = name;
+    return t;
+  };
+  const names = (wall: HTMLElement): string =>
+    [...wall.children].map((c) => c.textContent).join(' ');
+
+  it('keeps the tiles in channel order and never moves one that is in place', () => {
+    const wall = document.createElement('div');
+    document.body.appendChild(wall);
+    const [one, two, three, four, stale] = ['1', '2', '3', '4', 'old'].map(tile);
+    wall.append(three as HTMLElement, stale as HTMLElement, four as HTMLElement);
+    const moved: string[] = [];
+    const real = wall.insertBefore.bind(wall);
+    wall.insertBefore = ((node: Node, ref: Node | null) => {
+      moved.push(node.textContent ?? '');
+      return real(node, ref);
+    }) as typeof wall.insertBefore;
+    // CH 1 was cleared and refilled, and CH 2 is new: both go in front, CH 3 and CH 4 stay.
+    mod.orderTiles(wall, [one, two, three, four] as HTMLElement[]);
+    expect(names(wall)).toBe('1 2 3 4');
+    expect(moved).toEqual(['1', '2']);
+    mod.orderTiles(wall, [one, three, four] as HTMLElement[]);
+    expect(names(wall)).toBe('1 3 4');
+    expect(moved).toEqual(['1', '2']);
+  });
+
+  it('keeps focus on the same control when the dock changes monitor', () => {
+    const dock = document.createElement('div');
+    const title = document.createElement('p');
+    title.tabIndex = -1;
+    document.body.append(dock, title);
+    const a = mod.buildMonitor(() => undefined);
+    const b = mod.buildMonitor(() => undefined);
+    const named = (f: typeof a, label: string): HTMLElement =>
+      f.controls.querySelector(`[aria-label="${label}"]`) as HTMLElement;
+    mod.showControls(dock, a.controls, title);
+    expect(dock.firstChild).toBe(a.controls);
+    // Nothing in the dock had focus: none is taken.
+    expect(document.activeElement).not.toBe(title);
+
+    named(a, 'Orbit camera').focus();
+    mod.showControls(dock, b.controls, title);
+    expect(dock.childElementCount).toBe(1);
+    expect(document.activeElement).toBe(named(b, 'Orbit camera'));
+
+    // More controls stays open, so a control inside it can keep the focus.
+    (b.controls.querySelector('details') as HTMLDetailsElement).open = true;
+    named(b, 'Rotate left').focus();
+    mod.showControls(dock, a.controls, title);
+    expect((a.controls.querySelector('details') as HTMLDetailsElement).open).toBe(true);
+    expect(document.activeElement).toBe(named(a, 'Rotate left'));
+    (a.controls.querySelector('summary') as HTMLElement).focus();
+    mod.showControls(dock, b.controls, title);
+    expect(document.activeElement).toBe(b.controls.querySelector('summary'));
+
+    // Chase distance is hidden outside Chase, and no monitor at all leaves only the title.
+    a.setZoom(null);
+    b.setZoom(1);
+    named(b, 'Far').focus();
+    mod.showControls(dock, a.controls, title);
+    expect(document.activeElement).toBe(title);
+    named(a, 'Free camera').focus();
+    mod.showControls(dock, null, title);
+    expect(dock.childElementCount).toBe(0);
+    expect(document.activeElement).toBe(title);
   });
 });
 
@@ -280,6 +352,76 @@ describe('channel guide', () => {
     expect(guide.isOpen).toBe(false);
     expect(inline.querySelector('.tune')).toBe(tune);
     expect(document.activeElement).toBe(tune);
+  });
+
+  describe('vacancies and focus', () => {
+    const unfold = (media: MediaQueryList, narrow: boolean): void => {
+      Object.defineProperty(media, 'matches', { value: narrow });
+      media.dispatchEvent(new Event('change'));
+    };
+
+    it('drops the vacancy when the sheet is dismissed, and returns focus to the vacancy', () => {
+      const { d, inline, guide, calls, media } = setup();
+      guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+      const vacancy = document.createElement('button');
+      document.body.appendChild(vacancy);
+      guide.open(3, vacancy);
+      expect(d.querySelector('.guide-caption')?.textContent).toContain('for CH 3.');
+      d.close();
+      expect(document.activeElement).toBe(vacancy);
+      expect(d.querySelector('.guide-caption')?.textContent).toContain('for CH 1.');
+      // Unfolded afterwards, a row retunes the active monitor: the dismissed vacancy is forgotten.
+      unfold(media, false);
+      (inline.querySelector('.tune') as HTMLButtonElement).click();
+      expect(calls).toEqual(['tune ag_a']);
+    });
+
+    it('gives focus to Channels when the vacancy that opened the sheet has been filled', () => {
+      const { d, trigger, guide, calls } = setup();
+      guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+      const vacancy = document.createElement('button');
+      document.body.appendChild(vacancy);
+      guide.open(3, vacancy);
+      vacancy.remove();
+      (d.querySelector('.tune') as HTMLButtonElement).click();
+      expect(calls).toEqual(['new ag_a 3']);
+      expect(guide.isOpen).toBe(false);
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('keeps the vacancy when the sheet is unfolded into the wide pane', () => {
+      const { inline, trigger, guide, calls, media } = setup();
+      guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+      guide.open(3, trigger);
+      unfold(media, false);
+      expect(guide.isOpen).toBe(false);
+      expect(inline.querySelector('.guide-caption')?.textContent).toContain('for CH 3.');
+      (inline.querySelector('.tune') as HTMLButtonElement).click();
+      expect(calls).toEqual(['new ag_a 3']);
+    });
+
+    it('drops the vacancy when the viewer picks another monitor', () => {
+      const { inline, guide, calls } = setup(false);
+      guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+      guide.open(3);
+      // The same monitor again (its feed changed, say) keeps the choice; another monitor ends it.
+      guide.update({ onAir: new Map([['ag_b', [1]]]), activeChannel: 1, canOpen: true });
+      expect(inline.querySelector('.guide-caption')?.textContent).toContain('for CH 3.');
+      guide.update({ onAir: new Map(), activeChannel: 2, canOpen: true });
+      expect(inline.querySelector('.guide-caption')?.textContent).toContain('for CH 2.');
+      (inline.querySelector('.tune') as HTMLButtonElement).click();
+      expect(calls).toEqual(['tune ag_a']);
+    });
+
+    it('moves focus to Channels when the list it was in folds away into the closed sheet', () => {
+      const { inline, trigger, guide, media } = setup(false);
+      guide.update({ onAir: new Map(), activeChannel: 1, canOpen: true });
+      (inline.querySelector('.tune') as HTMLButtonElement).focus();
+      unfold(media, true);
+      expect(inline.hidden).toBe(true);
+      expect(guide.isOpen).toBe(false);
+      expect(document.activeElement).toBe(trigger);
+    });
   });
 });
 

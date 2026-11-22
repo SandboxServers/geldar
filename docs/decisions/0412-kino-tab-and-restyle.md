@@ -38,6 +38,9 @@ Issue #909 brings the monitor wall into the Glass navigation and visual design. 
 5. Numbered empty cards open the guide for that vacancy. Each open monitor keeps its channel number
    until closed, and the wall places vacancies by number. The remembered wall uses its existing
    storage format and restores the saved monitors in order, so gaps are compacted on reload.
+   A chosen vacancy stays chosen when the sheet is unfolded into the wide pane. It is dropped when
+   the sheet is dismissed or when the viewer picks another monitor, and the next choice then
+   retunes the active monitor.
 6. One set of guide rows moves between an inline section and a native modal dialog. The phone sheet
    closes with Close, Escape or a backdrop press. Focus returns to its opener or the Channels button
    if the opener was a vacancy that has just been filled. A resize takes focus between the list
@@ -50,6 +53,11 @@ Issue #909 brings the monitor wall into the Glass navigation and visual design. 
 8. The test preview serves the already published Glass resources and applies the Kino page
    policy with a hash of its import map, so a screenshot run exercises the font permission.
    The preview world, targets and feed remain invented.
+9. Glass and Caddy read `GELDAR_KINO_ENABLED` separately, so there is a moment in a switch-on
+   when one has it and the other does not. With Glass first the tab is shown and leads to Caddy's
+   404 until Caddy restarts. The runbook now restarts Caddy first when switching on and recreates
+   Glass first when switching off, so the tab is never shown without its page. This order has
+   not been run on the node.
 
 ## Open questions for the owner
 
@@ -77,6 +85,42 @@ labels in their original positions and left the second slot empty on the wide sc
 A real foldable, a signed-out or restricted production account, a live shard and its
 textures, and an installed app were outside the browser run.
 
-The Glass suite passed 997 tests with 16 skipped. Each of 38 temporary single-behavior
-reverts was caught by its test, including a Chromium check for tuning the selected
-vacancy when more than one channel is empty.
+The Glass suite passes 1012 tests with 16 skipped. The implementer reverted 38 single
+behaviors, one at a time, and a test failed for each except the choice of channel for a
+numbered vacancy, which was checked in Chromium only. The review added tests for that and
+for its own fixes, and reverted 27 more behaviors with a test failing for each.
+
+`main.ts` is the page's wiring and has no test that runs it. Three of its lines (the vacancy
+card, the guide's choice and the channel taken) are held by assertions on its source text,
+and the behavior they wire was checked in Chromium.
+
+## Changed in review
+
+An independent read-only review found no breach of Kino's rules (nothing new is sent to the
+server, the wire modes are unchanged, labels reach the page as text only, the policy gains one
+directive, and the Glass page is byte for byte the base page when Kino is off). It found eight
+defects, all fixed in the same pull request:
+
+1. **A held Enter repeated a command.** With Clear focused, holding Enter closed every monitor.
+   On the wide layout, holding Enter on a row's plus button filled the wall and sent a subscribe
+   for each monitor. Before the restyle each button left with its monitor, so one hold did one
+   thing. The page's keyboard listener now cancels a repeated Enter on a focused control, in a
+   dialog or out of one. The listener moved from `main.ts` into `keyboard.ts`, where a test
+   drives it with real key events.
+2. **The screenshot tool no longer worked.** `tools/kino-shot` looked for the mode buttons on
+   the monitor and for the guide inside the dialog. It now uses the dock and the one list, and
+   opens the Channels sheet only when that button is shown. It was run against the preview at
+   430px and 1280px, with and without `--agent`, in each mode.
+3. **New behaviors had no test.** The channel a numbered vacancy takes, the card passing its own
+   number, the focus rules of the guide, the import map entry the page cannot load without and
+   the guard on the tab slot each have one now.
+4. **A chosen vacancy stuck** after the viewer picked another monitor on the wide layout: the
+   next row opened the vacancy when the caption named the monitor.
+5. **Unfolding dropped the vacancy** the sheet had been opened for.
+6. **Focus was lost when the dock changed monitor.** It now goes to the same control of the new
+   monitor, More controls keeps its state, and the title takes focus when that control is not
+   there.
+7. **The wall's tiles drifted out of channel order** in the document, and so in Tab order,
+   after a monitor was cleared and refilled. Tiles are now placed by channel, and a tile already
+   in place is not moved.
+8. **The tab could lead to a 404** during a switch-on (choice 9).

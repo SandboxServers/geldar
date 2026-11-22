@@ -17,7 +17,7 @@ import {
   startupPlan,
   writeSaved,
 } from '../../web/kino/panes/saved.ts';
-import { planWall } from '../../web/kino/panes/wall-layout.ts';
+import { freeChannel, planWall } from '../../web/kino/panes/wall-layout.ts';
 
 describe('keyboard map', () => {
   it('maps the Lakitu controls, monitor picks, surfing, layouts and dialogs', () => {
@@ -188,6 +188,18 @@ describe('remembered wall', () => {
     expect(readSaved(blocked, ['ag_a'], 4)).toBeNull();
     expect(() => writeSaved(blocked, { layout: 'wall', monitors: [] })).not.toThrow();
     expect(readSaved(null, ['ag_a'], 4)).toBeNull();
+  });
+});
+
+describe('channel numbers (decision 0412)', () => {
+  it('gives a new monitor the vacancy it was opened from, else the lowest free number', () => {
+    expect(freeChannel(new Set())).toBe(1);
+    expect(freeChannel(new Set([1, 2]))).toBe(3);
+    expect(freeChannel(new Set([2, 3]))).toBe(1);
+    expect(freeChannel(new Set([1]), 3)).toBe(3);
+    expect(freeChannel(new Set([1]), 4)).toBe(4);
+    // A vacancy taken since it was pressed falls back to the lowest free number.
+    expect(freeChannel(new Set([1, 3]), 3)).toBe(2);
   });
 });
 

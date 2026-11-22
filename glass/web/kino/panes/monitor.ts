@@ -284,9 +284,49 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   };
 }
 
-/** A numbered vacancy. The whole empty card is the tune-in button. */
+/**
+ * Puts the wall's tiles in the order given (by channel) and drops the rest. A tile already in
+ * its place is not touched: moving a node drops its focus, and the monitors keep their canvases.
+ */
+export function orderTiles(wall: HTMLElement, tiles: readonly HTMLElement[]): void {
+  for (const child of [...wall.children]) if (!tiles.includes(child as HTMLElement)) child.remove();
+  let at = wall.firstElementChild;
+  for (const tile of tiles) {
+    if (tile === at) at = at.nextElementSibling;
+    else wall.insertBefore(tile, at);
+  }
+}
+
+/**
+ * Shows one monitor's controls in the dock. When focus was in the dock it goes to the same control
+ * of the new monitor (More controls stays as it was), or to `fallback` when that control is not there.
+ */
+export function showControls(
+  dock: HTMLElement,
+  controls: HTMLElement | null,
+  fallback: HTMLElement,
+): void {
+  if (dock.firstChild === controls) return;
+  const focused = dock.contains(document.activeElement) ? document.activeElement : null;
+  const before = dock.querySelector('details');
+  const more = controls?.querySelector('details');
+  if (before && more) more.open = before.open;
+  dock.replaceChildren(...(controls ? [controls] : []));
+  if (focused === null) return;
+  // Fixed labels from this file, never world text.
+  const label = focused.getAttribute('aria-label');
+  const same = [...(controls?.querySelectorAll<HTMLElement>('button, summary') ?? [])].find(
+    (c) =>
+      c.tagName === focused.tagName &&
+      c.getAttribute('aria-label') === label &&
+      !c.closest('[hidden]'),
+  );
+  (same ?? fallback).focus();
+}
+
+/** A numbered vacancy. The whole empty card is the tune-in button, and says which channel it is. */
 export function buildEmptySlot(
-  onTune: (button: HTMLButtonElement) => void,
+  onTune: (channel: number, button: HTMLButtonElement) => void,
   channel = 1,
 ): HTMLElement {
   const root = document.createElement('section');
@@ -302,7 +342,7 @@ export function buildEmptySlot(
   number.textContent = `CH ${channel}`;
   const b = button(`No signal. Tune in an agent on CH ${channel}`, null);
   b.append(number, t);
-  b.addEventListener('click', () => onTune(b));
+  b.addEventListener('click', () => onTune(channel, b));
   card.append(b);
   root.append(screen, card);
   return root;

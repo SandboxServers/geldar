@@ -79,6 +79,13 @@ function feature(ids: readonly number[], main: number, cap: number, narrow: bool
   };
 }
 
+/** The channel a new monitor takes: the vacancy it was opened from, else the lowest free number. */
+export function freeChannel(used: ReadonlySet<number>, wanted?: number): number {
+  let channel = wanted !== undefined && !used.has(wanted) ? wanted : 1;
+  while (used.has(channel)) channel++;
+  return channel;
+}
+
 export function planWall(input: WallInput): WallPlan {
   const { ids, layout, cap, narrow } = input;
   const main = input.active !== null && ids.includes(input.active) ? input.active : ids[0];

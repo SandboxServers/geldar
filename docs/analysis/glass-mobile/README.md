@@ -110,6 +110,32 @@ Measured in Chromium:
 
 Not checked: a real device, the live map behind the Map tab, real data, a roster of hundreds of agents.
 
+## Kino in the tab bar (decision 0412)
+
+Kino is the camera page at `/kino/`. It joins the bar and takes the Glass design. It was checked with the Kino preview (`node glass/test/kino-preview/server.ts`: an invented world and feed, Kino's real page policy) and with the Glass preview started with the word `kino`, in headless Chromium with software WebGL.
+
+| File | What it shows |
+|---|---|
+| `27-kino-phone-channels-sheet.png` | Cover screen: the Channels sheet, opened from the CH 3 card. |
+| `28-kino-unfolded.png` | Unfolded: the wall on the left; the active monitor's controls and the channel list on the right. |
+| `29-kino-phone-wall.png` | Cover screen: three monitors, the dock under the wall. |
+| `30-kino-phone-more-controls.png` | Cover screen: More controls open. |
+| `31-glass-phone-kino-tab.png`, `32-glass-unfolded-kino-tab.png` | The Glass page as it is served when Kino is mounted: four tabs. |
+
+Measured in Chromium:
+
+- The Glass page with Kino off is byte for byte the page of decision 0411. With Kino on, a first visit under the shipped rate limits has no refused reply at either size, and the document is no taller or wider than the screen.
+- The four labels at 750px sit at 81 to 122, 267 to 300, 454 to 478 and 624 to 673 on both pages: none in the middle 30px. At 360px they sit at 32 to 73, 121 to 154, 210 to 235 and 283 to 332. Every tab is 54px tall.
+- Kino loads both typefaces under its own policy, with no console error and no failed request, at 360x776, 750x768 and 780x360.
+- Holding Enter on Clear closes one monitor of three. Holding Enter on a row's plus button opens one monitor and sends one subscribe.
+- The CH 3 card fills CH 3 while CH 2 is empty. Unfolding with the sheet open for CH 2 keeps that choice. After CH 1 is cleared and refilled the tiles are still in the order 1, 2, 3, 4.
+- With focus on Orbit, pressing 2 leaves focus on the Orbit button of CH 2. The same holds for a button inside More controls.
+- `tools/kino-shot` ran against the preview at 430px and 1280px, with and without `--agent`, in each mode: every check passed in 7 to 10 seconds.
+
+Not checked: a real device, a live shard and its textures, a signed-out or restricted account, the relay's refusals (the preview never refuses), and Kino on the node, where it is switched off.
+
+The preview servers read their files when they start. The first Chromium run of the review's fixes reported the old behavior for that reason: restart the preview after an edit.
+
 ## Tests
 
 `glass/` has 945 passing tests with this change. Each new behaviour was reverted by hand, one at a time (57 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons, the page's rate bucket and its cap, the retry of a failed first page and its cap, stale replies, the worker's cache write), and a test failed for every one. Two reverts were not caught at first; their tests were tightened until they were.

@@ -121,12 +121,14 @@ policy, and the rate limits Glass ships with) with invented agents, thoughts and
 entry every few seconds:
 
 ```powershell
-node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [unlimited]   # default 8790, 5 and 60; binds 127.0.0.1
+node glass/test/page-preview/server.ts [port] [live-entry-seconds] [delay-seconds] [limited|unlimited] [kino]   # default 8790, 5 and 60; binds 127.0.0.1
 ```
 
 Open `http://localhost:8790/` (a service worker needs `localhost` or HTTPS). Unlike the real API, the
 preview's thoughts name their action, so it shows receipts. The word `unlimited` turns the rate limits
-off, for a script that loads the page many times in a row; leave it out to see what a visitor gets.
+off, for a script that loads the page many times in a row; leave it out (or say `limited`) to see what a
+visitor gets. The word `kino` after it serves the page as it is when Kino is mounted, with the Kino tab
+(the link leads nowhere in this preview). Both previews read their files at start: restart after an edit.
 
 ## Configuration
 

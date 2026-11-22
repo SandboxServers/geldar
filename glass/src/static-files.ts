@@ -115,13 +115,20 @@ export function withDelay(html: string, delaySeconds: number): string {
 const KINO_TAB_SLOT = '      <!-- kino-tab -->\n';
 const KINO_TAB = '      <a id="tab-kino" href="/kino/">Kino</a>\n';
 
+/**
+ * The page with the Kino tab in its slot, or with the slot line removed. The tab is a fixed link. A
+ * page without the one slot is refused at start: it would serve the comment, or never show the tab.
+ */
+export function withKinoTab(html: string, kinoMounted: boolean): string {
+  if (html.split(KINO_TAB_SLOT).length !== 2)
+    throw new Error('index.html has no single Kino tab slot');
+  return html.replace(KINO_TAB_SLOT, kinoMounted ? KINO_TAB : '');
+}
+
 /** The page entry with the configured delay and the link to Kino, if mounted. */
 export function pageWithOptions(delaySeconds: number, kinoMounted: boolean): StaticFile {
   const page = pageWithDelay(delaySeconds);
-  const html = String(page.body);
-  if (html.split(KINO_TAB_SLOT).length !== 2)
-    throw new Error('index.html has no single Kino tab slot');
-  return { ...page, body: html.replace(KINO_TAB_SLOT, kinoMounted ? KINO_TAB : '') };
+  return { ...page, body: withKinoTab(String(page.body), kinoMounted) };
 }
 
 /** The page entry of the table with the configured delay in it. */

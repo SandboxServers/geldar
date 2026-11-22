@@ -59,13 +59,13 @@ export class ChannelGuide {
     });
     dialog.addEventListener('close', () => {
       if (dialog.open) return;
+      const opener = this.opener?.isConnected ? this.opener : this.trigger;
+      this.opener = null;
+      // Unfolding closes the sheet without dismissing it: the list keeps the vacancy it was opened for.
+      if (!this.narrow.matches) return;
       this.newChannel = undefined;
       this.update(this.state);
-      if (this.narrow.matches) {
-        const opener = this.opener?.isConnected ? this.opener : this.trigger;
-        opener.focus();
-      }
-      this.opener = null;
+      opener.focus();
     });
     this.narrow.addEventListener('change', () => this.relocate());
     this.relocate();
@@ -134,6 +134,8 @@ export class ChannelGuide {
   }
 
   update(state: GuideState): void {
+    // Choosing another monitor drops a vacancy picked earlier: the next choice retunes that monitor.
+    if (state.activeChannel !== this.state.activeChannel) this.newChannel = undefined;
     this.state = state;
     const channel = this.newChannel === undefined ? state.activeChannel : null;
     this.caption.textContent =
