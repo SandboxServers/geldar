@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalBlockRef, parseBlockRef, placeStateOf, propsHold } from './block-ref.ts';
+import {
+  canonicalBlockRef,
+  parseBlockRef,
+  placeStateOf,
+  propsHold,
+  storedProps,
+  takesProps,
+} from './block-ref.ts';
 
 describe('parseBlockRef', () => {
   it('reads a bare block name with no properties', () => {
@@ -49,6 +56,38 @@ describe('propsHold', () => {
     expect(propsHold(null, {})).toBe(true);
     expect(propsHold({ facing: 'north' }, {})).toBe(true);
     expect(propsHold(null, { facing: 'north' })).toBe(false);
+  });
+});
+
+describe('takesProps and storedProps (review F2)', () => {
+  it('takes the keys the place action sets, and a slab half under its stored name type', () => {
+    expect(takesProps(parseBlockRef('oak_planks'))).toBe(true);
+    expect(takesProps(parseBlockRef('oak_log[axis=y]'))).toBe(true);
+    expect(takesProps(parseBlockRef('oak_stairs[half=top]'))).toBe(true);
+    expect(takesProps(parseBlockRef('oak_slab[half=top]'))).toBe(true);
+    expect(takesProps(parseBlockRef('oak_slab[type=top]'))).toBe(true);
+  });
+
+  it('refuses a key the place action cannot set, on every kind of block', () => {
+    expect(takesProps(parseBlockRef('oak_door[open=true]'))).toBe(false);
+    expect(takesProps(parseBlockRef('oak_stairs[waterlogged=true]'))).toBe(false);
+    expect(takesProps(parseBlockRef('oak_stairs[type=top]'))).toBe(false);
+    expect(takesProps(parseBlockRef('oak_stairs[facing=north]'))).toBe(false);
+    expect(takesProps(parseBlockRef('oak_planks[axis=y]'))).toBe(false);
+  });
+
+  it('stores a slab half as type, and leaves every other key as written', () => {
+    expect(storedProps(parseBlockRef('oak_slab[half=top]'))).toEqual({ type: 'top' });
+    expect(storedProps(parseBlockRef('oak_slab[type=top]'))).toEqual({ type: 'top' });
+    expect(storedProps(parseBlockRef('oak_stairs[half=top,axis=x]'))).toEqual({
+      half: 'top',
+      axis: 'x',
+    });
+  });
+
+  it('reads a slab type as its half for the place state', () => {
+    expect(placeStateOf(parseBlockRef('oak_slab[type=top]'))).toEqual({ half: 'top' });
+    expect(placeStateOf(parseBlockRef('oak_slab[half=bottom]'))).toEqual({ half: 'bottom' });
   });
 });
 

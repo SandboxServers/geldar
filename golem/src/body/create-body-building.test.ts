@@ -4,6 +4,7 @@ import { BUILDING_REFUSAL } from '../building/names.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody } from './create-body.ts';
+import { planFor, scriptedProgram, thought } from './executor.fakes.ts';
 
 const LIFE = 'ag_test_building';
 
@@ -188,6 +189,45 @@ describe('the plan queue and lane on the Body (BLD-38b)', () => {
     await tickAt(made, 1);
     await tickAt(made, 2);
     expect(blockAt).not.toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+});
+
+describe('the foreground gate reaches the intent executor (BLD-14, BLD-fix7a F1)', () => {
+  const intentPlan = () => planFor(0, { n: 1, lifeId: LIFE, bodyGeneration: 1 });
+
+  it('an intent the Body runs pauses the plan lane while it is active and resumes it after', async () => {
+    const made = buildingBody({ building: true });
+    airWorld(made.bot, mutableView(made));
+    const program = scriptedProgram([{ status: 'running' }], { hold: true });
+    made.runtime.programs.register('fake', () => program);
+    made.runtime.start();
+    made.executor.start();
+    const reply = await made.runtime.runAction(row(10));
+    expect(reply.state).toBe('completed');
+    await tickAt(made, 1);
+    expect(made.plan?.lane.snapshot()?.phase).toBe('running');
+    await made.executor.submit(thought({ intent: {} }), intentPlan());
+    expect(made.executor.intentState).toBe('running');
+    expect(made.plan?.lane.snapshot()?.phase).toBe('paused');
+    await made.executor.stop();
+    expect(made.executor.intentState).toBeNull();
+    expect(made.plan?.lane.snapshot()?.phase).toBe('running');
+    await made.runtime.stop();
+  });
+
+  it('with building off the same intent runs with no lane and no throw', async () => {
+    const made = buildingBody({ building: false });
+    const program = scriptedProgram([{ status: 'running' }], { hold: true });
+    made.runtime.programs.register('fake', () => program);
+    made.runtime.start();
+    made.executor.start();
+    expect(made.plan ?? null).toBeNull();
+    await expect(
+      made.executor.submit(thought({ intent: {} }), intentPlan()),
+    ).resolves.toBeDefined();
+    expect(made.executor.intentState).toBe('running');
+    await made.executor.stop();
     await made.runtime.stop();
   });
 });

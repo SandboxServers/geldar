@@ -308,6 +308,84 @@ describe('doCell stateful targets and live priors (BLD-38b2)', () => {
   });
 });
 
+describe('doCell slab halves and keys the place action cannot set (review F2)', () => {
+  const AIR_SLAB = (env: FakeEnv): void => {
+    env.set(AT.x, AT.y, AT.z, 'air');
+    env.items = [{ name: 'oak_slab', count: 1 }];
+  };
+
+  it('places a slab by half, and verifies the top half the world stores as type', async () => {
+    const env = new FakeEnv();
+    AIR_SLAB(env);
+    const handlers = placingProps(env, { type: 'top' });
+    const target = 'oak_slab[half=top]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('placed');
+    const sent = vi.mocked(handlers.place.run).mock.calls[0] as unknown[];
+    expect((sent[0] as ActionContext).placeState).toEqual({ half: 'top' });
+  });
+
+  it('places a slab by its type property, and verifies it', async () => {
+    const env = new FakeEnv();
+    AIR_SLAB(env);
+    const handlers = placingProps(env, { type: 'top' });
+    const target = 'oak_slab[type=top]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('placed');
+    const sent = vi.mocked(handlers.place.run).mock.calls[0] as unknown[];
+    expect((sent[0] as ActionContext).placeState).toEqual({ half: 'top' });
+  });
+
+  it('a slab already holding the half is done, read through its stored type', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'oak_slab');
+    env.props.set(`${AT.x},${AT.y},${AT.z}`, { type: 'top' });
+    const handlers = working(env);
+    const target = 'oak_slab[half=top]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('done_already');
+    expect(handlers.place.run).not.toHaveBeenCalled();
+  });
+
+  it('refuses an open door before any dig or placement, on a replace too', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.items = [{ name: 'oak_door', count: 1 }];
+    env.names = ['iron_pickaxe'];
+    const handlers = working(env);
+    const target = 'oak_door[open=true]';
+    expect(await doCell(ctx, { at: AT, prior: null, target }, env, handlers)).toBe(
+      'state_unachievable',
+    );
+    expect(handlers.dig.run).not.toHaveBeenCalled();
+    expect(handlers.place.run).not.toHaveBeenCalled();
+    expect(env.blockAt(AT)).toBe('stone');
+  });
+
+  it('refuses waterlogged on a stair before any dig or placement', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    env.names = ['iron_pickaxe'];
+    const handlers = working(env);
+    const target = 'oak_stairs[waterlogged=true]';
+    expect(await doCell(ctx, { at: AT, prior: null, target }, env, handlers)).toBe(
+      'state_unachievable',
+    );
+    expect(handlers.dig.run).not.toHaveBeenCalled();
+    expect(handlers.place.run).not.toHaveBeenCalled();
+  });
+
+  it('refuses a type property on a stair, whose half is stored as half', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'air');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    const handlers = placingProps(env, { type: 'top' });
+    const target = 'oak_stairs[type=top]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe(
+      'state_unachievable',
+    );
+    expect(handlers.place.run).not.toHaveBeenCalled();
+  });
+});
+
 describe('doCell stale rule', () => {
   it('skips a cell changed by a third party with changed and runs the neighbours', async () => {
     const env = new FakeEnv();

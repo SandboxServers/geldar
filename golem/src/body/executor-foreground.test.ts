@@ -26,6 +26,123 @@ function foregroundHarness() {
   return { ...h, executor, lane };
 }
 
+/** Lets queued microtasks and a zero timer run. */
+function settle(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+/** The steps the harness's scripted program has run. */
+function stepsOf(h: { program: { current: unknown } }): number {
+  return (h.program.current as ReturnType<typeof scriptedProgram>).log.steps;
+}
+
+/** A lane whose first pause waits until the test ends the in-flight cell. */
+function slowLane() {
+  let finishCell: () => void = () => undefined;
+  const lane = {
+    pauseForReflex: vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCell = resolve;
+        }),
+    ),
+    resume: vi.fn(),
+  };
+  return { lane, finishCell: () => finishCell() };
+}
+
+describe('the foreground hold comes before the intent runs (BLD-fix7a F4, F5)', () => {
+  it('a tick during a slow hold runs no step, and the intent starts once the hold resolves', async () => {
+    const h = executorHarness();
+    const { lane, finishCell } = slowLane();
+    const executor = new IntentExecutor({
+      runtime: h.runtime,
+      ticks: h.ticks.source,
+      currentRevision: () => h.revision.current,
+      wakeTap: h.tap,
+      foreground: contendFor(lane),
+    });
+    executor.start();
+    const submitting = executor.submit(thought({ intent: {} }), planFor(0, { n: 1 }));
+    await vi.waitFor(() => expect(lane.pauseForReflex).toHaveBeenCalled());
+    h.ticks.emit(1);
+    await settle();
+    expect(stepsOf(h)).toBe(0);
+    finishCell();
+    await submitting;
+    expect(executor.intentState).toBe('running');
+    await executor.stop();
+  });
+
+  it('a stop during the hold means the intent never runs, and the lane resumes once', async () => {
+    const h = executorHarness();
+    const { lane, finishCell } = slowLane();
+    const executor = new IntentExecutor({
+      runtime: h.runtime,
+      ticks: h.ticks.source,
+      currentRevision: () => h.revision.current,
+      wakeTap: h.tap,
+      foreground: contendFor(lane),
+    });
+    executor.start();
+    const submitting = executor.submit(thought({ intent: {} }), planFor(0, { n: 1 }));
+    await vi.waitFor(() => expect(lane.pauseForReflex).toHaveBeenCalled());
+    const stopping = executor.stop();
+    finishCell();
+    await stopping;
+    await submitting;
+    h.ticks.emit(1);
+    await settle();
+    expect(stepsOf(h)).toBe(0);
+    expect(executor.intentState).toBeNull();
+    expect(lane.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('a death during the hold means the intent never runs, and the lane resumes once', async () => {
+    const h = executorHarness();
+    const { lane, finishCell } = slowLane();
+    const executor = new IntentExecutor({
+      runtime: h.runtime,
+      ticks: h.ticks.source,
+      currentRevision: () => h.revision.current,
+      wakeTap: h.tap,
+      foreground: contendFor(lane),
+    });
+    executor.start();
+    const submitting = executor.submit(thought({ intent: {} }), planFor(0, { n: 1 }));
+    await vi.waitFor(() => expect(lane.pauseForReflex).toHaveBeenCalled());
+    const dying = executor.endForDeath(7);
+    finishCell();
+    await dying;
+    await submitting;
+    h.ticks.emit(1);
+    await settle();
+    expect(stepsOf(h)).toBe(0);
+    expect(executor.intentState).toBeNull();
+    expect(lane.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('replacing an intent does not resume the lane between the two intents', async () => {
+    const h = executorHarness();
+    const lane = { pauseForReflex: vi.fn(async () => undefined), resume: vi.fn() };
+    const executor = new IntentExecutor({
+      runtime: h.runtime,
+      ticks: h.ticks.source,
+      currentRevision: () => h.revision.current,
+      wakeTap: h.tap,
+      foreground: contendFor(lane),
+    });
+    executor.start();
+    await executor.submit(thought({ intent: {} }), planFor(0, { n: 1 }));
+    expect(executor.intentState).toBe('running');
+    await executor.submit(thought({ intent: {} }), planFor(0, { n: 2 }));
+    expect(executor.intentState).toBe('running');
+    expect(lane.resume).not.toHaveBeenCalled();
+    await executor.stop();
+    expect(lane.resume).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a foreground intent holds the plan lane (BLD-14)', () => {
   it('pauses the lane while the intent is active and resumes it after, cursor kept', async () => {
     const h = foregroundHarness();

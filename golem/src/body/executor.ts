@@ -476,6 +476,7 @@ export class IntentExecutor {
         agents: this.agents,
         tick: () => this.tick(),
         deathFloor: () => this.deathFloor,
+        stopping: () => this.stopping,
         setState: (a, state, detail) => this.setState(a, state, detail),
         end: (a, state, detail, wake, keepCheckpoint) =>
           this.end(a, state, detail, wake, false, keepCheckpoint),

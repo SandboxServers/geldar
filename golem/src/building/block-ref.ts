@@ -2,7 +2,7 @@
 // (`oak_stairs[facing=north,half=bottom]`). The cell executor compares a live block with the name
 // and each listed property (BLD-38b2), so a stateful target is not matched by its bare name alone.
 
-import type { Cardinal, PlaceState } from '../actions/place-state.ts';
+import { allowedKeys, type Cardinal, type PlaceState, propertyOf } from '../actions/place-state.ts';
 
 /** A block name and the state properties the reference lists (none for a bare name). */
 export interface BlockRef {
@@ -48,11 +48,30 @@ export function propsHold(
 
 /** The block state the place action is asked for: the axis, facing and half the reference lists. Undefined when none. */
 export function placeStateOf(ref: BlockRef): PlaceState | undefined {
-  const { axis, facing, half } = ref.props;
+  const { axis, facing } = ref.props;
+  // A slab's half may be listed under the name the world stores it by (`type`).
+  const half = ref.props.half ?? ref.props[propertyOf(ref.name, 'half')];
   if (axis === undefined && facing === undefined && half === undefined) return undefined;
   const state: PlaceState = {};
   if (axis !== undefined) state.axis = axis as NonNullable<PlaceState['axis']>;
   if (facing !== undefined) state.facing = facing as Cardinal;
   if (half !== undefined) state.half = half as NonNullable<PlaceState['half']>;
   return state;
+}
+
+/**
+ * True when the block takes every key the reference lists: the place action sets it (`allowedKeys`),
+ * or the key is the name the world stores that property under (a slab's `type` is its half). False
+ * means no click can place the reference, so it is refused before anything is broken.
+ */
+export function takesProps(ref: BlockRef): boolean {
+  const stored = allowedKeys(ref.name).map((key) => propertyOf(ref.name, key));
+  return Object.keys(ref.props).every((key) => stored.includes(propertyOf(ref.name, key)));
+}
+
+/** The reference's properties under the names the world stores them (a slab's `half` is `type`). */
+export function storedProps(ref: BlockRef): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(ref.props).map(([key, value]) => [propertyOf(ref.name, key), value]),
+  );
 }

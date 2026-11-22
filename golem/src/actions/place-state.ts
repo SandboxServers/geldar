@@ -57,7 +57,7 @@ export function allowedKeys(block: string): (keyof PlaceState)[] {
 }
 
 /** The block-state property name a key is stored under: slabs keep their half as `type`. */
-function propertyOf(block: string, key: keyof PlaceState): string {
+export function propertyOf(block: string, key: string): string {
   return key === 'half' && SLAB.test(block) ? 'type' : key;
 }
 

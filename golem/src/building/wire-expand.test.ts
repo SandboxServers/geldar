@@ -100,6 +100,17 @@ describe('the plan expander the queue is built with (BLD-38b)', () => {
     expect(() => expand({ palette, steps: ok, origin: { x: 'a' } })).toThrow(PlanNotRunnable);
   });
 
+  it('names the state in the message when a palette state is not a block state (review F6)', () => {
+    const expand = createPlanExpand(feet);
+    const steps = [{ op: 'place', pal: 'bad', at: { x: 0, y: 64, z: 0 } }];
+    const upper = { bad: { block: 'oak_slab', state: { type: 'TOP' } } };
+    expect(() => expand({ palette: upper, steps })).toThrow(
+      /^palette key bad has an invalid state$/,
+    );
+    const noName = { bad: { block: 'Oak Slab', state: { type: 'top' } } };
+    expect(() => expand({ palette: noName, steps })).toThrow(/^palette key bad names no block$/);
+  });
+
   it('an empty plan has no cells', () => {
     expect(createPlanExpand(feet)({ palette, steps: [] })).toEqual([]);
   });
