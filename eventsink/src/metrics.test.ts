@@ -162,6 +162,13 @@ describe('the label sets are closed', () => {
     expect(JSON.stringify(metrics.registry.otlp('0'))).not.toContain('made_up_by_a_player');
   });
 
+  it('labels plan_progress as its own type, so plan activity is tabulated and not lost in other', () => {
+    const metrics = new EventsinkMetrics();
+    metrics.consumed('geldar.phase0.plan_progress');
+    expect(seriesValue(metrics, CONSUMED, { type: 'plan_progress' })).toBe(1);
+    expect(seriesValue(metrics, CONSUMED, { type: 'other' })).toBe(0);
+  });
+
   it('refuses a label named after a player, a life or a token', () => {
     const registry = new MetricRegistry();
     expect(() => registry.declare('counter', 'x_total', 'h', ['player_name'])).toThrow(

@@ -168,6 +168,7 @@ export const EVENT_TYPE_LABELS = [
   'action_outcome',
   'reflex_fired',
   'wake',
+  'plan_progress',
   'dlq',
   'other',
 ] as const;

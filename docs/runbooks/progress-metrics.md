@@ -161,3 +161,12 @@ Action outcomes are not in the player-host logs. Capture the NATS `action_outcom
 fields `type`, `agent_id`, `at`, `payload.{verb,ok,reason}`) during the window into a file and pass it with
 `--outcomes <file|glob>`. Without it the no_effect column is empty. Start the capture before the change and keep it
 running: it cannot be recovered afterwards.
+
+## Plan metrics (BLD-27, operator only)
+
+The Body counts building plans in its OTLP push: `geldar_plan_cells_total{code}` (placed, broken, done_already, or the
+failure code; anything else is `other`), `geldar_plan_seconds_total`, `geldar_plan_throttle_waits_total{paused}`,
+`geldar_seen_flushes_total`, `geldar_seen_flush_bytes_total` and the gauge `geldar_plan_queue_depth`. The eventsink
+counts `plan_progress` events as `geldar_eventsink_consumed_total{type="plan_progress"}`. Labels carry codes and
+booleans only, never a position or a block. This view is for operators: no agent reads these series or the
+`plan_progress` feed.
