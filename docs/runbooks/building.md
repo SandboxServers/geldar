@@ -96,6 +96,7 @@ Use the views from outside the world; never ask an agent or a Body to report bui
 - **Erasure**: `tools/players-cli` erase (`erase-owner`) also removes the building data of each erased life: its
   `geldar-seen` sections, its `geldar-plans` chunks and its `<life>.plan` key in `geldar-checkpoints`
   (`tools/players-cli/src/erase-building.ts`).
+  Run this step only after the life's Body is stopped: stop the life's Body before erasing, because a running Body's seen writer re-creates `<life>.<sx>.<sy>.<sz>` keys after the purge.
 
 ## Restart windows R1 to R3
 

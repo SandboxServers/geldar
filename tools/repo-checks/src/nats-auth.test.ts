@@ -226,6 +226,26 @@ describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', ()
   );
 
   it(
+    'gives the body the plan and seen bucket subjects in the generated config (BLD fix7b)',
+    () => {
+      const r = renderGenerator(SHARD);
+      try {
+        expect(r.status, r.stderr).toBe(0);
+        const body = parseEntries(r.conf).find((x) => x.user === 'body');
+        expect(body?.pub, 'body pub').toEqual(
+          expect.arrayContaining(['$KV.geldar-plans.>', '$KV.geldar-seen.>']),
+        );
+        expect(expectedTable(SHARD).body?.pub).toEqual(
+          expect.arrayContaining(['$KV.geldar-plans.>', '$KV.geldar-seen.>']),
+        );
+      } finally {
+        rmSync(r.dir, { recursive: true, force: true });
+      }
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
     'every other role keeps its publish and subscribe lists and holds no provenance subject',
     () => {
       const r = renderGenerator(SHARD);

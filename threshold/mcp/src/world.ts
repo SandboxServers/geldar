@@ -173,7 +173,7 @@ const SEE_MESSAGES = {
 /** The fixed messages for the `survey` codes (the body's own failure reuses BODY_UNAVAILABLE_MESSAGE). */
 const SURVEY_MESSAGES: Record<SurveyError, string> = {
   invalid_input:
-    'survey takes a box of two corners of at most 32768 cells, layers from 1 to 384 when given, and no other input.',
+    'survey takes a box of two corners, layers from 1 to 384 when given, and no other input. A box of over 32768 cells after the layers clamp is refused.',
   session_closed: 'The session ended, so no survey was read.',
   rate_limited: 'Surveys are limited to one every 5 seconds. Survey again shortly.',
   body_unavailable: BODY_UNAVAILABLE_MESSAGE,

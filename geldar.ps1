@@ -394,7 +394,7 @@ function Get-NatsUsers([string] $Shard) {
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   $table = [ordered]@{
-    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
+    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'), (& $kv 'geldar-plans'), (& $kv 'geldar-seen'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
       # State (0280): the body never publishes a level push, so it cannot forge a domain level. It still requests the
