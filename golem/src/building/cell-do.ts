@@ -16,6 +16,7 @@ import {
   storedProps,
   takesProps,
 } from './block-ref.ts';
+import type { StandPort } from './cell-stand.ts';
 import { countMaterials, dropOf, holdsToolKind, type ToolKind, toolFor } from './materials.ts';
 import type { HeldBlock } from './scaffold.ts';
 import type { Cell } from './stand.ts';
@@ -63,10 +64,16 @@ export interface CellEnv {
   heldNames(): string[];
 }
 
-/** The two handlers the executor drives: the place and the break of BLD-06 to BLD-08. */
+/**
+ * The handlers the executor drives: the place and the break of BLD-06 to BLD-08. `goto` and `stand`
+ * are set only with body_actions.building on (wire-lane): the stand path walks with `goto` and reads
+ * the bot's cell through `stand` (cell-stand.ts). Left out, a cell runs as doCell alone.
+ */
 export interface CellHandlers {
   place: ActionHandler<'place'>;
   dig: ActionHandler<'break'>;
+  goto?: ActionHandler<'goto'>;
+  stand?: StandPort;
 }
 
 /** Works one planned cell and returns its code. Never throws for a handler's failure. */

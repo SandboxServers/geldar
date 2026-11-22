@@ -1,12 +1,25 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
+import * as cellStand from '../building/cell-stand.ts';
 import { BUILDING_REFUSAL } from '../building/names.ts';
+import * as laneWiring from '../building/wire-lane.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody } from './create-body.ts';
 import { planFor, scriptedProgram, thought } from './executor.fakes.ts';
 
 const LIFE = 'ag_test_building';
+
+// The stand path's entry points stay real; the spies only count calls, so the flag-off test can see
+// whether the lane or the cell stand path is ever built or invoked.
+vi.mock('../building/wire-lane.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../building/wire-lane.ts')>();
+  return { ...real, createLaneWiring: vi.fn(real.createLaneWiring) };
+});
+vi.mock('../building/cell-stand.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../building/cell-stand.ts')>();
+  return { ...real, doCellAt: vi.fn(real.doCellAt) };
+});
 
 /** A metrics object whose plan counters are spies; the Body is handed it as its GolemMetrics. */
 function spyMetrics() {
@@ -56,6 +69,24 @@ function airWorld(bot: Bot, view: { tick: number }): void {
     return { name: 'air' };
   };
   world.inventory = { items: () => [{ name: 'stone', count: 64 }] };
+}
+
+/**
+ * airWorld with a solid stone floor at y 63, so a standing cell exists above it: the stand solver
+ * finds a stand and the direct place path runs. Air is still every other cell.
+ */
+function floorWorld(bot: Bot, view: { tick: number }): void {
+  airWorld(bot, view);
+  const world = bot as unknown as {
+    blockAt: (at: { y: number }) => { name: string; boundingBox?: string };
+  };
+  const air = world.blockAt;
+  world.blockAt = (at) => {
+    if (at.y !== 63) return air(at);
+    view.tick += 1;
+    // The stand solver reads a solid cell by its bounding box, as a real block reports it.
+    return { name: 'stone', boundingBox: 'block' };
+  };
 }
 
 /** The view the test drives: the fake view's tick and fire flag are plain fields. */
@@ -114,7 +145,7 @@ describe('the plan queue and lane on the Body (BLD-38b)', () => {
 
   it('a palette state (stairs half top) reaches the place handler through the lane (BLD-fix5 F1)', async () => {
     const made = buildingBody({ building: true });
-    airWorld(made.bot, mutableView(made));
+    floorWorld(made.bot, mutableView(made));
     // The cell preflight needs the stairs in hand; airWorld holds stone only.
     const held = made.bot as unknown as {
       inventory: { items: () => { name: string; count: number }[] };
@@ -198,7 +229,7 @@ describe('the foreground gate reaches the intent executor (BLD-14, BLD-fix7a F1)
 
   it('an intent the Body runs pauses the plan lane while it is active and resumes it after', async () => {
     const made = buildingBody({ building: true });
-    airWorld(made.bot, mutableView(made));
+    floorWorld(made.bot, mutableView(made));
     const program = scriptedProgram([{ status: 'running' }], { hold: true });
     made.runtime.programs.register('fake', () => program);
     made.runtime.start();
@@ -207,7 +238,12 @@ describe('the foreground gate reaches the intent executor (BLD-14, BLD-fix7a F1)
     expect(reply.state).toBe('completed');
     await tickAt(made, 1);
     expect(made.plan?.lane.snapshot()?.phase).toBe('running');
-    await made.executor.submit(thought({ intent: {} }), intentPlan());
+    // The world's reads advance the view's tick past the fixture's default expiry (1000), so the intent
+    // plan gets a later expiry; the plan has no actions, only the intent.
+    await made.executor.submit(
+      thought({ intent: {} }),
+      planFor(0, { n: 1, lifeId: LIFE, bodyGeneration: 1, expiresTick: 1_000_000 }),
+    );
     expect(made.executor.intentState).toBe('running');
     expect(made.plan?.lane.snapshot()?.phase).toBe('paused');
     await made.executor.stop();
@@ -250,6 +286,37 @@ describe('createBody hands its metrics to the plan lane (BLD-38b)', () => {
     made.runtime.start();
     await tickAt(made, 1);
     expect(spy.planCell).not.toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+
+  it('with the flag off a plan-free tick builds no lane, no stand port and no cell stand call', async () => {
+    const createLane = vi.mocked(laneWiring.createLaneWiring);
+    const doCell = vi.mocked(cellStand.doCellAt);
+    createLane.mockClear();
+    doCell.mockClear();
+    const made = buildingBody({ building: false });
+    const blockAt = vi.fn(() => ({ name: 'air' }));
+    (made.bot as unknown as { blockAt: typeof blockAt }).blockAt = blockAt;
+    made.runtime.start();
+    await tickAt(made, 1);
+    await tickAt(made, 2);
+    expect(made.plan).toBeNull();
+    // standPortOf is only reached through createLaneWiring, and the stand path only through doCellAt:
+    // neither is built or invoked, so the bot's world is never read for a stand.
+    expect(createLane).not.toHaveBeenCalled();
+    expect(doCell).not.toHaveBeenCalled();
+    expect(blockAt).not.toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+
+  it('with the flag on the same plan-free tick does build the lane', async () => {
+    const createLane = vi.mocked(laneWiring.createLaneWiring);
+    createLane.mockClear();
+    const made = buildingBody({ building: true });
+    made.runtime.start();
+    await tickAt(made, 1);
+    expect(createLane).toHaveBeenCalledTimes(1);
+    expect(made.plan).not.toBeNull();
     await made.runtime.stop();
   });
 });

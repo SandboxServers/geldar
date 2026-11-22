@@ -4,13 +4,8 @@
 // time; a second `start` is refused (BLD-14 adds the queue).
 import type { ActionContext } from '../actions/registry.ts';
 import { parseBlockRef } from './block-ref.ts';
-import {
-  type CellCode,
-  type CellEnv,
-  type CellHandlers,
-  doCell,
-  type PlanCell,
-} from './cell-do.ts';
+import type { CellCode, CellEnv, CellHandlers, PlanCell } from './cell-do.ts';
+import { doCellAt } from './cell-stand.ts';
 import type { LaneStateName } from './lane-state.ts';
 import { countMaterials } from './materials.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
@@ -241,7 +236,13 @@ export class PlanLane {
       this.inFlight = ctl;
       let code: CellCode;
       try {
-        code = await doCell({ ...ctx, signal: ctl.signal }, cell, deps.env, deps.handlers);
+        code = await doCellAt(
+          { ...ctx, signal: ctl.signal },
+          cell,
+          deps.env,
+          deps.handlers,
+          plan.cells,
+        );
       } finally {
         ctx.signal.removeEventListener('abort', stop);
         this.inFlight = null;
