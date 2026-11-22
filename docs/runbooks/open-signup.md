@@ -275,7 +275,10 @@ Enable (only with the owner's go and a written Mojang approval):
 
 1. Confirm the approval is in the owner's hands. Do not enable on a guess.
 2. Set `REGISTER_REQUIRE_MC_OWNERSHIP` in the node env to exactly `true`. Check the name with `grep -c`, and print no other value.
-3. Recreate the register service only, with the same command as Section 2 item 4 and the kill switch unchanged. Do not change `REGISTER_KILL_SWITCH` in the same step. The `--no-deps` flag stays.
+3. Recreate the register service only, with the Section 2 item 4 command (`--no-deps` stays). Which kill switch value that command needs depends on the state of sign-up:
+   - (a) Sign-up still closed (the kill switch is at its default `true`): run the Section 2 item 4 command unchanged, with no `REGISTER_KILL_SWITCH` on the command line.
+   - (b) Sign-up already open (Section 4 step 27 was done): run the same command with `REGISTER_KILL_SWITCH=false` set on the command line, as in Section 4 step 27. Omitting it re-closes sign-up, because the command then gets the default `true` (the re-flip rule in Section 4). Never put `REGISTER_KILL_SWITCH` in an env file.
+   - In both cases this step changes only the Minecraft flag, not the kill switch state.
 4. Re-flip rule: every change of the flag value (on to off, or off to on) needs its own register-only recreate and the verify steps below. Turning it off again is always safe: it erases nothing and restores the flag-off sign-up path. Do not flip while sign-up is open without the owner's go.
 
 Entra app steps (shared app, names only, no values). The app is the one in Section 1; never create or delete it:
@@ -290,11 +293,11 @@ Verify safely (read only, no sign-in):
 1. `docker inspect` of exactly `geldar-colo-register-1`: check the env names and the flag value (`true` or empty). Never match containers by a pattern.
 2. The register log lines for the gate carry an outcome and a code only. No token, gamertag, XUID or entitlement text may appear in them. If one does, stop and report.
 3. Do not test with a real personal account unless the owner gives the go for that account. A test account needs the owner's go too.
-4. The known residual risk: if recording the ownership answer fails and the undo of the new account also fails, an owner row may exist with no ownership record. The log line `sign-up undo did not remove the account` marks it. An operator checks for that line after every flag change and reports it to the owner.
+4. Record failure: the owner row and the ownership record are written in one transaction, so a failed record rolls the new account back and refuses the sign-up. The log line `sign-up ownership record failed; owner write rolled back` marks each such refusal. Check for it after every flag change and report a burst to the owner. Owners created before the flag was on have no ownership record; that is expected.
 
 Rollback:
 
-- Remove the env value (or set it to anything other than the exact `true`), then recreate the register service only, as in step 3 above. Existing accounts are not touched. Sign-ups return to the flag-off path.
+- Remove the env value (or set it to anything other than the exact `true`), then recreate the register service only, with the same kill switch case as Section 7 step 3: (a) with sign-up closed, the Section 2 item 4 command unchanged; (b) with sign-up open, that command with `REGISTER_KILL_SWITCH=false` on the command line. Omitting it in case (b) re-closes sign-up. Existing accounts are not touched. Sign-ups return to the flag-off path.
 - A failed check refuses the sign-up. It never erases an account, and it never admits one.
 
 ## Pending (as first written; the "Merged on `main`" bullet lists what has merged since)
