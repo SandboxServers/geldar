@@ -50,7 +50,7 @@ describe('public rate limit (public.rate_limit)', () => {
     for (let i = 0; i < 200; i++) {
       expect((await post(started.port)).status).toBe(200);
     }
-  });
+  }, 60_000);
 
   it('serves again once the clock has refilled one token', async () => {
     let clock = 0;

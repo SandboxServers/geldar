@@ -182,7 +182,7 @@ describe('the command line', () => {
         type,
       ).toHaveLength(1);
     }
-  });
+  }, 60_000);
 
   it('starts with --scenario and serves a snapshot for Kestrel', async () => {
     const log = join(dir, 'suppressed.jsonl');

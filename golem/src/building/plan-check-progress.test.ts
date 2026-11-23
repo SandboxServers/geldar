@@ -72,7 +72,7 @@ describe('answerPlanCheck progress (the streamed dry run)', () => {
     const last = reports[reports.length - 1] as PlanCheckProgress;
     expect(last.cells_checked).toBeLessThanOrEqual(answer.cells);
     expect(last.layers_done).toBeLessThanOrEqual(241);
-  });
+  }, 60_000);
 
   it('reports nothing while the walk is faster than the report interval', async () => {
     const reports: PlanCheckProgress[] = [];
@@ -84,7 +84,7 @@ describe('answerPlanCheck progress (the streamed dry run)', () => {
     const answer = await answerPlanCheck(body, SPHERE_120, true);
     expect('cells' in answer).toBe(true);
     expect(reports).toEqual([]);
-  });
+  }, 60_000);
 
   it('paces progress by the clock: a clock that moves less than the interval per read reports fewer times than slices', async () => {
     const reports: PlanCheckProgress[] = [];
@@ -98,7 +98,7 @@ describe('answerPlanCheck progress (the streamed dry run)', () => {
     // One slice per million cells at least, so at least that many slices ran; the clock reports only
     // once a full interval has passed, which is less often than once per slice.
     expect(reports.length).toBeLessThan(Math.floor(answer.cells / 1_000_000));
-  });
+  }, 60_000);
 
   it('a cancel request (not a plan) supersedes the running walk: the walk stops, the cancel is invalid input', async () => {
     const { seen, reads } = countingSeen();

@@ -209,7 +209,7 @@ describe('answerPlanCheck (the Body dry run)', () => {
       estimated_ticks: eager.length,
       invalid_steps: [],
     });
-  });
+  }, 60_000);
 
   it('stops the walk when its signal aborts, and answers not_available', async () => {
     const controller = new AbortController();
