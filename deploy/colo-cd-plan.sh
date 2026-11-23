@@ -26,10 +26,20 @@ category_of() {
   esac
 }
 
+# Whether $1 is a sha256 hex digest (64 lowercase hex characters).
+is_sha256() {
+  case $1 in
+    '' | *[!0-9a-f]*) return 1 ;;
+  esac
+  [ "${#1}" -eq 64 ]
+}
+
 # One line per folder with a tracked file in <dir>: "folder <name> <sha256>". The hash covers each file's path and sha256
-# in sorted order, so the export and the node's copy of the same tree give the same hash.
+# in sorted order, so the export and the node's copy of the same tree give the same hash. A file that cannot be hashed
+# (or a missing sha256sum) fails the whole listing: no partial hash is printed. A node-local *.bak-* copy is not a
+# folder member (the node keeps those beside the files it runs), so it is left out on both sides.
 folder_hashes() {
-  listing=$(cd "$1" && find . -type f -not -path './.git/*' | sed 's|^\./||' | LC_ALL=C sort) || return 1
+  listing=$(cd "$1" && find . -type f -not -path './.git/*' -not -name '*.bak-*' | sed 's|^\./||' | LC_ALL=C sort) || return 1
   for name in plugin compose caddy nats; do
     members=
     while IFS= read -r rel; do
@@ -41,10 +51,20 @@ folder_hashes() {
 $listing
 EOF
     [ -n "$members" ] || continue
-    hash=$(cd "$1" && printf '%s' "$members" | while IFS= read -r rel; do
+    body=
+    while IFS= read -r rel; do
       [ -n "$rel" ] || continue
-      printf '%s %s\n' "$rel" "$(sha256sum <"$rel" | cut -d' ' -f1)"
-    done | sha256sum | cut -d' ' -f1) || return 1
+      digest=$(cd "$1" && sha256sum <"$rel") || return 1
+      digest=${digest%% *}
+      is_sha256 "$digest" || return 1
+      body="$body$rel $digest
+"
+    done <<EOF
+$members
+EOF
+    hash=$(printf '%s' "$body" | sha256sum) || return 1
+    hash=${hash%% *}
+    is_sha256 "$hash" || return 1
     echo "folder $name $hash"
   done
 }

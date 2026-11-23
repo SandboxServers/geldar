@@ -103,7 +103,7 @@ What `deploy/colo-cd.sh` does and does not do (its header and `deploy/README.md`
 - It restarts only services whose image digest changed, in the order `eventsink`, `register`, `glass`, `geldar-mcp`, `golem-body` (`ORDER` in `colo-cd.sh`).
 - It never restarts Paper, Velocity, Caddy, Postgres or NATS, and never starts the Mind. It restarts `golem-body` only when it is already running (decision [0212](../decisions/0212-golem-body-is-a-profile-adam.md)), and a new Body digest recreates the player hosts.
 - It refuses before changing anything when an image is outside the project's registry namespace or its revision label differs from the release commit (`deploy/colo-cd-verify.sh`).
-- `deploy/colo-cd-plan.sh` lists what it cannot apply as `needs manual`: changes under `plugin/`, `compose/`, `deploy/caddy/` and NATS.
+- `deploy/colo-cd.sh` prints `needs manual` for what it cannot apply (`plugin/`, `compose/`, `deploy/caddy/` and NATS config) when that folder's export hash differs from the record written by `--record-applied`. The plan (`deploy/colo-cd-plan.sh`) lists those files as skipped.
 
 The first deploy, and any change the CD cannot apply, uses `deploy/colo-up.sh` by hand. Its order (`deploy/README.md`, "First deploy: the order" and "Public sites on a node"):
 

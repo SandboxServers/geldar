@@ -1,5 +1,19 @@
+import type { SpawnSyncOptions } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { probeTool, pwshCommand, toolAvailable } from './tool-probe';
+
+// Counts each spawnSync call and still runs the real one, so the lazy-probe tests see what the module starts.
+const spawnSpy = vi.hoisted(() => vi.fn());
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawnSync: (...args: [string, readonly string[], SpawnSyncOptions]) => {
+      spawnSpy(args[0]);
+      return actual.spawnSync(args[0], [...args[1]], args[2]);
+    },
+  };
+});
 
 const MISSING = 'geldar-no-such-tool-898';
 const SAVED = { CI: process.env.CI, PWSH: process.env.GELDAR_TEST_PWSH };
@@ -60,5 +74,28 @@ describe('pwshCommand', () => {
     expect(pwshCommand()).toBe('pwsh');
     process.env.GELDAR_TEST_PWSH = MISSING;
     expect(pwshCommand()).toBe(MISSING);
+  });
+});
+
+describe('lazy probes', () => {
+  it('starts nothing on import, runs a probe once on first use, and reuses the result', async () => {
+    spawnSpy.mockClear();
+    vi.resetModules();
+    const mod = await import('./tool-probe');
+    expect(spawnSpy).not.toHaveBeenCalled();
+    const first = mod.dockerComposeProbe();
+    expect(mod.dockerComposeProbe()).toBe(first);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    expect(spawnSpy).toHaveBeenCalledWith('docker');
+  });
+
+  it('reads GELDAR_TEST_PWSH when pwshProbe is first called, not at import', async () => {
+    spawnSpy.mockClear();
+    process.env.GELDAR_TEST_PWSH = MISSING;
+    vi.resetModules();
+    const mod = await import('./tool-probe');
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(mod.pwshProbe().ok).toBe(false);
+    expect(spawnSpy).toHaveBeenCalledWith(MISSING);
   });
 });

@@ -95,14 +95,18 @@ close a deploy. `deploy/colo-cd-plan.sh` prints a `folder <name> <sha256>` line 
 recorded the item is listed on every deploy. A failed player host refresh also prints `needs manual`.
 
 Once you have applied a folder's change on the node (copied the folder into the node's src extract,
-`$GELDAR_COLO_ROOT`, and done what it asks), record the node's copies so that the list goes quiet:
+`$GELDAR_COLO_ROOT`, and done what it asks), record the node's copies so that the list goes quiet. Run this only
+after the restart or jar swap: the record is an operator's statement that the node runs this copy; the script does
+not check that the jar or Caddy is running it. It prints `recorded applied: <folder> <first 12 hex digits>` for each
+folder, so the log shows what was attested. With `DEPLOY_DRY_RUN=1` it prints what it would record and writes nothing.
 
 ```sh
 sh deploy/colo-cd.sh --record-applied   # run from the src extract (the directory that holds deploy/); it writes applied.<folder>.sha256 only
 ```
 
 The first time, run it once after the four folders in the node's src extract match main (copy them
-across by hand first). Until then the three items print on each deploy, as they did before.
+across by hand first). Until then the four folders (plugin, compose, caddy, nats) print on each deploy that has a
+file in them, as they did before.
 
 ## Maintenance notices
 

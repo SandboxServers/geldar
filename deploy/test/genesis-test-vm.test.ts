@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { PWSH_PROBE, pwshCommand, toolAvailable } from './tool-probe';
+import { pwshCommand, pwshProbe, toolAvailable } from './tool-probe';
 
 vi.setConfig({ testTimeout: 60_000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
@@ -103,7 +103,7 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-describe.skipIf(!toolAvailable(PWSH_PROBE))(
+describe.skipIf(!toolAvailable(pwshProbe()))(
   'New-TestVm.ps1 dry run and refusals (stubbed Hyper-V)',
   () => {
     it('dry run prints every action, calls no mutating cmdlet and never prints the key', () => {

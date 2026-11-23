@@ -17,6 +17,7 @@ import {
   readText,
   upServices,
 } from './colo-cd-fixture';
+import { writeShim } from './colo-deploy-fixture';
 
 const CHANGED = ['GELDAR_EVENTSINK_IMAGE', 'GELDAR_GLASS_IMAGE', 'GELDAR_MCP_IMAGE'];
 const EDITS = { 'src/eventsink.txt': 'v2\n', 'src/glass.txt': 'v2\n', 'src/mcp.txt': 'v2\n' };
@@ -79,6 +80,75 @@ describe('colo-cd.sh needs manual follows the applied record', () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain('nothing recorded');
     expect(existsSync(join(cd.state, 'applied.plugin.sha256'))).toBe(false);
+  });
+
+  // A Caddy or NATS file is in a folder the node does not refresh: its record decides the line, as for plugin and compose.
+  it('reports a Caddy file until the node copy has its bytes', () => {
+    const cd = cdSetup({ 'deploy/caddy/glass.caddy': 'v2\n' });
+    const CADDY = 'Caddy config changed';
+    const unrecorded = cdRun(cd);
+    expect(unrecorded.code, unrecorded.out).toBe(0);
+    expect(unrecorded.out).toContain(`needs manual: ${CADDY}`);
+    expect(recordNode(cd, { 'deploy/caddy/glass.caddy': 'v2\n' }).code).toBe(0);
+    const same = cdRun(cd);
+    expect(same.code, same.out).toBe(0);
+    expect(same.out).not.toContain(CADDY);
+    expect(recordNode(cd, { 'deploy/caddy/glass.caddy': 'v1\n' }).code).toBe(0);
+    expect(cdRun(cd).out).toContain(`needs manual: ${CADDY}`);
+  });
+
+  // nats/* and the */nats*.conf arm (deploy/nats-local.conf here: a compose/ path is matched by the compose arm first).
+  it('reports a NATS file until the node copy has its bytes', () => {
+    const cd = cdSetup({ 'nats/nats.conf': 'v2\n', 'deploy/nats-local.conf': 'v2\n' });
+    const NATS = 'NATS config changed';
+    const unrecorded = cdRun(cd);
+    expect(unrecorded.code, unrecorded.out).toBe(0);
+    expect(unrecorded.out).toContain(`needs manual: ${NATS}`);
+    const both = { 'nats/nats.conf': 'v2\n', 'deploy/nats-local.conf': 'v2\n' };
+    expect(recordNode(cd, both).code).toBe(0);
+    const same = cdRun(cd);
+    expect(same.code, same.out).toBe(0);
+    expect(same.out).not.toContain(NATS);
+    expect(
+      recordNode(cd, { 'nats/nats.conf': 'v1\n', 'deploy/nats-local.conf': 'v2\n' }).code,
+    ).toBe(0);
+    expect(cdRun(cd).out).toContain(`needs manual: ${NATS}`);
+  });
+
+  it('ignores a node-local .bak-<UTC> copy when it compares the folder with its record', () => {
+    const cd = cdSetup({ 'compose/compose.yml': 'services: {}\n' });
+    const bak = 'compose/compose.yml.bak-20260101T000000Z';
+    const rec = recordNode(cd, { 'compose/compose.yml': 'services: {}\n', [bak]: 'old\n' });
+    expect(rec.code, rec.out).toBe(0);
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain(COMPOSE);
+  });
+
+  it('--record-applied prints each folder with the first 12 hex digits of its hash', () => {
+    const cd = cdSetup({});
+    const r = recordNode(cd, { 'compose/compose.yml': 'services: {}\n' });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toMatch(/recorded applied: compose [0-9a-f]{12}$/m);
+  });
+
+  it('--record-applied with DEPLOY_DRY_RUN=1 prints what it would record and writes nothing', () => {
+    const cd = cdSetup({});
+    mkdirSync(join(cd.extract, 'compose'), { recursive: true });
+    writeFileSync(join(cd.extract, 'compose/compose.yml'), 'services: {}\n');
+    const r = cdRun(cd, { args: ['--record-applied'], env: { DEPLOY_DRY_RUN: '1' } });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('would record: compose');
+    expect(readdirSync(cd.state).some((f) => f.startsWith('applied.'))).toBe(false);
+  });
+
+  it('--record-applied fails and records nothing when sha256sum fails (no partial hash)', () => {
+    const cd = cdSetup({});
+    writeShim(join(cd.fx.dir, 'bin'), 'sha256sum', '#!/bin/sh\nexit 1\n');
+    const r = recordNode(cd, { 'compose/compose.yml': 'services: {}\n' });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('cannot hash the folders');
+    expect(existsSync(join(cd.state, 'applied.compose.sha256'))).toBe(false);
   });
 });
 
