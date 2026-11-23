@@ -27,7 +27,23 @@ export interface StaticFile {
 
 /** The strong ETag of a body: a 22-character base64url SHA-256 prefix, quoted. Same form as the Kino files. */
 export function etagOf(body: string | Buffer): string {
-  return `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+  const digest = createHash('sha256').update(body).digest('base64url').slice(0, 22);
+  // base64url has no character that needs escaping, so JSON.stringify only adds the quotes.
+  return JSON.stringify(digest);
+}
+
+/**
+ * Whether an If-None-Match header matches the ETag (RFC 9110 13.1.2: GET and HEAD use the weak comparison). The
+ * header may be `*`, a comma list, or weak (`W/"tag"`, which a compressing CDN adds); the weak prefix is ignored.
+ */
+export function etagMatches(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const bare = (tag: string): string => tag.trim().replace(/^W\//, '');
+  const target = bare(etag);
+  return header.split(',').some((part) => {
+    const tag = part.trim();
+    return tag === '*' || bare(tag) === target;
+  });
 }
 
 /** The same entry with another body. The ETag follows the body, so a rewritten page is never tagged with the old one. */

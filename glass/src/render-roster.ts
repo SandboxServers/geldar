@@ -229,13 +229,21 @@ export function createRoster(deps: RosterDeps) {
           ? 'No agent matches.'
           : `${reply.total} matching: ${living} alive and ${deceased} dead on this page.`;
       clear();
-    } catch {
+    } catch (err) {
       if (mine !== asked) return;
-      deps.count.textContent = 'Could not search the agents.';
+      deps.count.textContent = failureText(err, 'Could not search the agents.');
     }
   }
-  deps.search.addEventListener('input', () => void search());
-  deps.sort.addEventListener('change', () => void search());
+  // A run of keys asks once: each key waits DEBOUNCE_MS (as the More list does). A sort change asks at once.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  deps.search.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => void search(), DEBOUNCE_MS);
+  });
+  deps.sort.addEventListener('change', () => {
+    clearTimeout(searchTimer);
+    void search();
+  });
 
   return {
     setAgents(agents: Row[]): void {

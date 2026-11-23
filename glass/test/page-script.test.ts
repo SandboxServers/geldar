@@ -285,6 +285,43 @@ describe('the page script', () => {
     expect(win.document.querySelectorAll('#thoughts mark').length).toBe(0);
   });
 
+  it('loads the receipts of six actions four at a time, and says which one could not load', async () => {
+    // The failing request (a3) answers at once and never reaches reply, so a sixth id is what shows a bound of five.
+    const ids = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'];
+    let inFlight = 0;
+    let peak = 0;
+    const win = await boot(PAGES, {
+      reply: (url) => {
+        if (url === '/api/thoughts/t1') {
+          return Promise.resolve({ thought: { ...thought(1), action_ids: ids } });
+        }
+        if (!url.startsWith('/api/receipts')) return undefined;
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        return new Promise((done) => {
+          setTimeout(() => {
+            inFlight -= 1;
+            done({ receipts: [] });
+          }, 5);
+        });
+      },
+      fail: (url) =>
+        url === '/api/receipts?action_id=a3' ? { status: 429, retryAfter: '30' } : undefined,
+    });
+    const first = win.document.querySelector('#thoughts > li');
+    fire(win, first?.querySelector('button.when') as HTMLButtonElement, 'click');
+    await vi.waitFor(() => {
+      expect(first?.querySelector('.detail .unloaded')).not.toBeNull();
+    });
+    expect(page.fetchUrls.filter((url) => url.startsWith('/api/receipts'))).toEqual(
+      ids.map((id) => `/api/receipts?action_id=${id}`),
+    );
+    expect(peak).toBe(4);
+    const detail = first?.querySelector('.detail');
+    expect(detail?.querySelector('.unloaded')?.textContent).toBe('1 action could not be loaded');
+    expect(detail?.querySelector('dl.facts')?.textContent).toContain('templatev1');
+  });
+
   it('opens the detail under its entry on the time button, and closes it on the second press', async () => {
     const win = await boot(PAGES);
     const first = win.document.querySelector('#thoughts > li');

@@ -75,6 +75,8 @@ export interface BootOptions {
   wide?: { matches: boolean; listeners: (() => void)[] };
   /** While `down` is true every fetch fails, as it does with no network. */
   network?: { down: boolean };
+  /** Answers a URL with an HTTP error, as the rate limiter does (429 with Retry-After). */
+  fail?: (url: string) => { status: number; retryAfter?: string } | undefined;
   /** Overrides specific API replies, including ones held pending by a test. */
   reply?: (url: string) => Promise<unknown> | undefined;
   /** The page's storage. Left out: the browser gives none. */
@@ -123,6 +125,16 @@ export async function boot(pages: Pages, options: BootOptions = {}): Promise<Win
     vi.fn(async (url: string) => {
       page.fetchUrls.push(url);
       if (options.network?.down === true) throw new TypeError('Failed to fetch');
+      const failed = options.fail?.(url);
+      if (failed !== undefined) {
+        const { status, retryAfter } = failed;
+        return {
+          ok: false,
+          status,
+          headers: { get: () => retryAfter ?? null },
+          json: async () => ({}),
+        };
+      }
       const override = options.reply?.(url);
       if (override !== undefined) return { ok: true, status: 200, json: () => override };
       const one = /^\/api\/thoughts\/([^?]+)/.exec(url);

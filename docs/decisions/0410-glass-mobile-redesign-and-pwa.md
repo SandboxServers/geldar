@@ -124,11 +124,12 @@ Glass is the public window on the vivarium (Principle 1: humans watch, and only 
 - The first image files in the repository (three generated icons) and the first font files.
 - The receipts list will show on live data only after the API links a thought to its action (A8).
 
+- A first page that fails is asked for again five times with a growing wait (0.5 to 8 seconds), and after that only when the feed comes back. A reply to an older filter change is dropped, so a slow reply cannot overwrite a newer one.
+- Tests: every behaviour here has a test; the PR lists the ones checked by reverting the change.
+- Not verified on a real device. The layouts were checked in headless Chromium at 360x780 and 750x760 CSS pixels (the handoff's estimates for the Fold). Install was checked with Chromium's installability audit, not by adding the app to a phone's home screen.
+
 ## Addendum: owner ruling on A8 (2026-11-22)
 
 Owner ruling (via the campaign lead, 2026-11-22): A8 many actions per thought.
 
-A thought can lead to many actions, so the API links a thought to each of them. `GET /api/thoughts/:id` sends `action_ids`: the actions the thought led to, in order (by intent start tick, then action sequence). The join runs thought -> `intents.thought_id` -> `actions.intent_id`, keeps only the actions of the thought's own agent, and repeats the thought's visibility (the sovereign filter and the delay) on the join. The page asks `GET /api/receipts?action_id=` for each id, in that order, and shows the receipts together under the thought. A thought with no action says nothing about receipts, as before. Assumption A8 above is superseded by this ruling for the receipts that now show.
-- A first page that fails is asked for again five times with a growing wait (0.5 to 8 seconds), and after that only when the feed comes back. A reply to an older filter change is dropped, so a slow reply cannot overwrite a newer one.
-- Tests: every behaviour here has a test; the PR lists the ones checked by reverting the change.
-- Not verified on a real device. The layouts were checked in headless Chromium at 360x780 and 750x760 CSS pixels (the handoff's estimates for the Fold). Install was checked with Chromium's installability audit, not by adding the app to a phone's home screen.
+A thought can lead to many actions, so the API links a thought to each of them. `GET /api/thoughts/:id` sends `action_ids`: the actions the thought led to, in order (by intent start tick, then action sequence). The join runs thought -> `intents.thought_id` -> `actions.intent_id`, keeps only the actions of the thought's own agent, and repeats the thought's visibility (the sovereign filter and the delay) on the join. An action is named only when its first receipt is inside the delay window (or the agent is the viewer's own). The page asks `GET /api/receipts?action_id=` for each id, in that order, four requests at a time, and shows the receipts together under the thought; a request that fails drops only its own receipts. A thought with no action says nothing about receipts, as before. Assumption A8 above is superseded by this ruling for the receipts that now show.
