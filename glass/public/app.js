@@ -22,6 +22,7 @@ import {
   statusLabel,
   toView,
 } from '/js/render-model.ts';
+import { createMore } from '/js/render-more.ts';
 import { createReader } from '/js/render-reader.ts';
 import { createRoster } from '/js/render-roster.ts';
 import { createStreamClient } from '/js/render-stream.ts';
@@ -234,6 +235,17 @@ const roster = createRoster({
   openInGlass: (id) => tabs.openInGlass(id),
   loadLatest: getJson,
   now: Date.now,
+});
+/** The "More agents" list under the chip row: a search over the agents API, picked as a chip is (#902). */
+createMore({
+  doc: document,
+  toggle: byId('more-agents'),
+  panel: byId('more-agents-panel'),
+  search: byId('more-agents-search'),
+  count: byId('more-agents-count'),
+  list: byId('more-agents-list'),
+  fetchAgents: getJson,
+  pick: (id) => filters.pick(id),
 });
 const tabs = createTabs({
   links: { glass: byId('tab-glass'), roster: byId('tab-roster') },

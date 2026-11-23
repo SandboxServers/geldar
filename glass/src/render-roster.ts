@@ -68,10 +68,13 @@ function latestEntry(doc: Doc, entry: ThoughtView, now: number): El {
   return row;
 }
 
-/** The message for a failed entries request. A 429 says when to try again; nothing retries by itself. */
-function failureText(err: unknown): string {
+/**
+ * The message for a failed request. A 429 says when to try again; nothing retries by itself. Any other
+ * failure gets the fallback text (the More list of the chip row uses its own).
+ */
+export function failureText(err: unknown, fallback = 'Could not load the latest entries.'): string {
   const failure = err as { httpStatus?: unknown; retryAfter?: unknown } | null;
-  if (failure?.httpStatus !== 429) return 'Could not load the latest entries.';
+  if (failure?.httpStatus !== 429) return fallback;
   const seconds = Number(failure.retryAfter);
   return Number.isFinite(seconds) && seconds > 0
     ? `Too many requests. Try again in ${Math.ceil(seconds)} seconds.`
