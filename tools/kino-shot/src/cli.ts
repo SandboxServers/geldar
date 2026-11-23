@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
-import { parseArgs } from './args.ts';
+import { parseArgs, pickAgent } from './args.ts';
 import {
   agentIndex,
   buildSummary,
@@ -84,17 +84,16 @@ async function main(): Promise<number> {
     .waitForResponse((r) => pathOf(r.url()) === '/kino/targets', { timeout: 20_000 })
     .then((r) => r.json() as Promise<{ agents?: { id?: unknown; label?: unknown }[] }>)
     .catch(() => null);
-  if (args.agent) {
-    // An empty saved wall: the page does not tune CH 1 by itself, so the run sends one subscribe, for
-    // the agent asked for (decision 0166; the site rate-limits subscribes).
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem('kino-wall-v1', JSON.stringify({ layout: 'wall', monitors: [] }));
-      } catch {
-        // No storage: the page tunes CH 1 first, then the agent below (two subscribes).
-      }
-    });
-  }
+  // A one-agent wall by default: an empty saved wall, so the page opens none of its own random cameras
+  // and the run sends one subscribe, for the agent asked for or else the first one listed (decision
+  // 0166; the site rate-limits subscribes).
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('kino-wall-v1', JSON.stringify({ layout: 'wall', monitors: [] }));
+    } catch {
+      // No storage: the page tunes CH 1 first, then the agent below (two subscribes).
+    }
+  });
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
   let pickerOptions = 0;
   try {
@@ -108,11 +107,13 @@ async function main(): Promise<number> {
       { timeout: 60_000 },
     );
     pickerOptions = await page.locator('.guide-list li').count();
-    if (args.agent) {
+    const listed = (await targetsReply)?.agents ?? [];
+    const picked = pickAgent(args.agent, listed);
+    if (picked !== null) {
       // The guide lists the agents in the order of the page's own camera list: pick by position, an
       // exact id first, then an exact label (never a substring, so "Moss" never picks "Mossy").
-      const index = agentIndex((await targetsReply)?.agents ?? [], args.agent);
-      if (index < 0) throw new Error(`agent not listed for this viewer: ${args.agent}`);
+      const index = agentIndex(listed, picked);
+      if (index < 0) throw new Error(`agent not listed for this viewer: ${picked}`);
       // Under 700px the list is in the Channels sheet; from 700px it is in the pane beside the wall.
       const channels = page.locator('#open-guide');
       if (await channels.isVisible()) await channels.click();

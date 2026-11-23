@@ -9,21 +9,22 @@ import { bindPointer, keyMove } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 import { ChannelGuide } from './guide.ts';
 import { bindKeyboard } from './keyboard.ts';
-import { type Layout, nextLayout, nextMode, surf } from './keys.ts';
+import { type Layout, nextLayout, nextMode } from './keys.ts';
 import { openingPlan } from './panes/first-visit.ts';
 import {
   buildEmptySlot,
   buildMonitor,
   type MonitorAction,
   type MonitorFrame,
-  orderTiles,
   showControls,
 } from './panes/monitor.ts';
+import { runMonitorAction } from './panes/monitor-action.ts';
 import { DEFAULT_PANES, PaneSet } from './panes/pane-set.ts';
 import { createPaneView, type PaneView } from './panes/pane-view.ts';
 import { browserStorage, readSaved, writeSaved } from './panes/saved.ts';
 import { GATE_REFILL_MS, SubscribeGate } from './panes/subscribe-gate.ts';
-import { freeChannel, planWall } from './panes/wall-layout.ts';
+import { applyWall } from './panes/wall-apply.ts';
+import { freeChannel } from './panes/wall-layout.ts';
 import type { SocketLike } from './session.ts';
 import { loadTargets, showLoadFailure } from './startup.ts';
 import { aggregateStatus, type StatusInfo, statusLine } from './status.ts';
@@ -172,48 +173,21 @@ async function main(): Promise<void> {
 
   const layoutButtons = document.querySelectorAll<HTMLButtonElement>('[data-layout]');
   function layoutWall(): void {
-    const byChannel = new Map(order().map((m) => [m.channel, m]));
-    const plan = planWall({
-      ids: [...byChannel.keys()],
-      active: active === null ? null : (monitors.get(active)?.channel ?? null),
-      layout,
-      cap: DEFAULT_PANES,
-      narrow: narrowQuery.matches,
-    });
-    wallEl.style.gridTemplateColumns = plan.columns;
-    wallEl.style.gridTemplateRows = plan.rows;
-    wallEl.dataset.layout = layout;
-    const keep = new Map<number, HTMLElement>();
-    const vacancies = Array.from({ length: DEFAULT_PANES }, (_, i) => i + 1).filter(
-      (channel) => !byChannel.has(channel),
+    applyWall(
+      {
+        wall: wallEl,
+        layoutButtons,
+        slots,
+        emptySlot: (channel) => buildEmptySlot(openGuide, channel),
+      },
+      order(),
+      {
+        layout,
+        activeChannel: active === null ? null : (monitors.get(active)?.channel ?? null),
+        narrow: narrowQuery.matches,
+        cap: DEFAULT_PANES,
+      },
     );
-    const fullGrid = plan.cells.length === DEFAULT_PANES && (layout === 'wall' || active === null);
-    for (const cell of plan.cells) {
-      const channel = cell.id ?? (vacancies.shift() as number);
-      const monitor = byChannel.get(channel);
-      let node = monitor?.frame.root ?? slots.get(channel);
-      if (!node) {
-        node = buildEmptySlot(openGuide, channel);
-        slots.set(channel, node);
-      }
-      // Wall slots keep their channel number after a neighbour is cleared.
-      node.style.gridArea = fullGrid ? (plan.cells[channel - 1]?.area ?? cell.area) : cell.area;
-      node.hidden = false;
-      monitor?.frame.setFeatured(cell.featured);
-      keep.set(channel, node);
-    }
-    for (const channel of plan.hidden) {
-      const m = byChannel.get(channel) as Monitor;
-      m.frame.root.hidden = true;
-      keep.set(channel, m.frame.root);
-    }
-    // Tab order follows the channel numbers; monitors already on the wall are not moved.
-    orderTiles(
-      wallEl,
-      [...keep].sort((a, b) => a[0] - b[0]).map(([, node]) => node),
-    );
-    for (const b of layoutButtons)
-      b.setAttribute('aria-pressed', String(b.dataset.layout === layout));
     drawSelection();
   }
 
@@ -231,48 +205,18 @@ async function main(): Promise<void> {
     announce(`CH ${m.channel}: ${labelOf(target)}`);
   };
 
-  const action = (m: Monitor, a: MonitorAction): void => {
-    setActive(m.id);
-    const rig = m.view.rig;
-    switch (a.kind) {
-      case 'mode':
-        m.view.setMode(a.mode);
-        drawZoom(m);
-        save();
-        break;
-      case 'rotate':
-        rig.rotateStep(a.steps);
-        break;
-      case 'zoom':
-        rig.zoomStep(a.steps);
-        drawZoom(m);
-        break;
-      case 'zoom-level':
-        if (rig.mode === 'follow') rig.zoomStep(a.level - rig.chase.zoom);
-        drawZoom(m);
-        break;
-      case 'recentre':
-        rig.recentre();
-        break;
-      case 'surf': {
-        const next = surf(ids, m.view.target, a.steps);
-        if (next) retune(m, next, true);
-        break;
-      }
-      case 'guide':
-        openGuide();
-        break;
-      case 'solo':
-        setLayout(layout === 'solo' ? 'wall' : 'solo');
-        break;
-      case 'info':
-        m.frame.toggleInfo();
-        break;
-      case 'close':
-        panes.close(m.id);
-        break;
-    }
-  };
+  const action = (m: Monitor, a: MonitorAction): void =>
+    runMonitorAction(m, a, {
+      ids,
+      layout: () => layout,
+      setActive,
+      drawZoom,
+      save,
+      retune,
+      setLayout,
+      openGuide,
+      close: (id) => panes.close(id),
+    });
 
   /** The first-subscribe delay for the monitor being opened (a restored wall spaces them out). */
   let openDelay = 0;
