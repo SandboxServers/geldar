@@ -1,7 +1,6 @@
 /**
- * Agent-visible sentences for an observation (AN-24, decision 0343). Proposed: the wording is
- * unapproved (OD-E) and only AN-28a calls this, after AN-28b and AN-28c are switched on. The
- * sentence never reads an actor, so a name never reaches the agent through it.
+ * Agent-visible sentences for an observation (AN-24, decisions 0343 and 0391). Approval of the
+ * wording does not activate any observations. The sentence never reads the actor's name.
  */
 
 import { markedWords } from './agent-text.ts';
@@ -46,13 +45,12 @@ export function observationSentence(input: ObservationSentenceInput): string {
     typeof input.block === 'string' &&
     BLOCK.test(input.block)
   ) {
-    sentence = `Someone broke one of your blocks (${input.block.replace(/_/g, ' ')}).`;
+    sentence = `Someone broke your ${input.block.replace(/_/g, ' ')}.`;
   } else if (
     input.kind === 'fight_seen' &&
     typeof input.target === 'string' &&
     BLOCK.test(input.target)
   ) {
-    // OWNER APPROVAL REQUIRED (AN-46): a draft wording; the producers are off by default.
     const mob = input.target.replace(/_/g, ' ');
     sentence = `Someone fought ${articleFor(mob)} ${mob} nearby.`;
   } else if (
@@ -61,7 +59,6 @@ export function observationSentence(input: ObservationSentenceInput): string {
     typeof input.item === 'string' &&
     ITEM.test(input.item)
   ) {
-    // OWNER APPROVAL REQUIRED (AN-46): a draft wording; the producers are off by default.
     sentence = `Someone took ${input.count} ${input.item.replace(/_/g, ' ')} from your container.`;
   }
   return markedWords(sentence).length > 0 ? GENERIC : sentence;

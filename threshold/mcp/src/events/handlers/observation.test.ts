@@ -74,7 +74,7 @@ describe('observation events on the player log', () => {
         seq: 3,
         tick: 100,
         type: 'property_broken',
-        text: 'Someone broke one of your blocks (chest).',
+        text: 'Someone broke your chest.',
         block: 'chest',
       },
     ]);
