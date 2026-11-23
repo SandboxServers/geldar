@@ -347,7 +347,7 @@ describe('inputs', () => {
     ['missing access', async () => new Response('', { status: 403 }), false],
     ['a missing message', async () => new Response('', { status: 404 }), false],
   ])(
-    'a read that hits %s is retryable: %s... and a send never is',
+    'a read that hits %s is marked correctly, and a send never is retryable',
     async (_label, respond, retryable) => {
       const request = discordClient({ token: 'for-mocked-fetch-only', fetchImpl: respond });
       await expect(request('/users/@me')).rejects.toMatchObject({ retryable });
@@ -369,19 +369,21 @@ describe('inputs', () => {
   });
 
   it('validates the wait options at both ends of each range', () => {
-    expect(waitOptions()).toEqual({ intervalMs: 180_000, timeoutMs: 25 * 60_000 });
-    expect(waitOptions({ once: true, timeout: '90' })).toEqual({
+    expect(waitOptions({ pr: '42' })).toEqual({
       intervalMs: 180_000,
-      timeoutMs: 0,
-    });
-    expect(waitOptions({ interval: '30', timeout: '1', pr: '42' })).toEqual({
-      intervalMs: 30_000,
-      timeoutMs: 60_000,
+      timeoutMs: 25 * 60_000,
       expectedPr: 42,
     });
-    expect(waitOptions({ interval: '3600', timeout: '1440' })).toEqual({
+    expect(waitOptions({ once: true, timeout: '90', pr: '42' })).toMatchObject({ timeoutMs: 0 });
+    expect(waitOptions({ interval: '30', timeout: '1', pr: '1' })).toEqual({
+      intervalMs: 30_000,
+      timeoutMs: 60_000,
+      expectedPr: 1,
+    });
+    expect(waitOptions({ interval: '3600', timeout: '1440', pr: '999999999' })).toEqual({
       intervalMs: 3_600_000,
       timeoutMs: 1440 * 60_000,
+      expectedPr: 999_999_999,
     });
     for (const bad of [
       { interval: '29' },
@@ -391,12 +393,31 @@ describe('inputs', () => {
       { timeout: '1441' },
       { timeout: '1e308' },
       { timeout: 'Infinity' },
-      { pr: '0' },
-      { pr: '4x' },
-      { pr: '' },
     ]) {
-      expect(() => waitOptions(bad), JSON.stringify(bad)).toThrow(/must be/);
+      expect(() => waitOptions({ pr: '42', ...bad }), JSON.stringify(bad)).toThrow(
+        /must be a number/,
+      );
     }
+  });
+
+  it('requires the PR number', () => {
+    for (const pr of [undefined, '', '0', '4x', '-1', '1234567890']) {
+      expect(() => waitOptions({ pr }), String(pr)).toThrow(/--pr must be the number/);
+    }
+  });
+
+  it('rejects an interval longer than the wait, except for a single check', () => {
+    expect(() => waitOptions({ pr: '42', interval: '120', timeout: '1' })).toThrow(
+      /no longer than --timeout/,
+    );
+    expect(waitOptions({ pr: '42', interval: '60', timeout: '1' })).toMatchObject({
+      intervalMs: 60_000,
+      timeoutMs: 60_000,
+    });
+    expect(waitOptions({ pr: '42', interval: '3600', once: true })).toMatchObject({
+      intervalMs: 3_600_000,
+      timeoutMs: 0,
+    });
   });
 
   it('the command explains its usage and exits 1 without a message ID', () => {

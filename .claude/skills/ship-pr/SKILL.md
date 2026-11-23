@@ -69,7 +69,7 @@ A PR into `main` also needs a human approval for its current head, unless the ow
    | 2 | Still waiting when the timeout passed (25 minutes by default) | Run the same call again |
    | 3 | The PR head changed | Wait for CI (§ 4), then post a new request for the new head |
    | 4 | The PR was closed or merged | Stop |
-   | 1 | The check could not run | Read the message; usually the token, the roster or `gh` |
+   | 1 | The check could not run | Read the message; usually the token, the roster or `gh`. Without the bridge, the token or the roster, ask the owner to waive the approval or to ask for it themselves |
 
    The default timeout fits inside a 30-minute background task. To be woken less often, raise both: `--timeout 110` inside a two-hour task. A session that was interrupted checks where things stand with `--once`.
 3. Record the approval on the PR, so GitHub shows what was approved and where: `gh pr comment <PR> --body "Approved in Discord for <head SHA>: <link to the review request>"`. Leave account names and IDs out; the repo is public.
@@ -79,10 +79,10 @@ A PR into `main` also needs a human approval for its current head, unless the ow
 Merge only when `ci gate` is green, the review says `ship`, a PR into `main` has its human approval for the current head (§ 5), and the owner asked for the merge (or the campaign's dispatch authorizes merges):
 
 ```powershell
-gh pr merge <PR> --merge --delete-branch
+gh pr merge <PR> --merge --delete-branch --match-head-commit <head SHA>
 ```
 
-Never use `--admin` to merge around a red or missing check.
+`--match-head-commit` takes the head you checked CI, the review and the approval against, so a push that lands in between stops the merge. Never use `--admin` to merge around a red or missing check.
 
 ## 7. Remove the worktree after merge
 

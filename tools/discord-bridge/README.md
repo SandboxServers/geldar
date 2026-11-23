@@ -157,9 +157,9 @@ Geldar PR link and one full 40-character commit SHA.
 
 | Option | Effect |
 | --- | --- |
-| `--pr <number>` | Refuse a review request that is for any other PR. Always pass it. |
+| `--pr <number>` | Required. The PR being shipped; a review request for any other PR is refused. |
 | `--once` | Check now and exit, without waiting. |
-| `--interval <seconds>` | Time between checks. Default 180, from 30 to 3600. |
+| `--interval <seconds>` | Time between checks. Default 180, from 30 to 3600, and no longer than the timeout. |
 | `--timeout <minutes>` | How long to wait before exiting 2. Default 25, from 1 to 1440. Keep it below your harness's limit for a background task. |
 
 Run it from the checkout or any of its worktrees. It needs `gh` signed in, the

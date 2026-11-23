@@ -1,6 +1,6 @@
 // Wait for a rostered reviewer to approve a PR head by reacting to the bot's review request.
 //
-//   node tools/discord-bridge/wait-approval.mjs <review request message ID> [--pr <number>]
+//   node tools/discord-bridge/wait-approval.mjs <review request message ID> --pr <number>
 //        [--once] [--interval <seconds>] [--timeout <minutes>]
 //
 // Prints one JSON line and exits 0 approved, 2 still waiting, 3 PR head changed, 4 PR closed or
@@ -14,7 +14,7 @@ import destination from './destination.json' with { type: 'json' };
 import { DiscordError, discordClient } from './discord.mjs';
 
 const usage =
-  'Usage: node tools/discord-bridge/wait-approval.mjs <review request message ID> [--pr <number>] ' +
+  'Usage: node tools/discord-bridge/wait-approval.mjs <review request message ID> --pr <number> ' +
   '[--once] [--interval <seconds>] [--timeout <minutes>]';
 
 // Linked worktrees share one git directory, so the roster and the token file are found from any
@@ -60,9 +60,12 @@ async function pullRequest(number) {
     if (error?.code === 4) {
       throw new DiscordError('gh is not signed in. Run gh auth login, then retry.');
     }
-    throw Object.assign(new DiscordError(`Could not read PR #${number} with gh.`), {
-      retryable: true,
-    });
+    throw Object.assign(
+      new DiscordError(`Could not read PR #${number} with gh. Check gh auth status.`),
+      {
+        retryable: true,
+      },
+    );
   }
 }
 

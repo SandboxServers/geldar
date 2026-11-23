@@ -27,15 +27,19 @@ function boundedNumber(text, minimum, maximum, label) {
 }
 
 /** Validate the command's options. `--once` checks a single time and never sleeps. */
-export function waitOptions({ once = false, interval = '180', timeout = '25', pr } = {}) {
-  if (pr !== undefined && !/^[1-9][0-9]{0,8}$/.test(pr)) {
-    throw new DiscordError('--pr must be the PR number, for example --pr 42.');
+export function waitOptions({ once = false, interval = '180', timeout = '25', pr }) {
+  // Required, so a message ID picked from the wrong review request can never approve this PR.
+  if (pr === undefined || !/^[1-9][0-9]{0,8}$/.test(pr)) {
+    throw new DiscordError('--pr must be the number of the PR being shipped, for example --pr 42.');
   }
-  return {
-    intervalMs: boundedNumber(interval, 30, 3600, '--interval (seconds)') * 1000,
-    timeoutMs: once ? 0 : boundedNumber(timeout, 1, 1440, '--timeout (minutes)') * 60_000,
-    ...(pr !== undefined && { expectedPr: Number(pr) }),
-  };
+  const intervalMs = boundedNumber(interval, 30, 3600, '--interval (seconds)') * 1000;
+  const timeoutMs = once ? 0 : boundedNumber(timeout, 1, 1440, '--timeout (minutes)') * 60_000;
+  if (!once && intervalMs > timeoutMs) {
+    // Otherwise the command checks once and exits "waiting" at once, and a caller told to run it
+    // again would spin.
+    throw new DiscordError('--interval must be no longer than --timeout.');
+  }
+  return { intervalMs, timeoutMs, expectedPr: Number(pr) };
 }
 
 const snowflakeId = z.string().regex(snowflake);

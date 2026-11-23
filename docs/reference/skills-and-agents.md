@@ -112,10 +112,10 @@ File: `.claude/skills/ship-pr/SKILL.md`.
 | Open | `git push -u origin <branch>`; `gh pr create --base main` with a body file following `.github/pull_request_template.md` | 34 to 38 |
 | CI | `gh pr checks <PR> --watch --fail-fast`, then `--required`; green means `ci gate` passed, the one check `main` requires | 45 to 49 |
 | Human approval | A PR into `main` needs a rostered reviewer's reaction on the bot's review request: post it once CI is green and the review says `ship`, wait with `node tools/discord-bridge/wait-approval.mjs <message ID> --pr <PR>`, record it with `gh pr comment` (decision [0445](../decisions/0445-human-approval-in-discord-before-merge.md)) | 55 to 75 |
-| Merge | `gh pr merge <PR> --merge --delete-branch` when `ci gate` is green, review says `ship`, a PR into `main` has its human approval and the owner asked; never `--admin` | 79 to 85 |
+| Merge | `gh pr merge <PR> --merge --delete-branch --match-head-commit <head SHA>` when `ci gate` is green, review says `ship`, a PR into `main` has its human approval and the owner asked; never `--admin` | 79 to 85 |
 | Cleanup | `git worktree remove --force` after checking `status --short`; never `git worktree prune` | 90 to 95 |
 | Wave PR | Merge `origin/main` into the wave branch; never hand-merge `pnpm-lock.yaml` | 99 to 101 |
-| Windows notes | A bare `--` breaks `geldar.ps1` parameter binding; absolute worktree paths; scripted git must not wait on stdin | 83 to 86 |
+| Windows notes | A bare `--` breaks `geldar.ps1` parameter binding; absolute worktree paths; scripted git must not wait on stdin | 105 to 108 |
 
 ## Agents
 
