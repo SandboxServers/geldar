@@ -1,7 +1,14 @@
 const api = 'https://discord.com/api/v10';
 export const snowflake = /^[0-9]{17,20}$/;
 
-export class DiscordError extends Error {}
+export class DiscordError extends Error {
+  /** True when a read failed for a reason that can pass (network, rate limit, server error). */
+  retryable = false;
+}
+
+function transientRead(message) {
+  return Object.assign(new DiscordError(message), { retryable: true });
+}
 
 export function discordClient({ token, fetchImpl = fetch }) {
   if (!token?.trim()) {
@@ -27,11 +34,10 @@ export function discordClient({ token, fetchImpl = fetch }) {
         signal: AbortSignal.timeout(10_000),
       });
     } catch {
-      throw new DiscordError(
-        sending
-          ? `Could not confirm the Discord send. ${sendUnconfirmed}`
-          : 'Could not reach Discord. Check your network connection and retry.',
-      );
+      if (!sending) {
+        throw transientRead('Could not reach Discord. Check your network connection and retry.');
+      }
+      throw new DiscordError(`Could not confirm the Discord send. ${sendUnconfirmed}`);
     }
 
     if (response.status === 401) {
@@ -43,18 +49,20 @@ export function discordClient({ token, fetchImpl = fetch }) {
     if (response.status === 400 && invalidRequestMessage) {
       throw new DiscordError(invalidRequestMessage);
     }
+    // A send is never retried, so only a failed read is marked as worth another try.
+    const failed = sending ? (message) => new DiscordError(message) : transientRead;
     if (response.status === 429) {
-      throw new DiscordError('Discord rate-limited the request. Wait before trying again.');
+      throw failed('Discord rate-limited the request. Wait before trying again.');
     }
     if (!response.ok) {
       const advice = sending ? sendUnconfirmed : 'Try again later.';
-      throw new DiscordError(`Discord returned HTTP ${response.status}. ${advice}`);
+      throw failed(`Discord returned HTTP ${response.status}. ${advice}`);
     }
     try {
       return await response.json();
     } catch {
       const advice = sending ? sendUnconfirmed : 'Try again later.';
-      throw new DiscordError(`Discord returned an unreadable response. ${advice}`);
+      throw failed(`Discord returned an unreadable response. ${advice}`);
     }
   };
 }
