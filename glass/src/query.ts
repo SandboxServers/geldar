@@ -68,7 +68,10 @@ export async function listAgents(
         `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
                 a.death_cause,
                 (SELECT max(t.at) FROM thoughts t WHERE t.life_id = a.agent_id
-                  AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR t.life_id = ANY($2::text[])))
+                  AND ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                       OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+                  AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR a.died_at IS NOT NULL
+                       OR a.agent_id = ANY($2::text[])))
                   AS last_active
            FROM agents a
           WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL

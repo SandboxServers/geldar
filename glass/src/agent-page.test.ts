@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { agentPageOf, MAX_LIMIT, pageAgents } from './agent-page.ts';
 import { setAliases } from './alias.ts';
-import { listAgents, type Row, type SqlClient } from './query.ts';
+import { listAgents, listThoughts, type Row, type SqlClient } from './query.ts';
 
 afterEach(() => setAliases(new Map()));
 
@@ -80,5 +80,29 @@ describe('the agents search and sort', () => {
     await listAgents(db([], sent), delayed);
     expect(sent[0]).toEqual([false, [], '2026-01-01T00:00:00Z']);
     expect(sent[1]).toEqual([false, []]);
+  });
+
+  it('the activity sort reads only the thoughts the thought listing shows (same sovereign and delay clauses)', async () => {
+    // A sovereign agent's hidden thoughts must not count: the sort's newest-thought subquery carries the
+    // thought listing's two visibility clauses word for word (only the parameter numbers differ).
+    const texts: string[] = [];
+    const recording = (): SqlClient => ({
+      query: async (text: string) => {
+        texts.push(text);
+        return { rows: [] };
+      },
+    });
+    const delayed = { shownUntil: '2026-01-01T00:00:00Z', showLivingSovereign: false };
+    await listThoughts(recording(), { limit: 10 }, delayed);
+    await listAgents(recording(), delayed, { activity: true });
+    const [thoughtSql, activitySql] = texts.map((text) => text.replace(/\s+/g, ' ').replace(/\$\d+/g, '$P'));
+    const clauses = [
+      "a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL OR a.thoughts_delayed_public OR a.agent_id = ANY($P::text[])",
+      't.at <= $P::timestamptz OR a.died_at IS NOT NULL OR a.agent_id = ANY($P::text[])',
+    ];
+    for (const clause of clauses) {
+      expect(thoughtSql).toContain(clause);
+      expect(activitySql).toContain(clause);
+    }
   });
 });
