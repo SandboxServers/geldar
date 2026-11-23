@@ -262,3 +262,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0428](0428-dig-safety-refusals-removed.md) | The dig-safety refusals are removed for plans, break and mine; only physically impossible refusals stay | Accepted |
 | [0429](0429-plan-activity-on-glass-no-building-xp.md) | Plan activity may appear on Glass for humans; building earns no XP | Accepted |
 | [0430](0430-remove-animus.md) | Remove animus: the live Mind is the scriptorium | Accepted |
+| [0431](0431-corrections-to-0391-0393-release-tags-by-bot.md) | Corrections to 0391, 0392 and 0393; release tags are made by the bot | Accepted |
