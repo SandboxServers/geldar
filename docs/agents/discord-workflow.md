@@ -19,7 +19,9 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
 - Use `read_messages` to get recent context before replying. Pass the returned
   `nextAfter` back as `after` to catch up without rereading the same page.
 - Use `find_member` to resolve a human or bot to a Discord user ID. Refine the
-  search or confirm the recipient if the results are ambiguous.
+  search or confirm the recipient if the results are ambiguous. Name lookup
+  identifies a recipient for tagging. Use the private roster below to verify
+  who can approve a PR.
 - Post when the operator has authorized the message. Use `replyTo` to keep
   context with the original message. To tag someone, include the individual
   mention in the text and their ID in `mentionUserIds`.
@@ -38,7 +40,7 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
    if CI was already green.
 3. On the bot's PR review request or CI update, either of these reactions
    counts as approval of that PR head. Use the operator-confirmed IDs in
-   the gitignored local file `.geldar/discord-review.json`.
+   the private reviewer roster.
 
    | Reviewer ID field | Approval reaction |
    |---|---|
@@ -58,3 +60,18 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
    head and GitHub's required checks still pass. A pushed change needs
    renewed approval. Follow the [ship-pr procedure](../../.claude/skills/ship-pr/SKILL.md)
    for the merge and honor any GitHub branch protection.
+
+## Private reviewer roster
+
+The team operator supplies `discord-review.json` privately to developers
+who need to verify review approvals. Get it directly from the operator or
+from an access-controlled team location the operator confirms. Use the
+field names in the approval table and store the IDs as quoted decimal
+strings. The public repo carries the procedure and field names only.
+
+Place the file inside the directory printed by
+`git rev-parse --path-format=absolute --git-common-dir`. Linked worktrees
+share this directory, so each agent on the same clone can use the same
+roster. Separate clones and machines each need a copy. The roster is
+needed to verify approval. Reading the channel and looking up people to
+tag work with the bot token alone.
