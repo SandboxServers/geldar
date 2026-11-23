@@ -155,7 +155,8 @@ export async function getThought(
  * The action ids a thought led to, in the order they ran: each intent the thought made, then its actions in
  * sequence. A thought has many actions (decision 0410 A8). The join runs thought -> intents.thought_id ->
  * actions.intent_id and keeps only actions of the thought's own agent, so another agent's action is never
- * joined. The thought's visibility predicates repeat on the join: a hidden thought names no action. The
+ * joined. The thought's visibility predicates repeat on the join: a hidden thought names no action, and an
+ * action inside the delay window (its first receipt is newer than the cut-off) is not named either. The
  * receipts of each id are asked for on their own (listReceipts), which applies the receipt-level predicates.
  */
 export async function listThoughtActions(
@@ -173,6 +174,9 @@ export async function listThoughtActions(
         AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
              OR a.thoughts_delayed_public OR a.agent_id = ANY($4::text[]))
         AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($4::text[]))
+        AND ($3::timestamptz IS NULL OR (SELECT min(r.at) FROM receipts r WHERE r.action_id = ac.action_id)
+             <= $3::timestamptz OR a.died_at IS NOT NULL
              OR a.agent_id = ANY($4::text[]))
       ORDER BY i.started_tick NULLS LAST, i.intent_id, ac.sequence NULLS LAST, ac.action_id
       LIMIT 100`,

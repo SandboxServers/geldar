@@ -4,7 +4,9 @@ import { listThoughtActions, type SqlClient } from './query.ts';
 /**
  * The thought -> intents -> actions join, checked without Postgres: the statement must repeat the thought's
  * visibility predicates on the join, keep only the thought's own agent's actions, and bind the same values.
- * The IT file (glass/test/glass.it.test.ts, GELDAR_IT=1) runs the rows for real.
+ * No row is run here. The route test (thought-route.test.ts) checks what the route sends for these rows.
+ * The IT file (glass/test/glass.it.test.ts) has no action rows yet, so the join's rows are not run against
+ * Postgres; that is a follow-up.
  */
 type Call = { text: string; values: unknown[] };
 
@@ -47,6 +49,15 @@ describe('listThoughtActions', () => {
       /\(\$3::timestamptz IS NULL OR t\.at <= \$3::timestamptz OR a\.died_at IS NOT NULL\s+OR a\.agent_id = ANY\(\$4::text\[\]\)\)/,
     );
     expect(calls[0]?.values).toEqual(['th-1', false, CUTOFF, ['ag-own']]);
+  });
+
+  it('holds each action to the delay by its own time (its first receipt), not only the thought time', async () => {
+    const { db, calls } = recorder();
+    await listThoughtActions(db, 'th-1', { shownUntil: CUTOFF, showLivingSovereign: false });
+    const sql = calls[0]?.text ?? '';
+    expect(sql).toMatch(
+      /\(\$3::timestamptz IS NULL OR \(SELECT min\(r\.at\) FROM receipts r WHERE r\.action_id = ac\.action_id\)\s+<= \$3::timestamptz OR a\.died_at IS NOT NULL\s+OR a\.agent_id = ANY\(\$4::text\[\]\)\)/,
+    );
   });
 
   it('binds no delay and shows a living sovereign agent when the viewer may see it', async () => {
