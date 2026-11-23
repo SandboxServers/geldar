@@ -1,6 +1,6 @@
 // Invented agents, thoughts, journal lines and receipts for the Thought Stream preview. None of it is from
 // a world. The shapes are the ones Glass's API sends (glass/src/query.ts), with one addition the real API
-// does not make yet: a thought here names its action (`action_id`), so the preview can show receipts.
+// does not make yet: a thought here names its actions (`action_ids`, one or more per thought), so the preview can show receipts.
 
 export type Row = Record<string, unknown>;
 
