@@ -42,10 +42,10 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
    counts as approval of that PR head. Use the operator-confirmed IDs in
    the private reviewer roster.
 
-   | Reviewer ID field | Approval reaction |
+   | Roster key | What to match |
    |---|---|
-   | `reviewerId` | Custom `:jasonthumb:` with the emoji ID in `approvalEmojiId` |
-   | `thumbsupReviewerId` | Plain Unicode 👍 (`:thumbsup:`) |
+   | `:jasonthumb:` | The reacting account's `userId` and the custom reaction's `emojiId` |
+   | `:thumbsup:` | The reacting account's `userId` and plain Unicode 👍 |
 
    Verify the exact message, reaction, and reacting account. Reaction counts
    and screenshots alone cannot establish the account. If the relevant
@@ -71,10 +71,10 @@ from the operator. If the pin is missing or multiple pins match, ask the
 operator which one to use. Confirm roster changes before replacing a
 previously verified copy.
 
-Save the confirmed roster as `discord-review.json` using the field names
-in the approval table and quoted decimal strings for the IDs. The operator
-can also supply this file privately. The public repo carries the procedure
-and field names only.
+Save the confirmed roster as `discord-review.json`. Key each entry by the
+reaction shown in the approval table and use quoted decimal strings for the
+IDs in that entry. The operator can also supply this file privately. The
+public repo carries the procedure and field names only.
 
 Place the file inside the directory printed by
 `git rev-parse --path-format=absolute --git-common-dir`. Linked worktrees
