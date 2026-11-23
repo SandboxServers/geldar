@@ -2,9 +2,10 @@
 // order; a failed health check rolls back; a plugin change is never applied; --dry-run changes nothing; the lock refuses an
 // overlapping run; a sql change is dumped before the migrations. The fixture is in colo-cd-fixture.ts.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  type Cd,
   cdCalls,
   cdRun,
   cdSetup,
@@ -22,6 +23,64 @@ const EDITS = { 'src/eventsink.txt': 'v2\n', 'src/glass.txt': 'v2\n', 'src/mcp.t
 
 // Each run is a shell script with many forks; the file-level limit covers a loaded machine (the fixture limit applies per run).
 vi.setConfig({ testTimeout: 120_000 });
+
+// "needs manual" for a folder the node does not refresh (plugin, compose, caddy, nats) is printed only while the export's
+// hash differs from the recorded applied hash. --record-applied writes the record from the node's copy (the src extract).
+describe('colo-cd.sh needs manual follows the applied record', () => {
+  const PLUGIN = 'plugin jar or plugin config changed';
+  const COMPOSE = 'compose config changed';
+
+  // Puts the given files in the node's copy (the src extract) and records the folders there.
+  function recordNode(cd: Cd, files: Record<string, string>) {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(cd.extract, path)), { recursive: true });
+      writeFileSync(join(cd.extract, path), text);
+    }
+    return cdRun(cd, { args: ['--record-applied'] });
+  }
+
+  it('first run with no record reports the folder as before', () => {
+    const cd = cdSetup({ 'plugin/paper.jar': 'jar v2\n' });
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`needs manual: ${PLUGIN}`);
+  });
+
+  it('does not report a folder whose export matches its recorded hash', () => {
+    const cd = cdSetup({ 'plugin/paper.jar': 'jar v2\n', 'compose/compose.yml': 'services: {}\n' });
+    const rec = recordNode(cd, { 'plugin/paper.jar': 'jar v2\n' });
+    expect(rec.code, rec.out).toBe(0);
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain(PLUGIN);
+    // compose has no record, so it is still reported; only the recorded folder is quiet.
+    expect(r.out).toContain(`needs manual: ${COMPOSE}`);
+  });
+
+  it('reports a folder whose export differs from the recorded hash', () => {
+    const cd = cdSetup({ 'plugin/paper.jar': 'jar v2\n' });
+    expect(recordNode(cd, { 'plugin/paper.jar': 'jar v1\n' }).code).toBe(0);
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`needs manual: ${PLUGIN}`);
+  });
+
+  it('keeps compose/secrets out of the record', () => {
+    const cd = cdSetup({});
+    expect(recordNode(cd, { 'compose/compose.yml': 'services: {}\n' }).code).toBe(0);
+    const before = readText(join(cd.state, 'applied.compose.sha256'));
+    expect(recordNode(cd, { 'compose/secrets/key.txt': 'secret\n' }).code).toBe(0);
+    expect(readText(join(cd.state, 'applied.compose.sha256'))).toBe(before);
+  });
+
+  it('--record-applied with no folder files exits 1 and records nothing', () => {
+    const cd = cdSetup({});
+    const r = recordNode(cd, {});
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('nothing recorded');
+    expect(existsSync(join(cd.state, 'applied.plugin.sha256'))).toBe(false);
+  });
+});
 
 describe('colo-cd.sh delta deploy', () => {
   it('restarts only the changed services, in restart order, after every pull', () => {
