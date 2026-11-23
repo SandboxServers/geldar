@@ -29,6 +29,8 @@ export interface DetailOptions {
    * `say`, which sets the button's label: the caller says how the copy went, in its own fixed words.
    */
   onCopy?: (text: string, say: (label: string) => void) => void;
+  /** How many of the entry's actions had no receipts loaded (a failed request). Each one is named, not hidden. */
+  unloaded?: number;
 }
 
 /** How long the copy control says how the copy went before its label comes back. */
@@ -125,6 +127,11 @@ export function renderDetail(
   const section = doc.createElement('section');
   section.className = 'detail';
   section.append(facts(doc, view, options.death), ...receiptRows(doc, receipts));
+  const unloaded = options.unloaded ?? 0;
+  if (unloaded > 0) {
+    const noun = unloaded === 1 ? 'action could' : 'actions could';
+    section.append(make(doc, 'p', 'unloaded', `${unloaded} ${noun} not be loaded`));
+  }
   const { onCopy } = options;
   if (onCopy !== undefined) {
     const copy = action(doc, 'copy', COPY_LABEL, () => {
