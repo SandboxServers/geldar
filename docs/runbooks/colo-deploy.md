@@ -88,10 +88,25 @@ apply these changes, and an operator must act on them:
 
 The job summary lists the lines that the plan or the deploy printed with the words `needs manual`.
 If the list says `None reported`, nothing was flagged. Read the list and the plan output before you
-close a deploy. `deploy/colo-cd-plan.sh` writes each item as a `manual <what>` line (lines 61 and 90
-to 93, for example `manual NATS config changed: not applied`), and `deploy/colo-cd.sh` prints it as
-`needs manual: <what>` (line 336). A failed player host refresh also prints `needs manual` (lines 222
-and 425).
+close a deploy. `deploy/colo-cd-plan.sh` prints a `folder <name> <sha256>` line for each of `plugin`,
+`compose`, `caddy` and `nats` that has a file in the export, and `deploy/colo-cd.sh` prints
+`needs manual: <what>` for a folder only when that hash differs from its record
+`$STATE_DIR/applied.<folder>.sha256`. A folder with no record counts as differing, so until it is
+recorded the item is listed on every deploy. A failed player host refresh also prints `needs manual`.
+
+Once you have applied a folder's change on the node (copied the folder into the node's src extract,
+`$GELDAR_COLO_ROOT`, and done what it asks), record the node's copies so that the list goes quiet. Run this only
+after the restart or jar swap: the record is an operator's statement that the node runs this copy; the script does
+not check that the jar or Caddy is running it. It prints `recorded applied: <folder> <first 12 hex digits>` for each
+folder, so the log shows what was attested. With `DEPLOY_DRY_RUN=1` it prints what it would record and writes nothing.
+
+```sh
+sh deploy/colo-cd.sh --record-applied   # run from the src extract (the directory that holds deploy/); it writes applied.<folder>.sha256 only
+```
+
+The first time, run it once after the four folders in the node's src extract match main (copy them
+across by hand first). Until then the four folders (plugin, compose, caddy, nats) print on each deploy that has a
+file in them, as they did before.
 
 ## Maintenance notices
 

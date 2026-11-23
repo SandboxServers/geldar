@@ -5,9 +5,11 @@
 # services whose image digest changed, one at a time, each with a health check. A failed health check rolls back: the
 # previous release is re-applied to the services already changed, the player hosts are recreated, and the script exits 1.
 # Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: golem-body (the idle Adam, profile adam,
-# decision 0212) unless it is already running. Plugin, compose and Caddy/NATS changes are
-# printed as "needs manual" and not applied. REGISTER_KILL_SWITCH is read from the node env file (load_node_env, exported
-# for compose) and never written here; a value other than exactly true or false stops the deploy before anything changes.
+# decision 0212) unless it is already running. Plugin, compose and Caddy/NATS changes are not applied; a folder whose
+# export hash differs from its recorded applied hash (applied.<folder>.sha256 in the state dir) is printed as
+# "needs manual". `--record-applied` writes those records from the node's copies (docs/runbooks/colo-deploy.md).
+# REGISTER_KILL_SWITCH is read from the node env file (load_node_env, exported for compose) and never written here;
+# a value other than exactly true or false stops the deploy before anything changes.
 # Usage: colo-cd.sh [--dry-run] [<release.env path> <release sha> <export dir>]
 #   With no positional args, the inputs come from the environment: GELDAR_RELEASE_MANIFEST (a validated copy of the
 #   release manifest), GELDAR_RELEASE_SHA (the 40-character main sha) and the working directory (the git-less export).
@@ -34,6 +36,33 @@ COLO_SPACE_FLOOR_FIRST=1
 # node, so colo-cd reads and writes this one (deploy/README.md). colo-up.sh and colo-rollback.sh still read $GELDAR_RELEASE_FILE.
 RELEASE_FILE=${COLO_CD_RELEASE_FILE:-$STATE_DIR/release.env}
 HOST_MANIFEST=$RELEASE_FILE
+
+# --record-applied: writes $STATE_DIR/applied.<folder>.sha256 from the node's copy (the src extract) of each folder that
+# is not refreshed (plugin, compose, caddy, nats). The record means "recorded as in place on the node": an operator's
+# statement, the script does not check that the jar or Caddy is running it. Run it only after the restart or jar swap.
+# A later deploy reports a folder as needs manual only while the export's hash differs from this record; no record
+# counts as differs (the first run reports as before). With DEPLOY_DRY_RUN=1 it prints what it would record, writes nothing.
+record_applied() {
+  HASHES=$(sh "$DEPLOY_DIR/colo-cd-plan.sh" --folder-hashes "$ROOT") || die "cannot hash the folders in $ROOT"
+  [ -n "$HASHES" ] || die "no plugin, compose, caddy or nats files in $ROOT; nothing recorded"
+  if [ "$DRY_RUN" != 1 ]; then mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR"; fi
+  while IFS= read -r line; do
+    set -- $line
+    [ $# -eq 3 ] || continue
+    short=$(printf '%s' "$3" | cut -c1-12)
+    if [ "$DRY_RUN" = 1 ]; then say "would record: $2 $short (DEPLOY_DRY_RUN=1, nothing written)"; continue; fi
+    printf '%s\n' "$3" >"$STATE_DIR/applied.$2.sha256.new" &&
+      mv "$STATE_DIR/applied.$2.sha256.new" "$STATE_DIR/applied.$2.sha256" || die "cannot record $2 in $STATE_DIR"
+    say "recorded applied: $2 $short"
+  done <<EOF
+$HASHES
+EOF
+  exit 0
+}
+if [ "${1:-}" = --record-applied ]; then
+  [ $# -eq 1 ] || die "usage: colo-cd.sh --record-applied (no other argument)"
+  record_applied
+fi
 
 if [ "${1:-}" = --dry-run ]; then
   DRY_RUN=1
@@ -279,6 +308,16 @@ restart_one() {
   log "healthy: $svc"
 }
 
+# The "needs manual" text of a folder the node does not refresh (the folder names of colo-cd-plan.sh).
+manual_text() {
+  case $1 in
+    plugin) echo "plugin jar or plugin config changed (plugin/): not applied" ;;
+    compose) echo "compose config changed (may define Paper, Velocity, Caddy or NATS): not applied" ;;
+    caddy) echo "Caddy config changed (deploy/caddy): not applied" ;;
+    nats) echo "NATS config changed: not applied" ;;
+  esac
+}
+
 # Copies each changed repo file into the src extract. The file it replaces is kept as .bak-<UTC>.
 refresh_src() {
   [ -s "$WORK/refresh.txt" ] || return 0
@@ -336,8 +375,19 @@ while IFS= read -r line; do
     "sql "*) SQL=${line#sql } ;;
     "refresh "*) printf '%s\n' "${line#refresh }" >>"$WORK/refresh.txt" ;;
     "manual "*) say "needs manual: ${line#manual }" ;;
+    "folder "*) printf '%s\n' "${line#folder }" >>"$WORK/folders.txt" ;;
   esac
 done <"$WORK/plan.txt"
+# A folder the node does not refresh is reported only while its export hash differs from the recorded one (a folder with
+# no record differs). An unchanged folder prints nothing, so the summary lists only what an operator must apply.
+if [ -s "$WORK/folders.txt" ]; then
+  while IFS= read -r line; do
+    set -- $line
+    [ $# -eq 2 ] || continue
+    recorded=$(cat "$STATE_DIR/applied.$1.sha256" 2>/dev/null || true)
+    if [ "$recorded" != "$2" ]; then say "needs manual: $(manual_text "$1")"; fi
+  done <"$WORK/folders.txt"
+fi
 say "plan: migrations $SQL (a pg dump is taken first when yes)"
 for svc in $ORDER; do
   case " $CHANGED " in
