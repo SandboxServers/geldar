@@ -263,3 +263,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0429](0429-plan-activity-on-glass-no-building-xp.md) | Plan activity may appear on Glass for humans; building earns no XP | Accepted |
 | [0430](0430-remove-animus.md) | Remove animus: the live Mind is the scriptorium | Accepted |
 | [0431](0431-corrections-to-0391-0393-release-tags-by-bot.md) | Corrections to 0391, 0392 and 0393; release tags are made by the bot | Accepted |
+| [0432](0432-moving-an-adopted-standard-sheet-to-a-named-sheet.md) | Moving an adopted standard sheet to a named sheet | Proposed |
+| [0433](0433-who-rules-on-what-and-test-shard-waivers.md) | Who rules on what, and test-shard waivers | Proposed |
+| [0434](0434-deploy-windows.md) | Deploy windows | Proposed |
+| [0435](0435-kit-version-plan-after-0-1-0.md) | Kit version plan after 0.1.0 | Proposed |
