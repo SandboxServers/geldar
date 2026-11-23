@@ -4,7 +4,7 @@
 // environment or from the repo's .env.discord at launch.
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, resolve } from 'node:path';
 
 export const SERVER_NAME = 'geldar-discord';
 
@@ -19,7 +19,7 @@ export function findExecutable(name, env = process.env, platform = process.platf
   for (const dir of dirs) {
     if (!dir) continue;
     for (const ext of exts) {
-      const path = join(dir, name + ext.toLowerCase());
+      const path = resolve(dir, name + ext.toLowerCase());
       try {
         if (!statSync(path).isFile()) continue;
         if (platform !== 'win32') accessSync(path, constants.X_OK);
@@ -34,23 +34,28 @@ export function findExecutable(name, env = process.env, platform = process.platf
 
 /** Quotes one argument for cmd.exe, which runs the npm `.cmd` shims on Windows. */
 function cmdQuote(arg) {
-  if (arg.includes('"')) throw new Error(`Cannot pass an argument containing a quote: ${arg}`);
-  return /[\s&()^|<>%!,;=]/.test(arg) ? `"${arg}"` : arg;
+  if (/["%!\r\n]/.test(arg)) {
+    throw new Error(
+      'The Windows client launcher cannot use paths containing ", %, !, or line breaks.',
+    );
+  }
+  return /[\s&()^|<>,;=]/.test(arg) ? `"${arg}"` : arg;
 }
 
 /** Runs a client CLI and captures its output. Never inherits stdin, so it cannot prompt. */
 export function runCli(executable, args, env = process.env) {
+  const { DISCORD_BOT_TOKEN: _token, ...clientEnv } = env;
   const viaShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable);
   const result = viaShell
     ? spawnSync([executable, ...args].map(cmdQuote).join(' '), {
-        env,
+        env: clientEnv,
         encoding: 'utf8',
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 60_000,
       })
     : spawnSync(executable, args, {
-        env,
+        env: clientEnv,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 60_000,

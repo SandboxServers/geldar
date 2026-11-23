@@ -78,7 +78,7 @@ function installStubs(...clients: string[]): void {
 function runSetup(...args: string[]) {
   const result = spawnSync(process.execPath, [join(bridge, 'setup.mjs'), ...args], {
     encoding: 'utf8',
-    env: { PATH: bin, HOME: sandbox, USERPROFILE: sandbox, STUB_STATE: stateFile },
+    env: { PATH: bin, STUB_STATE: stateFile },
   });
   return { status: result.status, out: result.stdout + result.stderr };
 }
@@ -198,7 +198,9 @@ describe.skipIf(process.platform === 'win32')('discord bridge setup', () => {
     const { status, out } = runSetup();
     expect(status).toBe(1);
     expect(out).toContain('@scope/stub-dep');
-    expect(out).toContain('./geldar.ps1 setup');
+    expect(out).toContain(
+      'corepack pnpm --filter @geldar/discord-bridge install --frozen-lockfile',
+    );
     expect(readState().log).toEqual([]);
   });
 

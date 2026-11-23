@@ -85,7 +85,7 @@ function checkBridge() {
     if (missing.length > 0) {
       problems.push(
         `Dependencies are not installed (${missing.join(', ')}). From the repo root run ` +
-          '`./geldar.ps1 setup` (or `pnpm install`), then rerun.',
+          '`corepack pnpm --filter @geldar/discord-bridge install --frozen-lockfile`, then rerun.',
       );
     }
   }
@@ -106,7 +106,7 @@ function checkToken(envFile, warnings) {
   }
   if (process.env.DISCORD_BOT_TOKEN?.trim()) {
     warnings.push(
-      'DISCORD_BOT_TOKEN is set only in this shell. Codex does not pass it to MCP servers and a ' +
+      'DISCORD_BOT_TOKEN is set only in this shell. Codex may omit it from MCP servers and a ' +
         `client started elsewhere will not have it. Put it in ${envFile} instead.`,
     );
     return 'env';
