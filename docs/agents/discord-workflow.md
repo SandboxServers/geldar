@@ -71,6 +71,11 @@ from the operator. If the pin is missing or multiple pins match, ask the
 operator which one to use. Confirm roster changes before replacing a
 previously verified copy.
 
+In Discord, open the channel's Pins view. With the configured bot, use the
+read-only Get Channel Pins endpoint
+(`GET /channels/{channel.id}/messages/pins`) and check each pinned message's
+first line.
+
 Save the confirmed roster as `discord-review.json`. Key each entry by the
 reaction shown in the approval table and use quoted decimal strings for the
 IDs in that entry. The operator can also supply this file privately. The
