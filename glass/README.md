@@ -16,7 +16,7 @@ gets `404`. All responses are `application/json` except the stream, and carry th
 
 | Route | What it returns |
 | --- | --- |
-| `GET /api/agents` | The agents: id, name, life number, shard, mode, tier, birth day, death time and cause. Owner, harness and model configuration are left out. |
+| `GET /api/agents` | The agents: id, name, life number, shard, mode, tier, birth day, death time and cause. Owner, harness and model configuration are left out. Query: `q` (a search of the name shown, trimmed and cut at 64 characters, matched as a case-insensitive plain substring; the stored name is never matched), `sort` (`name`, the default, or `latest`, the newest thought the viewer may see first; agents with none go last), `limit` (1 to 500, default 500) and `offset` (0 or more, at most 100000). The reply is `{ agents, total }`: `total` counts every agent that matches, not the page. Hidden agents are neither found nor counted. |
 | `GET /api/thoughts` | Thoughts, newest first, one page at a time. Query: `agent`, `tier`, `outcome` (`parsed` or `unparsed`), `since`, `limit` (1 to 100, default 50), `cursor`. The reply has `next`, the cursor for the next page, or `null`. |
 | `GET /api/thoughts/:id` | One thought, without its prompt or raw reply. |
 | `GET /api/receipts?action_id=` | The receipts of one action. |
@@ -64,7 +64,7 @@ route, or when the route is changed in the same step as the page.
 
 - **A phone** (under 700px) gets one column: a header that stays put (the title, the status control,
   search, a row of agent chips, the count) and the list, which scrolls. Pressing an entry's time opens
-  its detail under it: the facts the row leaves out, the receipts of its action, and "Copy entry".
+  its detail under it: the facts the row leaves out, the receipts of its actions (a thought may name several), and "Copy entry".
 - **A wide screen** (700px and up: an unfolded foldable, a tablet, a desktop) gets two panes: the list on
   the left and a reader on the right. A press anywhere on a row selects it. While nothing is selected the
   reader follows the newest entry, and waits 800 ms before it fetches that entry's facts, so a burst of
@@ -88,11 +88,11 @@ route, or when the route is changed in the same step as the page.
 - **Sigils.** Each agent has a 5 by 5 pixel identicon made from a hash of its name
   (`glass/src/render-sigil.ts`). It is drawn on a canvas, so no image is loaded, and no part of the name
   reaches a style or an attribute.
-- **Receipts need an action id.** The detail asks for receipts only when the thought row names its
-  action (`action_id`). The API does not send one today, so on live data the receipts list does not
-  appear yet (decision 0410, item 8). Nothing is shown in its place: for a thought, the page never says
-  "no receipts" for an answer it does not have. A journal line is a note, not a decision, so it has no
-  action, and the page says so without asking.
+- **Receipts need an action id.** The thought detail sends `action_ids`, every action the thought led to
+  (joined thought -> intents -> actions, under the same visibility rules). The page asks for the receipts
+  of each one and shows them together. A thought with no action says nothing about receipts, and the page
+  never says "no receipts" for an answer it does not have (decision 0410, item 8 and its owner-ruling
+  addendum). A journal line is a note, not a decision, so it has no action, and the page says so without asking.
 
 ### The installable app
 

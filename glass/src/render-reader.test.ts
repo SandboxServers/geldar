@@ -58,6 +58,19 @@ function setUp(shown: ThoughtView[]) {
 }
 
 describe('the reader pane', () => {
+  it('follows the newest entry again after a second press on the selected one, or select("")', () => {
+    const page = setUp([entry(1), entry(2)]);
+    page.reader.draw();
+    page.reader.select('t-2');
+    expect(page.text()).toBe('plan 2');
+    page.reader.select('t-2');
+    expect(page.text()).toBe('plan 1');
+    expect(page.marked()).toEqual(['t-1']);
+    page.reader.select('t-2');
+    page.reader.select('');
+    expect(page.text()).toBe('plan 1');
+  });
+
   it('shows the newest entry while nothing is selected, and marks its row', () => {
     const page = setUp([entry(1), entry(2)]);
     page.reader.draw();

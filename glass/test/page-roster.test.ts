@@ -8,7 +8,12 @@ import { auditTree } from './audit.ts';
 import { CORPUS } from './corpus.ts';
 import { boot, cleanUp, fire, PAGES, type Pages, page, settle, thought } from './page-boot.ts';
 
-afterEach(cleanUp);
+// A press leaves a timer for its entries request: let it fire while its window is still open.
+afterEach(async () => {
+  vi.useRealTimers();
+  await debounced();
+  await cleanUp();
+});
 
 const DIED = '2026-11-15T12:00:00.000Z';
 const agents = [
@@ -30,6 +35,9 @@ const wideScreen = () => ({ matches: true, listeners: [] as (() => void)[] });
 const latest = (id: string) => `/api/thoughts?agent=${id}&limit=6`;
 const profileRequests = () => page.fetchUrls.filter((url) => url.includes('limit=6'));
 const profile = '#roster-profile';
+/** Past the 200 ms press debounce: the entries request has gone out by then (settle() does not run timers). */
+const DEBOUNCE_WAIT = 250;
+const debounced = () => new Promise((resolve) => setTimeout(resolve, DEBOUNCE_WAIT));
 
 interface Modifiers {
   ctrlKey?: boolean;
@@ -186,7 +194,7 @@ describe('Roster', () => {
     expect(page.fetchUrls).toEqual(['/api/agents', '/api/thoughts?limit=50']);
   });
 
-  it('writes a dash for a life field the reply lacks, and "died" alone for a death time that is no time', async () => {
+  it('leaves out "born day" when the reply lacks it, and writes "died" alone for a death time that is no time', async () => {
     const win = await boot({
       ...pages,
       agents: [
@@ -195,7 +203,7 @@ describe('Roster', () => {
         { agent_id: 'x3', name: 'Mute', died_at: 'not a time' },
       ],
     });
-    expect(text(win, '#roster-alive .roster-meta')).toEqual(['life — · — · born day —']);
+    expect(text(win, '#roster-alive .roster-meta')).toEqual(['life — · —']);
     expect(text(win, '#roster-dead .roster-note')).toEqual(['died — void', 'died']);
   });
 
@@ -215,7 +223,7 @@ describe('Roster', () => {
     const live = [...win.document.querySelectorAll(`${profile} [aria-live]`)];
     expect(live.map((el) => el.className)).toEqual(['note roster-status']);
     expect(live[0]?.textContent).toBe('Loading entries…');
-    await settle();
+    await debounced();
     // Loaded: the status has nothing more to say, and no entry sits inside it.
     expect(live[0]?.textContent).toBe('');
     expect(win.document.querySelector(`${profile} [aria-live] li`)).toBeNull();
@@ -258,7 +266,7 @@ describe('Roster', () => {
     expect(text(win, `${profile} .note`)).toEqual(['Select an agent to see their latest entries.']);
     click(win, '#roster-dead button');
     click(win, '#roster-dead button');
-    await settle();
+    await debounced();
     expect(profileRequests()).toEqual([latest('l1')]);
     expect(win.location.search).toBe('?view=roster&q=plan');
     expect(win.document.querySelectorAll('#roster-dead button[aria-current="true"]')).toHaveLength(
@@ -321,8 +329,9 @@ describe('Roster', () => {
       });
       click(win, '#roster-alive button:first-child');
       expect(text(win, '.roster-status')).toEqual(['Loading entries…']);
+      await debounced();
       click(win, '#roster-alive button:last-child');
-      await settle();
+      await debounced();
       finish();
       await settle();
       expect(text(win, `${profile} h2, .roster-entry-text`)).toEqual(['Ada', 'plan 11']);
@@ -353,16 +362,84 @@ describe('Roster', () => {
       },
     });
     click(win, '#roster-alive button');
-    await settle();
+    await debounced();
     expect(text(win, '.roster-status')).toEqual(['Could not load the latest entries.']);
     click(win, '#roster-alive button');
-    await settle();
+    await debounced();
     expect(text(win, '.roster-status')).toEqual(['No entries yet.']);
     expect(profileRequests()).toEqual([latest('l2'), latest('l2')]);
     // The retry worked, so the row is settled again: one more press asks for nothing.
     click(win, '#roster-alive button');
-    await settle();
+    await debounced();
     expect(profileRequests()).toHaveLength(2);
+  });
+
+  it('waits for a pause of 200 ms before it asks, so a run of presses asks once for the last agent', async () => {
+    const win = await boot(pages, { search: '?view=roster', wide: wideScreen() });
+    click(win, '#roster-alive button:first-child');
+    click(win, '#roster-alive button:last-child');
+    // Half the debounce: nothing has been asked yet.
+    await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_WAIT / 2));
+    expect(profileRequests()).toEqual([]);
+    await debounced();
+    expect(profileRequests()).toEqual([latest('l3')]);
+  });
+
+  it('shows an agent already loaded on this page from memory, without a second request', async () => {
+    const win = await boot(pages, {
+      search: '?view=roster',
+      wide: wideScreen(),
+      reply: (url) =>
+        url === latest('l2') ? Promise.resolve({ thoughts: [thought(1)] }) : undefined,
+    });
+    click(win, '#roster-alive button:first-child');
+    await debounced();
+    click(win, '#roster-alive button:last-child');
+    await debounced();
+    click(win, '#roster-alive button:first-child');
+    await settle();
+    expect(profileRequests()).toEqual([latest('l2'), latest('l3')]);
+    expect(text(win, '.roster-entry-text')).toEqual(['plan 1']);
+  });
+
+  it('on 429 says when to try again from Retry-After, makes no request by itself, and a press retries', async () => {
+    let tries = 0;
+    const win = await boot(pages, {
+      search: '?view=roster',
+      wide: wideScreen(),
+      reply: (url) => {
+        if (url !== latest('l2')) return undefined;
+        tries += 1;
+        return tries === 1
+          ? Promise.reject(
+              Object.assign(new Error('HTTP 429'), { httpStatus: 429, retryAfter: '30' }),
+            )
+          : Promise.resolve({ thoughts: [thought(2)] });
+      },
+    });
+    click(win, '#roster-alive button');
+    await debounced();
+    expect(text(win, '.roster-status')).toEqual(['Too many requests. Try again in 30 seconds.']);
+    await debounced();
+    expect(profileRequests()).toHaveLength(1);
+    click(win, '#roster-alive button');
+    await debounced();
+    expect(text(win, '.roster-entry-text')).toEqual(['plan 2']);
+    expect(profileRequests()).toHaveLength(2);
+  });
+
+  it('on 429 without Retry-After says to try again in a moment', async () => {
+    const win = await boot(pages, {
+      search: '?view=roster',
+      wide: wideScreen(),
+      reply: (url) =>
+        url === latest('l2')
+          ? Promise.reject(Object.assign(new Error('HTTP 429'), { httpStatus: 429 }))
+          : undefined,
+    });
+    click(win, '#roster-alive button');
+    await debounced();
+    expect(text(win, '.roster-status')).toEqual(['Too many requests. Try again in a moment.']);
   });
 
   it('reports an unavailable agents list without a misleading zero count', async () => {
@@ -423,6 +500,8 @@ describe('Roster', () => {
   });
 
   it('audits both builders against hostile names, modes, death causes, wake reasons and text', async () => {
+    // Fake timers keep the per-row press debounce from costing 250 ms a row.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const values = [...HOSTILE, ...CORPUS.map(({ value }) => value)];
     const hostile = values.map((value, i) => ({
       ...agents[0],
@@ -461,7 +540,7 @@ describe('Roster', () => {
         display(`died ${date} — ${value}`),
       );
       fire(win, row ?? null, 'click');
-      await settle();
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_WAIT);
       auditTree(pane);
       expect(
         text(

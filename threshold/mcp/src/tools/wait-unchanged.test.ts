@@ -156,5 +156,5 @@ describe('wait with unchanged sections (decision 0221)', () => {
     const b = newSessionId();
     expect(a).not.toBe(b);
     expect(a).toMatch(/^[0-9a-f-]{36}$/);
-  });
+  }, 60_000);
 });

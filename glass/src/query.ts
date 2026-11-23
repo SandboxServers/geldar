@@ -59,16 +59,35 @@ export interface ThoughtFilter {
 export async function listAgents(
   db: SqlClient,
   shown: Visibility = DEFAULT_VISIBILITY,
+  options: { activity?: boolean } = {},
 ): Promise<Row[]> {
-  const result = await db.query(
-    `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
-            a.death_cause
-       FROM agents a
-      WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
-             OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
-      ORDER BY a.agent_id LIMIT 500`,
-    [shown.showLivingSovereign, owned(shown)],
-  );
+  const visible = shown.showLivingSovereign;
+  const result = options.activity
+    ? // The newest thought the viewer may see (the delay applies), for the sort by latest activity.
+      await db.query(
+        `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
+                a.death_cause,
+                (SELECT max(t.at) FROM thoughts t WHERE t.life_id = a.agent_id
+                  AND ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                       OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+                  AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR a.died_at IS NOT NULL
+                       OR a.agent_id = ANY($2::text[])))
+                  AS last_active
+           FROM agents a
+          WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                 OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+          ORDER BY a.agent_id LIMIT 500`,
+        [visible, owned(shown), shown.shownUntil],
+      )
+    : await db.query(
+        `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
+                a.death_cause
+           FROM agents a
+          WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                 OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+          ORDER BY a.agent_id LIMIT 500`,
+        [visible, owned(shown)],
+      );
   return result.rows.map((r) => withAlias(r, 'agent_id'));
 }
 
@@ -130,6 +149,40 @@ export async function getThought(
   );
   const row = result.rows[0];
   return row === undefined ? null : withAlias(row, 'life_id');
+}
+
+/**
+ * The action ids a thought led to, in the order they ran: each intent the thought made, then its actions in
+ * sequence. A thought has many actions (decision 0410 A8). The join runs thought -> intents.thought_id ->
+ * actions.intent_id and keeps only actions of the thought's own agent, so another agent's action is never
+ * joined. The thought's visibility predicates repeat on the join: a hidden thought names no action, and an
+ * action inside the delay window (its first receipt is newer than the cut-off) is not named either. The
+ * receipts of each id are asked for on their own (listReceipts), which applies the receipt-level predicates.
+ */
+export async function listThoughtActions(
+  db: SqlClient,
+  thoughtId: string,
+  shown: Visibility = DEFAULT_VISIBILITY,
+): Promise<string[]> {
+  const result = await db.query(
+    `SELECT ac.action_id
+       FROM thoughts t
+       JOIN intents i ON i.thought_id = t.thought_id
+       JOIN actions ac ON ac.intent_id = i.intent_id AND ac.life_id = t.life_id
+       LEFT JOIN agents a ON a.agent_id = t.life_id
+      WHERE t.thought_id = $1
+        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public OR a.agent_id = ANY($4::text[]))
+        AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($4::text[]))
+        AND ($3::timestamptz IS NULL OR (SELECT min(r.at) FROM receipts r WHERE r.action_id = ac.action_id)
+             <= $3::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($4::text[]))
+      ORDER BY i.started_tick NULLS LAST, i.intent_id, ac.sequence NULLS LAST, ac.action_id
+      LIMIT 100`,
+    [thoughtId, shown.showLivingSovereign, shown.shownUntil, owned(shown)],
+  );
+  return result.rows.map((r) => String(r.action_id));
 }
 
 /** The receipts of one action, oldest first (prepared before committed or aborted), no newer than the cut-off. */

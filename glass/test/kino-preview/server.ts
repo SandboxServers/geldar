@@ -3,6 +3,8 @@
 // walking agents. Test-only, loopback only, never deployed. Nothing here is Glass's real relay.
 //
 //   node glass/test/kino-preview/server.ts [port] [web-dir]     # default 8789, glass/web/kino
+//   add --refuse (403 on /kino/targets) or --targets-429 (429 + Retry-After), or set
+//   KINO_PREVIEW_REFUSE=1 / KINO_PREVIEW_TARGETS_429=1, to see the failure and retry screens.
 //
 // This preview can serve the shared Glass fonts, tab stylesheet and sigil renderer.
 
@@ -170,7 +172,17 @@ function feed(socket: Duplex, key: string): void {
   socket.on('error', stop);
 }
 
-export function startPreview(port: number, webDir: string): Server {
+/** Test-only switches for the screens the page shows when the camera list fails. */
+export interface PreviewOptions {
+  /** /kino/targets answers 403 "refused": the page shows its failure screen with Retry. */
+  refuse?: boolean;
+  /** /kino/targets answers 429 with Retry-After: the page shows its Retry countdown. Wins over refuse. */
+  targets429?: boolean;
+}
+
+export const RETRY_AFTER_SECONDS = 30;
+
+export function startPreview(port: number, webDir: string, opts: PreviewOptions = {}): Server {
   const files = loadWeb(webDir);
   for (const [path, file] of STATIC_FILES) {
     if (
@@ -191,6 +203,15 @@ export function startPreview(port: number, webDir: string): Server {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (path === '/' || path === '/kino')
       return void res.writeHead(302, { Location: '/kino/' }).end();
+    if (path === '/kino/targets' && (opts.refuse || opts.targets429)) {
+      const limited = opts.targets429 === true;
+      res.writeHead(limited ? 429 : 403, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        ...(limited ? { 'Retry-After': String(RETRY_AFTER_SECONDS) } : {}),
+      });
+      return void res.end(JSON.stringify({ error: limited ? 'rate_limited' : 'refused' }));
+    }
     if (path === '/kino/targets') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       return void res.end(
@@ -217,8 +238,15 @@ export function startPreview(port: number, webDir: string): Server {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(HERE, 'server.ts')) {
-  const port = Number(process.argv[2] ?? 8789);
-  const web = resolve(process.argv[3] ?? resolve(HERE, '../../web/kino'));
-  startPreview(port, web);
-  console.log(`Kino preview on http://127.0.0.1:${port}/kino/ (web: ${web})`);
+  const args = process.argv.slice(2);
+  const [portArg, webArg] = args.filter((a) => !a.startsWith('--'));
+  const opts: PreviewOptions = {
+    refuse: args.includes('--refuse') || process.env.KINO_PREVIEW_REFUSE === '1',
+    targets429: args.includes('--targets-429') || process.env.KINO_PREVIEW_TARGETS_429 === '1',
+  };
+  const port = Number(portArg ?? 8789);
+  const web = resolve(webArg ?? resolve(HERE, '../../web/kino'));
+  startPreview(port, web, opts);
+  const mode = opts.targets429 ? ' (targets: 429)' : opts.refuse ? ' (targets: refused)' : '';
+  console.log(`Kino preview on http://127.0.0.1:${port}/kino/ (web: ${web})${mode}`);
 }

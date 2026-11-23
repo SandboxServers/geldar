@@ -22,6 +22,7 @@ import {
   statusLabel,
   toView,
 } from '/js/render-model.ts';
+import { createMore } from '/js/render-more.ts';
 import { createReader } from '/js/render-reader.ts';
 import { createRoster } from '/js/render-roster.ts';
 import { createStreamClient } from '/js/render-stream.ts';
@@ -105,7 +106,12 @@ const filters = createFilters({
 
 async function getJson(path) {
   const res = await fetch(path, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    err.httpStatus = res.status;
+    err.retryAfter = res.headers.get('Retry-After');
+    throw err;
+  }
   return res.json();
 }
 
@@ -180,18 +186,44 @@ function drawRow(view, keyword) {
   return renderRow(document, view, toggleDetail, entryOptions(view, keyword));
 }
 
-/** The facts of one thought and the receipts of its action, fresh from the API. */
+/** The facts of one thought and the receipts of each of its actions, fresh from the API. */
 async function loadFacts(view) {
   // A journal line has no thought record to fetch: its facts are the row already loaded.
-  if (view.kind === 'journal') return { view, receipts: [] };
+  if (view.kind === 'journal') return { view, receipts: [], unloaded: 0 };
   const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(view.id)}`);
   const full = toView(thought);
   // Without an action the page cannot ask for receipts, and says nothing about them (null).
-  const receipts =
-    full.actionId === ''
-      ? null
-      : (await getJson(`/api/receipts?action_id=${encodeURIComponent(full.actionId)}`)).receipts;
-  return { view: full, receipts };
+  if (full.actionIds.length === 0) return { view: full, receipts: null, unloaded: 0 };
+  const { rows, failed } = await receiptsOf(full.actionIds);
+  return { view: full, receipts: rows, unloaded: failed };
+}
+
+/** At most this many receipt requests are in flight at once, so one thought cannot use up the limiter. */
+const RECEIPT_CONCURRENCY = 4;
+
+/**
+ * The receipts of each action id, in the order the API gave, a few requests at a time. A request that fails
+ * (a 429, say) drops only its own receipts: the facts and the other receipts still show.
+ */
+async function receiptsOf(ids) {
+  const replies = new Array(ids.length);
+  let failed = 0;
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const i = next;
+      next += 1;
+      try {
+        const reply = await getJson(`/api/receipts?action_id=${encodeURIComponent(ids[i])}`);
+        replies[i] = reply.receipts;
+      } catch {
+        replies[i] = [];
+        failed += 1;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(RECEIPT_CONCURRENCY, ids.length) }, worker));
+  return { rows: replies.flat(), failed };
 }
 
 const reader = createReader({
@@ -215,10 +247,24 @@ const roster = createRoster({
   alive: byId('roster-alive'),
   dead: byId('roster-dead'),
   profile: byId('roster-profile'),
+  search: byId('roster-search'),
+  sort: byId('roster-sort'),
+  fetchAgents: getJson,
   isWide,
   openInGlass: (id) => tabs.openInGlass(id),
   loadLatest: getJson,
   now: Date.now,
+});
+/** The "More agents" list under the chip row: a search over the agents API, picked as a chip is (#902). */
+createMore({
+  doc: document,
+  toggle: byId('more-agents'),
+  panel: byId('more-agents-panel'),
+  search: byId('more-agents-search'),
+  count: byId('more-agents-count'),
+  list: byId('more-agents-list'),
+  fetchAgents: getJson,
+  pick: (id) => filters.pick(id),
 });
 const tabs = createTabs({
   links: { glass: byId('tab-glass'), roster: byId('tab-roster') },
@@ -359,8 +405,9 @@ async function loadDetail(id) {
   const loaded = state.list.find((view) => view.id === id);
   if (loaded === undefined) return renderNote(document, 'Could not load this thought.');
   try {
-    const { view, receipts } = await loadFacts(loaded);
-    return renderDetail(document, view, receipts, entryOptions(view, state.drawnKeyword));
+    const { view, receipts, unloaded } = await loadFacts(loaded);
+    const options = { ...entryOptions(view, state.drawnKeyword), unloaded };
+    return renderDetail(document, view, receipts, options);
   } catch {
     return renderNote(document, 'Could not load this thought.');
   }
@@ -406,6 +453,7 @@ const fresh = createFresh({
   waiting: () => (state.paused ? filterThoughts(state.pending, filters.current()).length : null),
   onPress: () => {
     if (state.paused) togglePause();
+    reader.select('');
   },
 });
 
@@ -448,6 +496,8 @@ function togglePause() {
 
 /** "/" puts the cursor in the search field, unless the reader is already typing in a field. */
 function onKey(event) {
+  // Escape lets the reader follow the feed again (a selected entry stays until then).
+  if (event.key === 'Escape' && !glassView.hidden) reader.select('');
   if (glassView.hidden || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey)
     return;
   const tag = document.activeElement?.tagName ?? '';

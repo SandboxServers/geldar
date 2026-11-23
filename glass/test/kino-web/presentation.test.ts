@@ -113,7 +113,8 @@ describe('Kino shares the Glass design', () => {
     expect(main).toContain('buildEmptySlot(openGuide, channel)');
     expect(main).toContain("openMonitor(agentId, 'follow', 0, channel)");
     expect(main).toContain('freeChannel(used, openChannel)');
-    expect(main).toContain("if (rig.mode === 'follow') rig.zoomStep(a.level - rig.chase.zoom)");
+    // The zoom-level rule itself moved to panes/monitor-action.ts (unit tested there).
+    expect(main).toContain('runMonitorAction(m, a, {');
     expect(main).toContain("frame.setZoom(rig.mode === 'follow' ? rig.chase.zoom : null)");
     expect(main).toContain("if (m) action(m, { kind: 'close' })");
   });

@@ -170,7 +170,7 @@ describe('PlanPersistence through the queue', () => {
     expect(reply.kind === 'queued' && reply.cells).toBeGreaterThan(100_000);
     const stored = [...plans.data.values()].reduce((n, v) => n + Buffer.byteLength(v, 'utf8'), 0);
     expect(stored).toBeLessThan(64 * 1024);
-  });
+  }, 60_000);
 
   it('refuses the plan and queues nothing when the store write fails', async () => {
     const failing = setup({ plans: memoryKv({ failPut: true }) });

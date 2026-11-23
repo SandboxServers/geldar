@@ -42,6 +42,19 @@ function parseViewport(v: string): { width: number; height: number } {
   return { width, height };
 }
 
+/**
+ * The agent the run watches: the one asked for, else the first the page lists (a one-agent wall, so
+ * the run makes one subscribe rather than opening the page's own random cameras). Null when none.
+ */
+export function pickAgent(
+  asked: string | null,
+  listed: readonly { id?: unknown }[],
+): string | null {
+  if (asked !== null) return asked;
+  const first = listed[0]?.id;
+  return typeof first === 'string' ? first : null;
+}
+
 export function parseArgs(
   argv: readonly string[],
   env: Record<string, string | undefined>,

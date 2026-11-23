@@ -110,6 +110,27 @@ describe('the page script on a wide screen', () => {
     expect(win.document.getElementById('reader')?.children.length).toBe(0);
   });
 
+  it('follows the feed again on Escape and on the "new entries" press, after a row was selected', async () => {
+    const win = await boot(PAGES, { wide: wideScreen() });
+    const rows = () => [...win.document.querySelectorAll('#thoughts > li')];
+    fire(win, rows()[2]?.querySelector('.plan') ?? null, 'click');
+    await settle();
+    expect(selected(win)).toEqual(['plan 3']);
+    // Escape lets go of the entry: the reader shows the newest one again.
+    win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(win.document.querySelector('#reader p.plan')?.textContent).toBe('plan 1');
+    expect(selected(win)).toEqual(['plan 1']);
+    // A thought arrives while paused and a row is selected; the "new entries" press resumes and follows the feed.
+    fire(win, win.document.getElementById('pause'), 'click');
+    page.sources[0]?.emit('thought', thought(50));
+    fire(win, rows()[1]?.querySelector('.plan') ?? null, 'click');
+    await settle();
+    expect(selected(win)).toEqual(['plan 2']);
+    fire(win, win.document.getElementById('fresh'), 'click');
+    expect(win.document.querySelector('#reader p.plan')?.textContent).toBe('plan 50');
+    expect(selected(win)).toEqual(['plan 50']);
+  });
+
   it('copies the reader entry from its "Copy entry" button', async () => {
     const written: string[] = [];
     const win = await boot(PAGES, {
