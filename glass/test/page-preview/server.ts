@@ -76,7 +76,10 @@ function api(req: IncomingMessage, res: ServerResponse): boolean {
   else if (url.pathname === '/api/session') json(res, 200, { signedIn: false });
   else if (url.pathname === '/api/thoughts') json(res, 200, page(url.searchParams));
   else if (url.pathname === '/api/receipts') {
-    const found = entries.find((e) => e.row.action_id === url.searchParams.get('action_id'));
+    const want = url.searchParams.get('action_id');
+    const found = entries.find(
+      (e) => Array.isArray(e.row.action_ids) && e.row.action_ids.includes(want),
+    );
     json(res, 200, { receipts: found?.receipts ?? [] });
   } else if (url.pathname === '/api/stream') {
     res.writeHead(200, {

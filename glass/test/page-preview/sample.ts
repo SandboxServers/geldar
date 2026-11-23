@@ -213,14 +213,14 @@ export function entry(line: Line, atMs: number): Entry {
           prompt_template_version: 'mind-v4.2',
           latency_ms: 400 + ((made * 613) % 1900),
           parsed: line.unparsed === true ? null : { plan: line.plan },
-          action_id: line.receipts.length > 0 ? `act_${id}` : undefined,
+          action_ids: line.receipts.length > 0 ? [`act_${id}`] : [],
         };
   return {
     row,
     receipts: line.receipts.map((r, i) => ({
       ...r,
       receipt_id: `rc_${id}_${i}`,
-      action_id: `act_${id}`,
+      action_ids: [`act_${id}`],
     })),
   };
 }
