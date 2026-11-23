@@ -63,11 +63,18 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
 
 ## Private reviewer roster
 
-The team operator supplies `discord-review.json` privately to developers
-who need to verify review approvals. Get it directly from the operator or
-from an access-controlled team location the operator confirms. Use the
-field names in the approval table and store the IDs as quoted decimal
-strings. The public repo carries the procedure and field names only.
+Look in the shared Discord channel's pinned messages for a post whose first
+line is exactly `Approved Reviewers`. The team operator posts and pins the
+roster. Before using it for approvals for the first time, confirm that the
+operator posted it using a known operator account or direct confirmation
+from the operator. If the pin is missing or multiple pins match, ask the
+operator which one to use. Confirm roster changes before replacing a
+previously verified copy.
+
+Save the confirmed roster as `discord-review.json` using the field names
+in the approval table and quoted decimal strings for the IDs. The operator
+can also supply this file privately. The public repo carries the procedure
+and field names only.
 
 Place the file inside the directory printed by
 `git rev-parse --path-format=absolute --git-common-dir`. Linked worktrees
