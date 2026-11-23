@@ -27,7 +27,9 @@ export interface StaticFile {
 
 /** The strong ETag of a body: a 22-character base64url SHA-256 prefix, quoted. Same form as the Kino files. */
 export function etagOf(body: string | Buffer): string {
-  return `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+  const digest = createHash('sha256').update(body).digest('base64url').slice(0, 22);
+  // base64url has no character that needs escaping, so JSON.stringify only adds the quotes.
+  return JSON.stringify(digest);
 }
 
 /** The same entry with another body. The ETag follows the body, so a rewritten page is never tagged with the old one. */
