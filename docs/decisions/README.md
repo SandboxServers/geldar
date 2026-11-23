@@ -268,3 +268,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0434](0434-deploy-windows.md) | Deploy windows | Proposed |
 | [0435](0435-kit-version-plan-after-0-1-0.md) | Kit version plan after 0.1.0 | Proposed |
 | [0436](0436-discord-for-developer-coordination.md) | A local Discord MCP bridge for developer sessions in Codex and Claude Code | Accepted for the MVP |
+| [0445](0445-human-approval-in-discord-before-merge.md) | A PR into `main` needs a rostered reviewer's approval in Discord; a ship request authorizes the review request | Accepted |

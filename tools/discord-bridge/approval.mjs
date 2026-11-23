@@ -11,6 +11,32 @@ const unicodeReactions = { ':thumbsup:': '👍' };
 const reactionPageSize = 100;
 const maxReactionPages = 10;
 const maxFailedRounds = 5;
+const exitCodes = { approved: 0, waiting: 2, 'head-changed': 3, closed: 4, merged: 4 };
+
+/** The command's exit code for an outcome. Anything unknown is an error, never an approval. */
+export function exitCode(status) {
+  return Object.hasOwn(exitCodes, status) ? exitCodes[status] : 1;
+}
+
+function boundedNumber(text, minimum, maximum, label) {
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new DiscordError(`${label} must be a number from ${minimum} to ${maximum}.`);
+  }
+  return value;
+}
+
+/** Validate the command's options. `--once` checks a single time and never sleeps. */
+export function waitOptions({ once = false, interval = '180', timeout = '25', pr } = {}) {
+  if (pr !== undefined && !/^[1-9][0-9]{0,8}$/.test(pr)) {
+    throw new DiscordError('--pr must be the PR number, for example --pr 42.');
+  }
+  return {
+    intervalMs: boundedNumber(interval, 30, 3600, '--interval (seconds)') * 1000,
+    timeoutMs: once ? 0 : boundedNumber(timeout, 1, 1440, '--timeout (minutes)') * 60_000,
+    ...(pr !== undefined && { expectedPr: Number(pr) }),
+  };
+}
 
 const snowflakeId = z.string().regex(snowflake);
 const rosterSchema = z.record(
@@ -92,7 +118,8 @@ export async function findApproval(request, messagePath, message, rules) {
         ? candidate.emojiId === emoji.id
         : !emoji.id && candidate.emoji === emoji.name,
     );
-    if (!rule) continue;
+    // A deleted custom emoji has no name, so its reactors cannot be listed: it approves nothing.
+    if (!rule || !emoji.name) continue;
     const routeEmoji = emoji.id ? `${emoji.name}:${emoji.id}` : emoji.name;
     // Type 0 is an ordinary reaction, type 1 a super reaction. Both are the account's own act.
     for (const type of counts?.burst ? [0, 1] : [0]) {
@@ -115,6 +142,7 @@ export async function waitForApproval({
   pullRequest,
   intervalMs,
   timeoutMs,
+  expectedPr,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = Date.now,
   note = () => {},
@@ -136,6 +164,11 @@ export async function waitForApproval({
 
   const bot = await request('/users/@me');
   const review = parseReviewRequest(await readMessage(), bot?.id);
+  if (expectedPr !== undefined && review.number !== expectedPr) {
+    throw new DiscordError(
+      `That review request is for PR #${review.number}, not #${expectedPr}. Check the message ID.`,
+    );
+  }
   const outcome = (status, extra = {}) => ({ status, pr: review.url, head: review.head, ...extra });
   const deadline = now() + timeoutMs;
   let failedRounds = 0;

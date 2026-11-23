@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parseRoster, waitForApproval } from '../approval.mjs';
+import { exitCode, parseRoster, waitForApproval, waitOptions } from '../approval.mjs';
 import { discordClient } from '../discord.mjs';
 
 const destination = { serverId: '100000000000000001', channelId: '100000000000000002' };
@@ -24,13 +24,16 @@ const custom = { id: customEmoji, name: 'jasonthumb' };
 const thumbs = { id: null, name: '👍' };
 
 type Reaction = {
-  emoji: { id: string | null; name: string };
+  emoji: { id: string | null; name: string | null };
   normal?: string[];
   burst?: string[];
 };
 
 /** A fake bridge client. `rounds` gives the message's reactions for each successive read. */
-function fakeDiscord(rounds: Reaction[][], { author = botId, text = content } = {}) {
+function fakeDiscord(
+  rounds: Reaction[][],
+  { author = botId, text = content, omitEmptyReactions = false } = {},
+) {
   const calls: string[] = [];
   // Read 1 parses the review request; read N + 1 is round N of the wait loop.
   let reads = 0;
@@ -45,10 +48,13 @@ function fakeDiscord(rounds: Reaction[][], { author = botId, text = content } = 
       return {
         content: text,
         author: { id: author },
-        reactions: current().map((entry) => ({
-          emoji: entry.emoji,
-          count_details: { normal: entry.normal?.length ?? 0, burst: entry.burst?.length ?? 0 },
-        })),
+        // Discord leaves the field out of a message that has no reactions.
+        ...(!(omitEmptyReactions && current().length === 0) && {
+          reactions: current().map((entry) => ({
+            emoji: entry.emoji,
+            count_details: { normal: entry.normal?.length ?? 0, burst: entry.burst?.length ?? 0 },
+          })),
+        }),
       };
     }
     const reactions = current();
@@ -137,6 +143,33 @@ describe('approval matching', () => {
     expect(calls.at(-1)).toContain(`after=${crowd[99]}`);
   });
 
+  it('reads ten pages of reactors and refuses to judge an eleventh', async () => {
+    const strangers = (count: number) =>
+      Array.from({ length: count }, (_, index) => String(300000000000000000n + BigInt(index)));
+    const lastAllowed = fakeDiscord([[{ emoji: custom, normal: [...strangers(999), reviewer] }]]);
+    await expect(wait({ request: lastAllowed.request }).run).resolves.toMatchObject({
+      status: 'approved',
+    });
+    expect(lastAllowed.calls.filter((path) => path.includes('/reactions/'))).toHaveLength(10);
+
+    const pastTheCap = fakeDiscord([[{ emoji: custom, normal: [...strangers(1000), reviewer] }]]);
+    await expect(wait({ request: pastTheCap.request }).run).rejects.toThrow(/Verify by hand/);
+    expect(pastTheCap.calls.filter((path) => path.includes('/reactions/'))).toHaveLength(10);
+  });
+
+  it('treats a message with no reactions field as unapproved', async () => {
+    const { request } = fakeDiscord([[]], { omitEmptyReactions: true });
+    await expect(wait({ request }).run).resolves.toMatchObject({ status: 'waiting' });
+  });
+
+  it('does not accept a deleted custom emoji, which has no name to list reactors by', async () => {
+    const { request, calls } = fakeDiscord([
+      [{ emoji: { id: customEmoji, name: null }, normal: [reviewer] }],
+    ]);
+    await expect(wait({ request }).run).resolves.toMatchObject({ status: 'waiting' });
+    expect(calls.some((path) => path.includes('/reactions/'))).toBe(false);
+  });
+
   it('never returns an account ID', async () => {
     const { request } = fakeDiscord([[{ emoji: custom, normal: [reviewer] }]]);
     expect(JSON.stringify(await wait({ request }).run)).not.toContain(reviewer);
@@ -203,6 +236,25 @@ describe('the wait loop', () => {
     expect(broken.sleeps).toHaveLength(4);
   });
 
+  it('counts only failures in a row: a success between them resets the cap', async () => {
+    const flaky = Object.assign(new Error('temporary'), { retryable: true });
+    let round = 0;
+    const { request } = fakeDiscord([[]]);
+    const { run, sleeps } = wait({
+      request,
+      // Twelve rounds: six failures, more than the cap of five, each followed by a success.
+      timeoutMs: 11_500,
+      pullRequest: async () => {
+        round += 1;
+        if (round % 2 === 1) throw flaky;
+        return { state: 'OPEN', head };
+      },
+    });
+    await expect(run).resolves.toMatchObject({ status: 'waiting' });
+    expect(round).toBe(12);
+    expect(sleeps).toHaveLength(11);
+  });
+
   it('fails instead of reporting waiting when the only check failed', async () => {
     const flaky = Object.assign(new Error('temporary'), { retryable: true });
     const { request } = fakeDiscord([[]]);
@@ -239,6 +291,11 @@ describe('inputs', () => {
       /full 40-character/,
     ],
     [
+      'two different commit SHAs',
+      { text: `https://github.com/SandboxServers/geldar/pull/42 ${head} ${'c'.repeat(40)}` },
+      /one full 40-character/,
+    ],
+    [
       'two PR links',
       {
         text: `https://github.com/SandboxServers/geldar/pull/42 https://github.com/SandboxServers/geldar/pull/43 ${head}`,
@@ -253,6 +310,14 @@ describe('inputs', () => {
   ])('rejects %s', async (_label, message, expected) => {
     const { request } = fakeDiscord([[{ emoji: custom, normal: [reviewer] }]], message);
     await expect(wait({ request }).run).rejects.toThrow(expected);
+  });
+
+  it('rejects a review request for a different PR than the one being shipped', async () => {
+    const { request } = fakeDiscord([[{ emoji: custom, normal: [reviewer] }]]);
+    await expect(wait({ request, expectedPr: 43 }).run).rejects.toThrow(/is for PR #42, not #43/);
+    await expect(wait({ request, expectedPr: 42 }).run).resolves.toMatchObject({
+      status: 'approved',
+    });
   });
 
   it('rejects a message ID that is not a Discord ID before calling Discord', async () => {
@@ -273,22 +338,65 @@ describe('inputs', () => {
     ]);
   });
 
-  it('marks a failed read as worth retrying and a failed send as not', async () => {
-    const request = discordClient({
-      token: 'for-mocked-fetch-only',
-      fetchImpl: async () => new Response('', { status: 503 }),
-    });
-    await expect(request('/users/@me')).rejects.toMatchObject({ retryable: true });
-    await expect(request('/messages', undefined, { body: { content: 'x' } })).rejects.toMatchObject(
-      {
+  it.each([
+    ['a network failure', () => Promise.reject(new Error('offline')), true],
+    ['a rate limit', async () => new Response('', { status: 429 }), true],
+    ['a server error', async () => new Response('', { status: 503 }), true],
+    ['an unreadable body', async () => new Response('not json'), true],
+    ['a rejected token', async () => new Response('', { status: 401 }), false],
+    ['missing access', async () => new Response('', { status: 403 }), false],
+    ['a missing message', async () => new Response('', { status: 404 }), false],
+  ])(
+    'a read that hits %s is retryable: %s... and a send never is',
+    async (_label, respond, retryable) => {
+      const request = discordClient({ token: 'for-mocked-fetch-only', fetchImpl: respond });
+      await expect(request('/users/@me')).rejects.toMatchObject({ retryable });
+      await expect(
+        request('/messages', undefined, { body: { content: 'x' } }),
+      ).rejects.toMatchObject({
         retryable: false,
-      },
-    );
-    const denied = discordClient({
-      token: 'for-mocked-fetch-only',
-      fetchImpl: async () => new Response('', { status: 401 }),
+      });
+    },
+  );
+
+  it('maps every outcome to its exit code, and anything unknown to an error', () => {
+    expect(
+      ['approved', 'waiting', 'head-changed', 'closed', 'merged'].map((status) => exitCode(status)),
+    ).toEqual([0, 2, 3, 4, 4]);
+    for (const unknown of ['', 'Approved', 'timeout', 'toString', '__proto__', undefined]) {
+      expect(exitCode(unknown)).toBe(1);
+    }
+  });
+
+  it('validates the wait options at both ends of each range', () => {
+    expect(waitOptions()).toEqual({ intervalMs: 180_000, timeoutMs: 25 * 60_000 });
+    expect(waitOptions({ once: true, timeout: '90' })).toEqual({
+      intervalMs: 180_000,
+      timeoutMs: 0,
     });
-    await expect(denied('/users/@me')).rejects.toMatchObject({ retryable: false });
+    expect(waitOptions({ interval: '30', timeout: '1', pr: '42' })).toEqual({
+      intervalMs: 30_000,
+      timeoutMs: 60_000,
+      expectedPr: 42,
+    });
+    expect(waitOptions({ interval: '3600', timeout: '1440' })).toEqual({
+      intervalMs: 3_600_000,
+      timeoutMs: 1440 * 60_000,
+    });
+    for (const bad of [
+      { interval: '29' },
+      { interval: '3601' },
+      { interval: 'soon' },
+      { timeout: '0' },
+      { timeout: '1441' },
+      { timeout: '1e308' },
+      { timeout: 'Infinity' },
+      { pr: '0' },
+      { pr: '4x' },
+      { pr: '' },
+    ]) {
+      expect(() => waitOptions(bad), JSON.stringify(bad)).toThrow(/must be/);
+    }
   });
 
   it('the command explains its usage and exits 1 without a message ID', () => {

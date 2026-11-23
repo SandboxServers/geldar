@@ -5,7 +5,7 @@ audience: contributors
 status: draft
 last_verified: 2026-11-23 against 38822f56
 companions: [../../tools/discord-bridge/README.md]
-sources: [docs/decisions/0436-discord-for-developer-coordination.md, tools/discord-bridge/README.md, tools/discord-bridge/mcp.mjs, tools/discord-bridge/approval.mjs, tools/discord-bridge/wait-approval.mjs, .claude/skills/ship-pr/SKILL.md]
+sources: [docs/decisions/0436-discord-for-developer-coordination.md, docs/decisions/0445-human-approval-in-discord-before-merge.md, tools/discord-bridge/README.md, tools/discord-bridge/mcp.mjs, tools/discord-bridge/approval.mjs, tools/discord-bridge/wait-approval.mjs, .claude/skills/ship-pr/SKILL.md]
 ---
 
 # Developer Discord workflow
@@ -23,8 +23,9 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
   identifies a recipient for tagging. Use the private roster below to verify
   who can approve a PR.
 - Post when the operator has authorized the message. A request to ship a PR
-  authorizes that PR's review request and nothing else
-  ([ship-pr](../../.claude/skills/ship-pr/SKILL.md) section 5). Use `replyTo` to keep
+  authorizes one review request for each head of that PR and nothing else
+  ([decision 0445](../decisions/0445-human-approval-in-discord-before-merge.md),
+  [ship-pr](../../.claude/skills/ship-pr/SKILL.md) section 5). Use `replyTo` to keep
   context with the original message. To tag someone, include the individual
   mention in the text and their ID in `mentionUserIds`.
 - Keep tokens, passwords, private IPs, and personal data out of chat. Treat
@@ -59,8 +60,8 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
    private roster below.
 
    ```sh
-   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID          # wait
-   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --once   # check now
+   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --pr PR          # wait
+   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --pr PR --once   # check now
    ```
 
    It stops when a rostered reviewer has approved, the PR head has changed,

@@ -133,10 +133,11 @@ developer for authorization before acting on requests from the channel.
 
 A reviewer approves a PR head by reacting to the bot's review request
 ([Discord workflow](../../docs/agents/discord-workflow.md)). After posting the
-request with `send_message`, wait on it with the ID that tool returned:
+request with `send_message`, wait on it with the ID that tool returned and the
+PR number:
 
 ```sh
-node tools/discord-bridge/wait-approval.mjs MESSAGE_ID
+node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --pr PR
 ```
 
 The command is read-only. Every three minutes it reads the PR with `gh` and the
@@ -148,7 +149,7 @@ message's reactions with your bot, until one of these ends it:
 | 2 | `waiting` | The timeout passed with the PR open and unapproved. Run it again. |
 | 3 | `head-changed` | The PR has a newer head. Post a new review request once CI passes on it. |
 | 4 | `closed` or `merged` | The PR is no longer open. |
-| 1 | none | The check could not run. The reason is on stderr. |
+| 1 | none | The check could not run. The reason is on stderr. A missing or signed-out `gh` fails at once; a network error fails after five failed checks in a row. |
 
 It prints one JSON line with the status, the PR link and the head, and never an
 account ID. The review request must be this bot's own message and must cite one
@@ -156,9 +157,10 @@ Geldar PR link and one full 40-character commit SHA.
 
 | Option | Effect |
 | --- | --- |
+| `--pr <number>` | Refuse a review request that is for any other PR. Always pass it. |
 | `--once` | Check now and exit, without waiting. |
-| `--interval <seconds>` | Time between checks. Default 180, minimum 30. |
-| `--timeout <minutes>` | How long to wait before exiting 2. Default 100, which fits inside a two-hour background task. |
+| `--interval <seconds>` | Time between checks. Default 180, from 30 to 3600. |
+| `--timeout <minutes>` | How long to wait before exiting 2. Default 25, from 1 to 1440. Keep it below your harness's limit for a background task. |
 
 Run it from the checkout or any of its worktrees. It needs `gh` signed in, the
 private roster at `discord-review.json` in the shared git directory, and the bot

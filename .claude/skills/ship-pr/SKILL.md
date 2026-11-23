@@ -54,24 +54,24 @@ For a campaign packet, its `packet-reviewer` loop is the review (campaign-packet
 
 ### Human approval in Discord
 
-A PR into `main` also needs a human approval for its current head, unless the owner says this one does not. A campaign packet merging into its wave branch does not; the wave PR (§ 8) does. Read the [Discord workflow](../../../docs/agents/discord-workflow.md) first.
+A PR into `main` also needs a human approval for its current head, unless the owner says this one does not ([decision 0445](../../../docs/decisions/0445-human-approval-in-discord-before-merge.md)). A campaign packet merging into its wave branch does not; the wave PR (§ 8) does. Read the [Discord workflow](../../../docs/agents/discord-workflow.md) first.
 
-1. Ask once `ci gate` is green on the current head and the review says `ship`. Post the review request with the bridge's `send_message`: tag the reviewer the owner named (ask once if they named none), and include the PR link and the full 40-character head SHA from `gh pr view <PR> --json headRefOid --jq .headRefOid`. The owner's request to ship the PR covers this one message. Every other post still needs their say-so.
-2. Wait for the approval the way § 4 waits for CI: block on one call (as a background task when the harness supports it), with the message ID `send_message` returned. Never poll reactions by hand.
+1. Ask once `ci gate` is green on the current head and the review says `ship`. Post the review request with the bridge's `send_message`: tag the reviewer the owner named (ask once if they named none), and include the PR link and the full 40-character head SHA from `gh pr view <PR> --json headRefOid --jq .headRefOid`. The owner's request to ship the PR covers one review request for each head of that PR, so a new head after a fix needs no new permission. Every other post still needs their say-so.
+2. Wait for the approval the way § 4 waits for CI: block on one call (as a background task when the harness supports it), with the message ID `send_message` returned and the PR number. Never poll reactions by hand.
 
    ```powershell
-   node tools/discord-bridge/wait-approval.mjs <message ID>
+   node tools/discord-bridge/wait-approval.mjs <message ID> --pr <PR>
    ```
 
    | Exit | Meaning | Next |
    |---|---|---|
-   | 0 | A rostered reviewer approved that head | Step 3 |
-   | 2 | Still waiting when the timeout passed (100 minutes by default) | Run the same call again |
+   | 0 | A rostered reviewer approved the head in the output | Step 3, after checking that `head` is still your PR's head |
+   | 2 | Still waiting when the timeout passed (25 minutes by default) | Run the same call again |
    | 3 | The PR head changed | Wait for CI (§ 4), then post a new request for the new head |
    | 4 | The PR was closed or merged | Stop |
    | 1 | The check could not run | Read the message; usually the token, the roster or `gh` |
 
-   A session that was interrupted checks where things stand with `--once`.
+   The default timeout fits inside a 30-minute background task. To be woken less often, raise both: `--timeout 110` inside a two-hour task. A session that was interrupted checks where things stand with `--once`.
 3. Record the approval on the PR, so GitHub shows what was approved and where: `gh pr comment <PR> --body "Approved in Discord for <head SHA>: <link to the review request>"`. Leave account names and IDs out; the repo is public.
 
 ## 6. Merge
