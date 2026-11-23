@@ -14,6 +14,7 @@ import { findIpLiterals, parseIpAllowlist } from './ip-literals.ts';
 import { parseLineCapExemptions } from './line-cap-exemptions.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
+import { checkOneWayDoor, ONE_WAY_DOOR_ALLOWLIST } from './one-way-door.ts';
 import { checkPins } from './pin-rules.ts';
 import {
   checkReleaseAge,
@@ -215,6 +216,15 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
   }
 
   for (const problem of checkDecisionRows(all)) {
+    log(`error: ${problem}`);
+    failed = true;
+  }
+
+  /** A migration that adds an immutable or append-only trigger cites an Accepted decision (AGENTS.md). */
+  const oneWayDoor = checkOneWayDoor(all, port.readText(ONE_WAY_DOOR_ALLOWLIST));
+  for (const line of oneWayDoor.info) log(`info: ${line}`);
+  for (const line of oneWayDoor.warnings) log(`warning: ${line}`);
+  for (const problem of oneWayDoor.problems) {
     log(`error: ${problem}`);
     failed = true;
   }

@@ -52,6 +52,7 @@ Groups: [The world](#the-world), [People and ownership](#people-and-ownership), 
 | **Patron** | A person who donates compute by running a Thinker. | Spec only | [spec 3](../spec.md#3-glossary), 6.3 |
 | **Ghost** | A human spectator account: invisible, silent, cannot interact. | Spec term; spectator admission is in `plugin/velocity-identity/` and `compose/velocity/` (inferred from decision 0092) | [spec 3](../spec.md#3-glossary), 8.4; [decision 0092](../decisions/0092-velocity-spectator-whitelist.md) |
 | **Operator** | The person who runs a shard and its node. In Phase 0 and 1 this is the owner of the project. | `deploy/colo-admin.sh`, `tools/mcp-tokens` | [decision 0052](../decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md) |
+| **Co-owner** | Sam. Rules on cognition work (memory spine, sheets, harness) and on releases: rollout order, release gates, tags. | Decision records | [decision 0431](../decisions/0431-corrections-to-0391-0393-release-tags-by-bot.md) |
 
 ## The agent
 

@@ -33,7 +33,7 @@ Of the 19 modules, 15 are gate modules. The other four are the runner (`cli.ts`,
 
 | Runner | Command | What runs | Where |
 |---|---|---|---|
-| Repo gate | `./geldar.ps1 pnpm check:repo` (`node tools/repo-checks/src/cli.ts`) | The 14 gates (from 15 modules) over every tracked file and every untracked, not-ignored file | `./geldar.ps1 check` step 5; CI `typescript` job (`.github/workflows/ci.yml` line 44) |
+| Repo gate | `./geldar.ps1 pnpm check:repo` (`node tools/repo-checks/src/cli.ts`) | The 15 gates (from 16 modules) over every tracked file and every untracked, not-ignored file | `./geldar.ps1 check` step 5; CI `typescript` job (`.github/workflows/ci.yml` line 44) |
 | Gate tests | `./geldar.ps1 pnpm test` (`vitest run`) | The 51 test files below, with every other package's tests | `./geldar.ps1 check` step 4; CI `typescript` job (line 42) |
 
 Run one test file: `./geldar.ps1 pnpm --filter @geldar/repo-checks exec vitest run src/<file>.test.ts`. CI runs `src/caddy-adapt.test.ts` a second time this way with `GELDAR_REQUIRE_DOCKER=1`, so a missing Docker fails it instead of skipping (`ci.yml` lines 131 to 134).
@@ -220,6 +220,15 @@ Extra rules for colo files (`coloRole`, lines 134 to 145): `compose/colo.yml` an
 - **Failure:** `error: <path>:<line>: <class message>`. The address is never printed.
 - **Fix:** use `127.0.0.1` or a documentation-range address, or describe the host by role. Add a file to the allowlist only when it implements or tests address handling, with a reason.
 
+### 15. One-way door
+
+- **Rule** (`one-way-door.ts`): a migration in `sql/*.sql` that creates a trigger whose name contains `immutable`, `append_only`, `monotonic`, `no_update` or `no_delete` (any case) is a one-way door. Each decision its header comment cites must be Accepted. The header is the `--` lines before the first code line; a cited line must also contain the word "decision". The migration's own number is skipped.
+- **Status test:** the first line of the record matching `Status:` (with or without a leading `- `) must contain `Accepted` or start with `Decided`. A record with no Status line fails.
+- **Warning, not failure:** a cited number with no `docs/decisions/NNNN-*.md` record (`warning: ... has no record ... (not checked)`).
+- **Failure:** `error: <sql path> (trigger <names>): NNNN <title> -- status: <status text>`, one line per failing decision.
+- **Allow-list:** `one-way-door-allowlist.json` (`{ "exemptions": [{ path, decision, note }] }`). An allow-listed file is skipped and printed as `info:`. An entry whose file no longer exists, or no longer fails the rule, is an `error` that prints the entry, so the list cannot outlive its reason. At `1b114276` it lists `sql/0050_character_sheet_xp.sql` and `sql/0051_character_audit.sql`, both for decision 0186 (`D-CS-03`).
+- **Clear an entry:** make the cited decision Accepted (or cite an Accepted one in the migration header), then delete the entry. The gate fails until you do, so the entry is removed in the same change.
+
 ## Data files
 
 | File | Shape | Read by |
@@ -229,12 +238,13 @@ Extra rules for colo files (`coloRole`, lines 134 to 145): `compose/colo.yml` an
 | `first-party-images.json` | `["<repository prefix>"]` | Gate 8 |
 | `integration-floor.json` | `{ "floor": <integer> }` | Gate 9 |
 | `ip-literal-allowlist.json` | `[{ path, reason }]` | Gate 14 |
+| `one-way-door-allowlist.json` | `{ "exemptions": [{ path, decision, note }] }` | Gate 15 |
 
-All five sit in `tools/repo-checks/src/` (`run-checks.ts` lines 26 to 30). A change to any of them is reviewed like code (`CLAUDE.md`).
+All six sit in `tools/repo-checks/src/` (`run-checks.ts` lines 26 to 30). A change to any of them is reviewed like code (`CLAUDE.md`).
 
 ## Tests in pnpm test
 
-51 test files, each run by the shared Vitest run. Re-derive the list: `git ls-files tools/repo-checks/src | Select-String '\.test\.ts$'`. "Needs" names a tool the test calls; without it the test skips (`describe.skipIf` or `it.skipIf` in the file), except where CI sets `GELDAR_REQUIRE_DOCKER=1`.
+52 test files, each run by the shared Vitest run. Re-derive the list: `git ls-files tools/repo-checks/src | Select-String '\.test\.ts$'`. "Needs" names a tool the test calls; without it the test skips (`describe.skipIf` or `it.skipIf` in the file), except where CI sets `GELDAR_REQUIRE_DOCKER=1`.
 
 When one fails, read its `it(...)` title: it states the rule. Fix the file the rule names, or, when the rule itself changed on purpose, change the test in the same reviewed change.
 

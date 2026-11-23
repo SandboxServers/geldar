@@ -1,0 +1,14 @@
+{
+  "exemptions": [
+    {
+      "path": "sql/0050_character_sheet_xp.sql",
+      "decision": "0186",
+      "note": "until the co-owner and owner rule D-CS-03 / 0186"
+    },
+    {
+      "path": "sql/0051_character_audit.sql",
+      "decision": "0186",
+      "note": "until the co-owner and owner rule D-CS-03 / 0186"
+    }
+  ]
+}
