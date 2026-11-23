@@ -159,7 +159,8 @@ export function createReader(deps: ReaderDeps): Reader {
 
   return {
     select(id: string): void {
-      selectedId = id;
+      // A second press on the selected entry, or '' (Escape, the "new entries" press), follows the feed again.
+      selectedId = id === '' || id === selectedId ? '' : id;
       draw();
     },
     draw,

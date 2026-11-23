@@ -10,6 +10,7 @@
  * shared Caddy by hand. So the stylesheets, typefaces, icons, manifest and worker added by the redesign live
  * under `/js/` too, whatever they are. glass/test/caddy-paths.test.ts holds this table to that route.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 
@@ -20,6 +21,18 @@ export interface StaticFile {
   cache: string;
   /** Headers this one file needs besides its type and cache rule. */
   headers?: Record<string, string>;
+  /** A strong ETag of the body, hashed once at load. A request that sends it back gets a 304 with no body. */
+  etag: string;
+}
+
+/** The strong ETag of a body: a 22-character base64url SHA-256 prefix, quoted. Same form as the Kino files. */
+export function etagOf(body: string | Buffer): string {
+  return `"${createHash('sha256').update(body).digest('base64url').slice(0, 22)}"`;
+}
+
+/** The same entry with another body. The ETag follows the body, so a rewritten page is never tagged with the old one. */
+function withBody(file: StaticFile, body: string | Buffer): StaticFile {
+  return { ...file, body, etag: etagOf(body) };
 }
 
 const PUBLIC = new URL('../public/', import.meta.url);
@@ -68,11 +81,13 @@ export const FONT_FILES = [
 export const ICON_FILES = ['icon-192', 'icon-512', 'maskable-512'] as const;
 
 function text(dir: URL, name: string, type: string): StaticFile {
-  return { body: readFileSync(new URL(name, dir), 'utf8'), type, cache: CHECKED };
+  const body = readFileSync(new URL(name, dir), 'utf8');
+  return { body, type, cache: CHECKED, etag: etagOf(body) };
 }
 
 function bytes(name: string, type: string): StaticFile {
-  return { body: readFileSync(new URL(name, PUBLIC)), type, cache: KEPT };
+  const body = readFileSync(new URL(name, PUBLIC));
+  return { body, type, cache: KEPT, etag: etagOf(body) };
 }
 
 export const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map<string, StaticFile>([
@@ -89,7 +104,7 @@ export const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map<string, Sta
   ['/js/manifest.webmanifest', text(PUBLIC, 'manifest.webmanifest', 'application/manifest+json')],
   ...RENDER_MODULES.map((name): [string, StaticFile] => {
     const file = text(SOURCE, `${name}.ts`, JS);
-    return [`/js/${name}.ts`, { ...file, body: stripTypeScriptTypes(String(file.body)) }];
+    return [`/js/${name}.ts`, withBody(file, stripTypeScriptTypes(String(file.body)))];
   }),
   ...FONT_FILES.map((name): [string, StaticFile] => [
     `/js/fonts/${name}.woff2`,
@@ -132,11 +147,11 @@ export function withKinoTab(html: string, kinoMounted: boolean): string {
 /** The page entry with the configured delay and the link to Kino, if mounted. */
 export function pageWithOptions(delaySeconds: number, kinoMounted: boolean): StaticFile {
   const page = pageWithDelay(delaySeconds);
-  return { ...page, body: withKinoTab(String(page.body), kinoMounted) };
+  return withBody(page, withKinoTab(String(page.body), kinoMounted));
 }
 
 /** The page entry of the table with the configured delay in it. */
 export function pageWithDelay(delaySeconds: number): StaticFile {
   const page = STATIC_FILES.get('/') as StaticFile;
-  return { ...page, body: withDelay(String(page.body), delaySeconds) };
+  return withBody(page, withDelay(String(page.body), delaySeconds));
 }

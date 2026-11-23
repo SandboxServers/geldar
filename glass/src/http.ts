@@ -276,11 +276,15 @@ export function createHandler(deps: GlassHandlerDeps) {
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
-      res.writeHead(200, {
-        'Content-Type': file.type,
-        'Cache-Control': file.cache,
-        ...file.headers,
-      });
+      // The ETag is hashed at load. A reload that sends it back gets a 304 with no body; the rule and the
+      // file's own headers stay on it, and the security headers are already set on every response above.
+      const fileHeaders = { 'Cache-Control': file.cache, ETag: file.etag, ...file.headers };
+      if (req.headers['if-none-match'] === file.etag) {
+        res.writeHead(304, fileHeaders);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': file.type, ...fileHeaders });
       res.end(file.body);
       return;
     }

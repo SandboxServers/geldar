@@ -68,7 +68,18 @@ export function createTabs({ links, panes, win, doc, onChange }: TabDeps) {
       if (name !== view) go(name);
     });
   }
-  win.addEventListener('popstate', () => draw(true));
+  // Back and Forward change the view without a click: the keyboard user lands on the view's heading.
+  function focusHeading(): void {
+    const heading = panes[view].querySelector<HTMLElement>('h1');
+    if (heading === null) return;
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+
+  win.addEventListener('popstate', () => {
+    draw(true);
+    focusHeading();
+  });
 
   return {
     start: () => draw(false),
