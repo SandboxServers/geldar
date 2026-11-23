@@ -191,7 +191,7 @@ The `ship-pr` skill (`.claude/skills/ship-pr/SKILL.md`) is the procedure from wo
 2. Push the branch and open the pull request against `main`. Its body follows `.github/pull_request_template.md`: what changed and why, the test plan, docs and decisions, related work.
 3. Wait for CI with one blocking call, `gh pr checks <PR> --watch --fail-fast`; never poll in a loop. CI is green when `ci gate`, the one check `main` requires, passes.
 4. Get a review from someone (or an agent) who did not write the change.
-5. Merge only when `ci gate` is green, the review says ship and the owner asked for the merge. Never use `--admin` around a red check.
+5. Ask for a human approval in the developer Discord channel once CI is green and the review says ship, and wait for a rostered reviewer's reaction with `node tools/discord-bridge/wait-approval.mjs <message ID> --pr <PR>` (decision [0445](../decisions/0445-human-approval-in-discord-before-merge.md)). Merge only when `ci gate` is green, the review says ship, the PR has that approval for its current head and the owner asked for the merge. Never use `--admin` around a red check.
 6. Remove your worktree after the merge. Check `git -C <worktree> status --short` first: `git worktree remove --force` discards anything uncommitted.
 
 *Not run for this page:* nothing was pushed or merged.

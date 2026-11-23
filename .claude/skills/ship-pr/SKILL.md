@@ -1,6 +1,6 @@
 ---
 name: ship-pr
-description: 'Take a change in Geldar from a fresh worktree to a merged PR and a removed worktree. Use when starting a packet or fix that will become a PR, when committing, pushing or opening a PR, waiting on CI, getting a review, merging, or cleaning up after merge. Triggers include "open a PR", "ship it", "push this", "wait for CI", "merge #12", "is CI green".'
+description: 'Take a change in Geldar from a fresh worktree to a merged PR and a removed worktree. Use when starting a packet or fix that will become a PR, when committing, pushing or opening a PR, waiting on CI, getting a review, asking for or waiting on a human approval in Discord, merging, or cleaning up after merge. Triggers include "open a PR", "ship it", "push this", "wait for CI", "merge #12", "is CI green", "ask for review", "is it approved".'
 ---
 
 # Ship a PR
@@ -52,15 +52,37 @@ CI is green when `ci gate`, the one check `main` requires, passes. If the second
 
 For a campaign packet, its `packet-reviewer` loop is the review (campaign-packet skill § 4). Otherwise launch a fresh, read-only `packet-reviewer` that did not write the code, with the PR's `base..head` range and the spec sections it implements. Fix its findings with a new commit, push, and wait for CI again.
 
+### Human approval in Discord
+
+A PR into `main` also needs a human approval for its current head, unless the owner says this one does not ([decision 0445](../../../docs/decisions/0445-human-approval-in-discord-before-merge.md)). A campaign packet merging into its wave branch does not; the wave PR (§ 8) does. Read the [Discord workflow](../../../docs/agents/discord-workflow.md) first.
+
+1. Ask once `ci gate` is green on the current head and the review says `ship`. Post the review request with the bridge's `send_message`: tag the reviewer the owner named (ask once if they named none), and include the PR link and the full 40-character head SHA from `gh pr view <PR> --json headRefOid --jq .headRefOid`. The owner's request to ship the PR covers one review request for each head of that PR, so a new head after a fix needs no new permission. Every other post still needs their say-so.
+2. Wait for the approval the way § 4 waits for CI: block on one call (as a background task when the harness supports it), with the message ID `send_message` returned and the PR number. Never poll reactions by hand.
+
+   ```powershell
+   node tools/discord-bridge/wait-approval.mjs <message ID> --pr <PR>
+   ```
+
+   | Exit | Meaning | Next |
+   |---|---|---|
+   | 0 | A rostered reviewer approved the head in the output | Step 3, after checking that `head` is still your PR's head |
+   | 2 | Still waiting when the timeout passed (25 minutes by default) | Run the same call again |
+   | 3 | The PR head changed | Wait for CI (§ 4), then post a new request for the new head |
+   | 4 | The PR was closed or merged | Stop |
+   | 1 | The check could not run | Read the message; usually the token, the roster or `gh`. Without the bridge, the token or the roster, ask the owner to waive the approval or to ask for it themselves |
+
+   The default timeout fits inside a 30-minute background task. To be woken less often, raise both: `--timeout 110` inside a two-hour task. A session that was interrupted checks where things stand with `--once`.
+3. Record the approval on the PR, so GitHub shows what was approved and where: `gh pr comment <PR> --body "Approved in Discord for <head SHA>: <link to the review request>"`. Leave account names and IDs out; the repo is public.
+
 ## 6. Merge
 
-Merge only when `ci gate` is green, the review says `ship`, and the owner asked for the merge (or the campaign's dispatch authorizes merges):
+Merge only when `ci gate` is green, the review says `ship`, a PR into `main` has its human approval for the current head (§ 5), and the owner asked for the merge (or the campaign's dispatch authorizes merges):
 
 ```powershell
-gh pr merge <PR> --merge --delete-branch
+gh pr merge <PR> --merge --delete-branch --match-head-commit <head SHA>
 ```
 
-Never use `--admin` to merge around a red or missing check.
+`--match-head-commit` takes the head you checked CI, the review and the approval against, so a push that lands in between stops the merge. Never use `--admin` to merge around a red or missing check.
 
 ## 7. Remove the worktree after merge
 

@@ -3,9 +3,9 @@ title: Developer Discord workflow
 type: reference
 audience: contributors
 status: draft
-last_verified: 2026-11-22 against 70503cc6
+last_verified: 2026-11-23 against edfe1eab
 companions: [../../tools/discord-bridge/README.md]
-sources: [docs/decisions/0436-discord-for-developer-coordination.md, tools/discord-bridge/README.md, tools/discord-bridge/mcp.mjs, .claude/skills/ship-pr/SKILL.md]
+sources: [docs/decisions/0436-discord-for-developer-coordination.md, docs/decisions/0445-human-approval-in-discord-before-merge.md, tools/discord-bridge/README.md, tools/discord-bridge/mcp.mjs, tools/discord-bridge/approval.mjs, tools/discord-bridge/wait-approval.mjs, .claude/skills/ship-pr/SKILL.md]
 ---
 
 # Developer Discord workflow
@@ -22,7 +22,10 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
   search or confirm the recipient if the results are ambiguous. Name lookup
   identifies a recipient for tagging. Use the private roster below to verify
   who can approve a PR.
-- Post when the operator has authorized the message. Use `replyTo` to keep
+- Post when the operator has authorized the message. A request to ship a PR
+  authorizes one review request for each head of that PR and nothing else
+  ([decision 0445](../decisions/0445-human-approval-in-discord-before-merge.md),
+  [ship-pr](../../.claude/skills/ship-pr/SKILL.md) section 5). Use `replyTo` to keep
   context with the original message. To tag someone, include the individual
   mention in the text and their ID in `mentionUserIds`.
 - Keep tokens, passwords, private IPs, and personal data out of chat. Treat
@@ -51,11 +54,22 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
    and screenshots alone cannot establish the account. If the relevant
    IDs are missing, get them from the operator before treating the reaction
    as approval. Keep the account mapping outside the public repo.
-4. The current bridge exposes messages and member lookup. When asked to
-   verify a reaction, use Discord's read-only Get Message and Get Reactions
-   endpoints with the configured bot. The reaction's user list identifies
-   the account. If the identity or reviewed revision is unclear, ask the
-   operator to confirm.
+4. Check or wait for the approval with the bridge's read-only command. It
+   takes the ID of the bot's own review request, reads the PR link and head
+   from that message, and matches the reacting account and emoji against the
+   private roster below.
+
+   ```sh
+   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --pr PR          # wait
+   node tools/discord-bridge/wait-approval.mjs MESSAGE_ID --pr PR --once   # check now
+   ```
+
+   It stops when a rostered reviewer has approved, the PR head has changed,
+   the PR has closed, or its timeout has passed. The
+   [bridge guide](../../tools/discord-bridge/README.md#wait-for-a-pr-approval)
+   lists the exit codes. Run the wait as a background task after posting a
+   review request, as the ship-pr skill describes. If the identity or the
+   reviewed revision is still unclear, ask the operator to confirm.
 5. Before relying on approval, verify that the PR still has the reviewed
    head and GitHub's required checks still pass. A pushed change needs
    renewed approval. Follow the [ship-pr procedure](../../.claude/skills/ship-pr/SKILL.md)

@@ -45,9 +45,9 @@ Re-derive the list: `git ls-files .claude/skills`. Every skill has the frontmatt
 | `body-bench` | Run the scripted body benchmark against a running shard at 20, 10 and 5 TPS and record success rates and p50/p95 latency | "run the body benchmark", "bench the body", "what's the action success rate", after any change to `golem/` actions or reflexes | 65 |
 | `campaign-packet` | Run a multi-PR effort as a campaign of prescriptive work packets: ledger, packets, one `packet-coder` per packet, read-only review loops, `RESUME.md` | "resume Phase 0", "run the next wave", "split this into packets", "dispatch workers", writing or reviewing `work-packets.md`, `RESUME.md`, worknotes or a ledger | 127 |
 | `run-shard` | Bring a shard's Compose stack up, check every part is healthy, read logs, take it down | "start the shard", "bring the stack up", "is the shard healthy", "restart Paper", before any live test, benchmark or Adam run | 91 |
-| `ship-pr` | Take a change from a fresh worktree to a merged PR and a removed worktree | "open a PR", "ship it", "push this", "wait for CI", "merge #12", "is CI green" | 86 |
+| `ship-pr` | Take a change from a fresh worktree to a merged PR and a removed worktree | "open a PR", "ship it", "push this", "wait for CI", "merge #12", "is CI green", "ask for review", "is it approved" | 108 |
 
-Line counts: `(Get-Content <file>).Count`, 2026-11-16 at 1b114276.
+Line counts: `(Get-Content <file>).Count`, 2026-11-16 at 1b114276; `ship-pr` recounted on 2026-11-23 with its human-approval step (decision [0445](../decisions/0445-human-approval-in-discord-before-merge.md)).
 
 ### `body-bench`
 
@@ -111,10 +111,11 @@ File: `.claude/skills/ship-pr/SKILL.md`.
 | Before push | `./geldar.ps1 check` passes; revert-checked test; contract regenerated; exact pins; decision record; memory note | 24 to 29 |
 | Open | `git push -u origin <branch>`; `gh pr create --base main` with a body file following `.github/pull_request_template.md` | 34 to 38 |
 | CI | `gh pr checks <PR> --watch --fail-fast`, then `--required`; green means `ci gate` passed, the one check `main` requires | 45 to 49 |
-| Merge | `gh pr merge <PR> --merge --delete-branch` when `ci gate` is green, review says `ship` and the owner asked; never `--admin` | 57 to 63 |
-| Cleanup | `git worktree remove --force` after checking `status --short`; never `git worktree prune` | 68 to 73 |
-| Wave PR | Merge `origin/main` into the wave branch; never hand-merge `pnpm-lock.yaml` | 77 to 79 |
-| Windows notes | A bare `--` breaks `geldar.ps1` parameter binding; absolute worktree paths; scripted git must not wait on stdin | 83 to 86 |
+| Human approval | A PR into `main` needs a rostered reviewer's reaction on the bot's review request: post it once CI is green and the review says `ship`, wait with `node tools/discord-bridge/wait-approval.mjs <message ID> --pr <PR>`, record it with `gh pr comment` (decision [0445](../decisions/0445-human-approval-in-discord-before-merge.md)) | 55 to 75 |
+| Merge | `gh pr merge <PR> --merge --delete-branch --match-head-commit <head SHA>` when `ci gate` is green, review says `ship`, a PR into `main` has its human approval and the owner asked; never `--admin` | 79 to 85 |
+| Cleanup | `git worktree remove --force` after checking `status --short`; never `git worktree prune` | 90 to 95 |
+| Wave PR | Merge `origin/main` into the wave branch; never hand-merge `pnpm-lock.yaml` | 99 to 101 |
+| Windows notes | A bare `--` breaks `geldar.ps1` parameter binding; absolute worktree paths; scripted git must not wait on stdin | 105 to 108 |
 
 ## Agents
 
