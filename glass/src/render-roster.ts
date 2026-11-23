@@ -4,6 +4,8 @@ import { makeSigil } from './render-sigil.ts';
 import { action, type Doc, type El, make, renderNote } from './render-view.ts';
 
 const LATEST_LIMIT = 6;
+/** A press waits this long before the entries are fetched, so a run of presses fetches once (#919). */
+export const DEBOUNCE_MS = 200;
 /** How a death date is written: the day, the month as a short word, the year. */
 export const DEATH_DATE = { day: 'numeric', month: 'short', year: 'numeric' } as const;
 const dead = (agent: Row): boolean => agent.died_at != null;
@@ -11,7 +13,8 @@ const agentId = (agent: Row): string => String(agent.agent_id);
 const agentName = (agent: Row): string => String(agent.name ?? '');
 
 function lifeLine(agent: Row): string {
-  return `life ${agent.life_seq ?? '—'} · ${agent.mode ?? '—'} · born day ${agent.born_day ?? '—'}`;
+  const born = agent.born_day == null ? '' : ` · born day ${agent.born_day}`;
+  return `life ${agent.life_seq ?? '—'} · ${agent.mode ?? '—'}${born}`;
 }
 
 function lifeNote(doc: Doc, tag: string, agent: Row): El {
@@ -65,6 +68,16 @@ function latestEntry(doc: Doc, entry: ThoughtView, now: number): El {
   return row;
 }
 
+/** The message for a failed entries request. A 429 says when to try again; nothing retries by itself. */
+function failureText(err: unknown): string {
+  const failure = err as { httpStatus?: unknown; retryAfter?: unknown } | null;
+  if (failure?.httpStatus !== 429) return 'Could not load the latest entries.';
+  const seconds = Number(failure.retryAfter);
+  return Number.isFinite(seconds) && seconds > 0
+    ? `Too many requests. Try again in ${Math.ceil(seconds)} seconds.`
+    : 'Too many requests. Try again in a moment.';
+}
+
 interface RosterDeps {
   doc: Doc;
   count: El;
@@ -86,16 +99,55 @@ export function createRoster(deps: RosterDeps) {
   const say = (message: string): void => {
     status.textContent = message;
   };
+  // The entries of each agent already loaded on this page: a press on it again makes no request.
+  const cache = new Map<string, Row[]>();
   let selected: RosterRow | null = null;
   let failed = false;
   let turn = 0;
+  let pending: ReturnType<typeof setTimeout> | undefined;
+
+  function cancelPending(): void {
+    if (pending === undefined) return;
+    clearTimeout(pending);
+    pending = undefined;
+  }
 
   function clear(): void {
+    cancelPending();
     if (selected === null) return;
     turn += 1;
     selected.removeAttribute('aria-current');
     selected = null;
     profile.replaceChildren(renderNote(doc, 'Select an agent to see their latest entries.'));
+  }
+
+  function showEntries(thoughts: Row[]): void {
+    if (thoughts.length === 0) {
+      say('No entries yet.');
+      return;
+    }
+    const list = make(doc, 'ol', 'roster-entries', '');
+    const now = deps.now();
+    list.append(
+      ...thoughts.slice(0, LATEST_LIMIT).map((entry) => latestEntry(doc, toView(entry), now)),
+    );
+    say('');
+    results.replaceChildren(list);
+  }
+
+  async function load(id: string, mine: number): Promise<void> {
+    try {
+      const query = new URLSearchParams({ agent: id, limit: String(LATEST_LIMIT) });
+      const { thoughts } = await deps.loadLatest(`/api/thoughts?${query}`);
+      if (mine !== turn) return;
+      cache.set(id, thoughts);
+      showEntries(thoughts);
+    } catch (err) {
+      if (mine !== turn) return;
+      // Another press can retry this selection after a failed request.
+      failed = true;
+      say(failureText(err));
+    }
   }
 
   async function select(agent: Row, row: RosterRow): Promise<void> {
@@ -110,6 +162,7 @@ export function createRoster(deps: RosterDeps) {
     failed = false;
     row.setAttribute('aria-current', 'true');
     const mine = ++turn;
+    cancelPending();
     const heading = make(doc, 'div', 'roster-latest', '');
     heading.append(
       make(doc, 'h3', 'eyebrow', 'Latest entries'),
@@ -128,27 +181,15 @@ export function createRoster(deps: RosterDeps) {
     );
     profile.scrollTop = 0;
 
-    try {
-      const query = new URLSearchParams({ agent: id, limit: String(LATEST_LIMIT) });
-      const { thoughts } = await deps.loadLatest(`/api/thoughts?${query}`);
-      if (mine !== turn) return;
-      if (thoughts.length === 0) {
-        say('No entries yet.');
-        return;
-      }
-      const list = make(doc, 'ol', 'roster-entries', '');
-      const now = deps.now();
-      list.append(
-        ...thoughts.slice(0, LATEST_LIMIT).map((entry) => latestEntry(doc, toView(entry), now)),
-      );
-      say('');
-      results.replaceChildren(list);
-    } catch {
-      if (mine !== turn) return;
-      // Another press can retry this selection after a failed request.
-      failed = true;
-      say('Could not load the latest entries.');
+    const cached = cache.get(id);
+    if (cached !== undefined) {
+      showEntries(cached);
+      return;
     }
+    pending = setTimeout(() => {
+      pending = undefined;
+      void load(id, mine);
+    }, DEBOUNCE_MS);
   }
 
   return {
