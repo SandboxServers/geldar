@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   autoRetryDelay,
   FIRST_VISIT_MARGIN_MS,
+  FIRST_VISIT_MAX,
   firstVisitPlan,
   MAX_AUTO_RETRIES,
   openingPlan,
   pickRandom,
 } from '../../web/kino/panes/first-visit.ts';
-import { GATE_REFILL_MS } from '../../web/kino/panes/subscribe-gate.ts';
+import { GATE_BURST, GATE_REFILL_MS } from '../../web/kino/panes/subscribe-gate.ts';
 
 const IDS = ['ag_a', 'ag_b', 'ag_c', 'ag_d', 'ag_e', 'ag_f'];
 
@@ -39,13 +40,24 @@ describe('random pick', () => {
 });
 
 describe('first visit plan', () => {
-  it('opens four monitors: the first at once, then one per refill plus the margin', () => {
+  it('opens four monitors at once: the four fit inside the relay burst, so none waits', () => {
     const plan = firstVisitPlan(IDS, rngOf(0, 0, 0, 0), GATE_REFILL_MS);
     expect(plan).toHaveLength(4);
-    const step = GATE_REFILL_MS + FIRST_VISIT_MARGIN_MS;
-    expect(plan.map((m) => m.delayMs)).toEqual([0, step, 2 * step, 3 * step]);
+    expect(plan.map((m) => m.delayMs)).toEqual([0, 0, 0, 0]);
     expect(plan.every((m) => m.mode === 'follow')).toBe(true);
     expect(new Set(plan.map((m) => m.target)).size).toBe(4);
+  });
+
+  it('keeps every default plan inside the gate burst (the opening never waits for a refill)', () => {
+    expect(FIRST_VISIT_MAX).toBeLessThanOrEqual(GATE_BURST);
+    const plan = firstVisitPlan(IDS, rngOf(0.3, 0.6, 0.1, 0.9), GATE_REFILL_MS);
+    expect(plan.every((m) => m.delayMs === 0)).toBe(true);
+  });
+
+  it('a plan longer than the burst waits one refill plus the margin per monitor past it', () => {
+    const plan = firstVisitPlan(IDS, rngOf(0, 0, 0, 0), GATE_REFILL_MS, 2);
+    const step = GATE_REFILL_MS + FIRST_VISIT_MARGIN_MS;
+    expect(plan.map((m) => m.delayMs)).toEqual([0, 0, step, 2 * step]);
   });
 
   it('opens that many when there are fewer than four public cameras', () => {

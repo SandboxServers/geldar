@@ -1,14 +1,17 @@
 // What an anonymous first visit opens (decision 0166 A10 replaced): up to four distinct public cameras
-// picked at random, opened one per relay refill plus a margin so the viewer's subscribe bucket is never
-// exhausted. A bounded automatic retry covers a refused first subscribe (rate_limited, pane_cap_reached).
+// picked at random. The relay's subscribe bucket holds a burst of GATE_BURST (8) and refills one token
+// per 2 s (decision 0166, glass/src/kino/relay.ts SUBSCRIBE_BURST), and four opens fit inside that
+// burst, so they all go at once. Only a plan longer than the burst waits, one refill per extra monitor.
+// A bounded automatic retry covers a refused first subscribe (rate_limited, pane_cap_reached).
 // Pure: the random source is injected, so the picks are testable.
 
 import type { CameraMode } from '../camera/modes.ts';
 import { type SavedWall, type StartMonitor, startupPlan } from './saved.ts';
+import { GATE_BURST } from './subscribe-gate.ts';
 
-/** Monitors a first visit opens (the wall's cap). */
+/** Monitors a first visit opens (the wall's cap). Within GATE_BURST, so the opening never waits. */
 export const FIRST_VISIT_MAX = 4;
-/** Extra wait on top of one relay refill, so a stagger never lands on an empty bucket. */
+/** Extra wait on top of one relay refill, used only for monitors past the burst. */
 export const FIRST_VISIT_MARGIN_MS = 500;
 /** Automatic retries of a refused first subscribe before the monitor offers "Try again". */
 export const MAX_AUTO_RETRIES = 3;
@@ -29,19 +32,21 @@ export function pickRandom(ids: readonly string[], count: number, rng: Rng): str
 }
 
 /**
- * The first visit's monitors: the first at once, then one every `spacingMs` (the relay refill) plus the
- * margin. Fewer ids than FIRST_VISIT_MAX opens that many.
+ * The first visit's monitors. The first `burst` open at once (delay 0), since the relay's bucket allows
+ * that many subscribes in a row; each one after that waits one refill (`spacingMs`) plus the margin.
+ * Fewer ids than FIRST_VISIT_MAX opens that many. With the defaults every plan opens at once.
  */
 export function firstVisitPlan(
   ids: readonly string[],
   rng: Rng,
   spacingMs: number,
+  burst: number = GATE_BURST,
 ): StartMonitor[] {
   const mode: CameraMode = 'follow';
   return pickRandom(ids, FIRST_VISIT_MAX, rng).map((target, i) => ({
     target,
     mode,
-    delayMs: i * (spacingMs + FIRST_VISIT_MARGIN_MS),
+    delayMs: i < burst ? 0 : (i - burst + 1) * (spacingMs + FIRST_VISIT_MARGIN_MS),
   }));
 }
 
