@@ -11,6 +11,7 @@ import {
   getThought,
   listAgents,
   listReceipts,
+  listThoughtActions,
   type Row,
   type SqlClient,
   type ThoughtCursor,
@@ -178,14 +179,18 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '', await shown());
+    const visible = await shown();
+    const thoughtId = params.id ?? '';
+    const row = await getThought(deps.db, thoughtId, visible);
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     // Never send the prompt or the raw reply, even if a query returned them (R21).
     const { model_input: _prompt, raw_output: _raw, ...thought } = row;
-    sendJson(res, 200, { thought });
+    // Every action the thought led to, in order: the page asks for the receipts of each (A8).
+    const action_ids = await listThoughtActions(deps.db, thoughtId, visible);
+    sendJson(res, 200, { thought: { ...thought, action_ids } });
     return;
   }
   if (name === 'receipts') {

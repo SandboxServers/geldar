@@ -25,7 +25,7 @@ export function thought(i: number, name = 'Ada'): Record<string, unknown> {
     wake_reason: `w${i}`,
     prompt_template_version: 'v1',
     latency_ms: 10,
-    action_id: 'act-1',
+    action_ids: ['act-1'],
     parsed: { plan: `plan ${i}` },
   };
 }

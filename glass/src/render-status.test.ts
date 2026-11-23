@@ -23,10 +23,16 @@ describe('what the redesigned page reads from a row', () => {
     }
   });
 
-  it('keeps the action a thought names, as text only when it is text', () => {
-    expect(toView({ thought_id: 't', action_id: 'act-1' }).actionId).toBe('act-1');
-    expect(toView({ thought_id: 't' }).actionId).toBe('');
-    expect(toView({ thought_id: 't', action_id: { $ne: '' } }).actionId).toBe('');
+  it('keeps every action a thought names, in order, as text only when it is text', () => {
+    const many = ['ac-1', 'ac-2', 'ac-3'];
+    expect(toView({ thought_id: 't', action_ids: many }).actionIds).toEqual(many);
+    expect(toView({ thought_id: 't', action_ids: ['ac-1', 7, null, 'ac-2'] }).actionIds).toEqual([
+      'ac-1',
+      'ac-2',
+    ]);
+    expect(toView({ thought_id: 't' }).actionIds).toEqual([]);
+    expect(toView({ thought_id: 't', action_ids: { $ne: '' } }).actionIds).toEqual([]);
+    expect(toView({ thought_id: 't', action_ids: 'ac-1' }).actionIds).toEqual([]);
   });
 });
 

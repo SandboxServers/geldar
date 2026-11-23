@@ -180,17 +180,24 @@ function drawRow(view, keyword) {
   return renderRow(document, view, toggleDetail, entryOptions(view, keyword));
 }
 
-/** The facts of one thought and the receipts of its action, fresh from the API. */
+/** The facts of one thought and the receipts of each of its actions, fresh from the API. */
 async function loadFacts(view) {
   // A journal line has no thought record to fetch: its facts are the row already loaded.
   if (view.kind === 'journal') return { view, receipts: [] };
   const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(view.id)}`);
   const full = toView(thought);
-  // Without an action the page cannot ask for receipts, and says nothing about them (null).
+  // Without an action the page cannot ask for receipts, and says nothing about them (null). With many, it
+  // asks for each in the order the API gave and shows them together.
   const receipts =
-    full.actionId === ''
+    full.actionIds.length === 0
       ? null
-      : (await getJson(`/api/receipts?action_id=${encodeURIComponent(full.actionId)}`)).receipts;
+      : (
+          await Promise.all(
+            full.actionIds.map((id) =>
+              getJson(`/api/receipts?action_id=${encodeURIComponent(id)}`),
+            ),
+          )
+        ).flatMap((reply) => reply.receipts);
   return { view: full, receipts };
 }
 

@@ -88,11 +88,11 @@ route, or when the route is changed in the same step as the page.
 - **Sigils.** Each agent has a 5 by 5 pixel identicon made from a hash of its name
   (`glass/src/render-sigil.ts`). It is drawn on a canvas, so no image is loaded, and no part of the name
   reaches a style or an attribute.
-- **Receipts need an action id.** The detail asks for receipts only when the thought row names its
-  action (`action_id`). The API does not send one today, so on live data the receipts list does not
-  appear yet (decision 0410, item 8). Nothing is shown in its place: for a thought, the page never says
-  "no receipts" for an answer it does not have. A journal line is a note, not a decision, so it has no
-  action, and the page says so without asking.
+- **Receipts need an action id.** The thought detail sends `action_ids`, every action the thought led to
+  (joined thought -> intents -> actions, under the same visibility rules). The page asks for the receipts
+  of each one and shows them together. A thought with no action says nothing about receipts, and the page
+  never says "no receipts" for an answer it does not have (decision 0410, item 8 and its owner-ruling
+  addendum). A journal line is a note, not a decision, so it has no action, and the page says so without asking.
 
 ### The installable app
 
