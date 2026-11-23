@@ -22,7 +22,7 @@ import {
 import { resolveRoute } from './routes.ts';
 import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
-import { pageWithOptions, STATIC_FILES } from './static-files.ts';
+import { etagMatches, pageWithOptions, STATIC_FILES } from './static-files.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
 export const MAX_TARGET_CHARS = 2048;
@@ -282,7 +282,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       // The ETag is hashed at load. A reload that sends it back gets a 304 with no body; the rule and the
       // file's own headers stay on it, and the security headers are already set on every response above.
       const fileHeaders = { 'Cache-Control': file.cache, ETag: file.etag, ...file.headers };
-      if (req.headers['if-none-match'] === file.etag) {
+      if (etagMatches(req.headers['if-none-match'], file.etag)) {
         res.writeHead(304, fileHeaders);
         res.end();
         return;

@@ -32,6 +32,20 @@ export function etagOf(body: string | Buffer): string {
   return JSON.stringify(digest);
 }
 
+/**
+ * Whether an If-None-Match header matches the ETag (RFC 9110 13.1.2: GET and HEAD use the weak comparison). The
+ * header may be `*`, a comma list, or weak (`W/"tag"`, which a compressing CDN adds); the weak prefix is ignored.
+ */
+export function etagMatches(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const bare = (tag: string): string => tag.trim().replace(/^W\//, '');
+  const target = bare(etag);
+  return header.split(',').some((part) => {
+    const tag = part.trim();
+    return tag === '*' || bare(tag) === target;
+  });
+}
+
 /** The same entry with another body. The ETag follows the body, so a rewritten page is never tagged with the old one. */
 function withBody(file: StaticFile, body: string | Buffer): StaticFile {
   return { ...file, body, etag: etagOf(body) };
