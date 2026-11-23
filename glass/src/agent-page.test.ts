@@ -40,6 +40,12 @@ describe('the agents search and sort', () => {
     expect(pageAgents(rows, page('q=.*')).agents.map((r) => r.agent_id)).toEqual(['c']);
   });
 
+  it('matches the name shown and never the agent id, from the list to the reply', async () => {
+    const rows = await listAgents(db([row('ag_secret', 'Ada')]));
+    expect(pageAgents(rows, page('q=ada')).total).toBe(1);
+    expect(pageAgents(rows, page('q=ag_secret'))).toEqual({ agents: [], total: 0 });
+  });
+
   it('cuts a search to 64 characters', () => {
     const long = 'x'.repeat(100);
     expect(page(`q=${long}`).q).toBe('x'.repeat(64));
