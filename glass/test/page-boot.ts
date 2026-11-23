@@ -128,7 +128,12 @@ export async function boot(pages: Pages, options: BootOptions = {}): Promise<Win
       const failed = options.fail?.(url);
       if (failed !== undefined) {
         const { status, retryAfter } = failed;
-        return { ok: false, status, headers: { get: () => retryAfter ?? null }, json: async () => ({}) };
+        return {
+          ok: false,
+          status,
+          headers: { get: () => retryAfter ?? null },
+          json: async () => ({}),
+        };
       }
       const override = options.reply?.(url);
       if (override !== undefined) return { ok: true, status: 200, json: () => override };

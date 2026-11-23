@@ -47,7 +47,9 @@ describe('Roster search and sort', () => {
     }
     await wait(DEBOUNCE_MS + 100);
     await settle();
-    expect(page.fetchUrls.filter((url) => url.includes('q='))).toEqual(['/api/agents?sort=name&q=ada']);
+    expect(page.fetchUrls.filter((url) => url.includes('q='))).toEqual([
+      '/api/agents?sort=name&q=ada',
+    ]);
   });
 
   it('says when a rate-limited search clears, with the Retry-After wait (not the generic failure)', async () => {
