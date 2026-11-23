@@ -21,7 +21,7 @@ function setUp(address: string) {
   const tabs = createTabs({
     links,
     panes: panes as unknown as Record<'glass' | 'roster', HTMLElement>,
-    win: win as unknown as Pick<Window, 'location' | 'history' | 'addEventListener'>,
+    win: win as unknown as Pick<globalThis.Window, 'location' | 'history' | 'addEventListener'>,
     doc: doc as unknown as { title: string },
     onChange: (view) => changes.push(view),
   });
