@@ -3,7 +3,7 @@ title: Developer Discord workflow
 type: reference
 audience: contributors
 status: draft
-last_verified: 2026-11-23 against 38822f56
+last_verified: 2026-11-23 against 53099d3e
 companions: [../../tools/discord-bridge/README.md]
 sources: [docs/decisions/0436-discord-for-developer-coordination.md, docs/decisions/0445-human-approval-in-discord-before-merge.md, tools/discord-bridge/README.md, tools/discord-bridge/mcp.mjs, tools/discord-bridge/approval.mjs, tools/discord-bridge/wait-approval.mjs, .claude/skills/ship-pr/SKILL.md]
 ---
