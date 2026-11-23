@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderDetail, renderReaderHead } from '../src/render-detail.ts';
 import type { Row } from '../src/render-model.ts';
 import { display, toView } from '../src/render-model.ts';
+import { moreItem } from '../src/render-more.ts';
 import { type Doc, type El, renderChips, renderRow } from '../src/render-view.ts';
 import { auditTree, freshDoc } from './audit.ts';
 import { CORPUS } from './corpus.ts';
@@ -226,6 +227,24 @@ describe('adversarial fixtures through the detail, the reader head and the agent
       );
       (buttons[1] as unknown as { click(): void }).click();
       expect(picked).toEqual([0]);
+
+      // The More agents list (#902): the same name, drawn by the same path, audited the same way.
+      const moreDoc = freshDoc();
+      const moreRoot = moreDoc.createElement('ol');
+      moreDoc.body.append(moreRoot);
+      const moreAgent: Row = { agent_id: 'h', name: value, died_at: null } as Row;
+      const moreIds: string[] = [];
+      moreRoot.append(
+        moreItem(moreDoc as unknown as Doc, moreAgent, (id) =>
+          moreIds.push(id),
+        ) as unknown as Element,
+      );
+      auditTree(moreDoc.body);
+      expect(moreRoot.querySelector('.chip-name')?.textContent).toContain(
+        display(value).slice(0, 40),
+      );
+      (moreRoot.querySelector('button') as unknown as { click(): void }).click();
+      expect(moreIds).toEqual(['h']);
 
       expect((globalThis as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();
     },

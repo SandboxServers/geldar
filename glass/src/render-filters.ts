@@ -40,6 +40,8 @@ export interface Filters {
   setAgents(agents: Row[]): void;
   /** The agent with this id, when the agents list has it. */
   agent(id: string): Row | undefined;
+  /** Picks an agent as a chip press does (the same agent again turns the filter off). False when the list lacks it. */
+  pick(id: string): boolean;
   /** Restores the controls from the URL and reports whether any filter changed. */
   restore(): boolean;
   /** Every filter as the page has it now. */
@@ -102,6 +104,14 @@ export function createFilters(deps: FilterDeps): Filters {
    * Draws the agent filter. A press on the chip that is on turns the filter off. The row is drawn again on
    * every press, so the chip that was pressed is given the focus back: a keyboard reader stays on the row.
    */
+  /** Turns the agent filter to this agent, or off when it is the one on. A chip and the More list both come here. */
+  function choose(picked: string): void {
+    agentId = picked === agentId ? '' : picked;
+    drawChips();
+    save();
+    deps.onReload();
+  }
+
   function drawChips(): El {
     const chips = order.map((index) => {
       const agent = agents.get(agentIds[index] ?? '');
@@ -109,12 +119,8 @@ export function createFilters(deps: FilterDeps): Filters {
     });
     const on = order.findIndex((index) => agentIds[index] === agentId);
     const drawn = renderChips(deps.doc, deps.chips, chips, on, (position) => {
-      const picked = position < 0 ? '' : (agentIds[order[position] ?? -1] ?? '');
-      agentId = picked === agentId ? '' : picked;
-      drawChips();
+      choose(position < 0 ? '' : (agentIds[order[position] ?? -1] ?? ''));
       pressed(position);
-      save();
-      deps.onReload();
     });
     pressed = (position) => drawn.buttons[position + 1]?.focus?.();
     return drawn.on;
@@ -143,6 +149,11 @@ export function createFilters(deps: FilterDeps): Filters {
       order = [...positions.filter((index) => !dead(index)), ...positions.filter(dead)];
     },
     agent: (id: string) => agents.get(id),
+    pick(id: string): boolean {
+      if (!agentIds.includes(id)) return false;
+      choose(id);
+      return true;
+    },
     restore(): boolean {
       const before = bookmark();
       // URL values are validated before they reach form controls.
