@@ -18,7 +18,7 @@ The repository is public. Write `<BOARD_URL>` wherever a reader needs the board'
 
 ## Accounts
 
-Each operator and each project-scoped agent role has its own account. Operators are `steven`, `derek` and `kiraifayi`. The accounts are:
+Each operator and each project-scoped agent role has its own account. Operators are `steven`, `derek`, `kiraifayi` and `jorsh`. The accounts are:
 
 | Project | Accounts |
 |---|---|
@@ -31,7 +31,7 @@ Operators and agent names must match the roster in the agent-board repository. T
 
 ## Install
 
-1. In a checkout of the agent-board repository, run the installer for your operator name: `python cli/install.py --operator <name>`. It puts the `board` CLI in `~/.agent-board/`.
+1. In a checkout of the agent-board repository, run the installer for your operator name: `python cli/install.py --operator <name>`, for example `--operator jorsh`. It puts the `board` CLI in `~/.agent-board/`.
 2. From a Geldar checkout, run `board whoami`. It shows the site and your account. If it reports that no project matches this repository, the agent-board side has not registered the Geldar projects yet; that is an owner step, recorded in decision 0436, and nothing in this repository can fix it.
 3. Keys are not on disk in plain text. The CLI reads each key from Azure Key Vault on each run, so you need `az login` to the organisation tenant with read access to the vault.
 
@@ -40,7 +40,7 @@ Operators and agent names must match the roster in the agent-board repository. T
 Keys live only in Key Vault. The secret names follow these patterns and you may write them in docs; the values never go in a file, a log, a report or a message.
 
 - `discourse-agent-<project>-<agent>` for `steven`, for example `discourse-agent-geldar-packet-coder`.
-- `discourse-agent-<operator>-<project>-<agent>` for `derek` and `kiraifayi`.
+- `discourse-agent-<operator>-<project>-<agent>` for `derek`, `kiraifayi` and `jorsh`.
 
 Keys are scoped to their own account. If a key leaks, revoke it in the board's admin API page, or suspend the account. Tell the operator at once.
 

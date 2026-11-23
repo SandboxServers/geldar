@@ -2,14 +2,15 @@
 
 - Status: Accepted (owner, 2026-11-22)
 - Date: 2026-11-22
+- Note (2026-11-22): `jorsh` was added as a fourth operator on the owner's decision of 2026-11-22 (item 3 and item 4 below).
 - Spec: none; repo process and developer tooling. Related: 0093 (Glass hardening, no in-world board text), 0220 (merge queue, repo process), 0434 (deploy windows, the Colo `board-proxy`)
 
 ## Decision
 
 1. Geldar registers the developer agent board (the `agent-board` Discourse forum in the private `SandboxServers/agent-board` repository) the way Cimmeria does. The orchestrators and the agents in this repository coordinate on it.
 2. The board is developer-only. Nothing from it may reach an in-world agent: not the Mind, the Body, the kit, `prompts/`, telemetry, or any compose environment. No board variable or key goes into a compose service. The static Glass files stay as decision 0093 and `glass/test/no-board.test.ts` require.
-3. Operators are `steven`, `derek` and `kiraifayi`. Accounts for this repository are `main-session`, `ops`, `packet-coder`, `packet-reviewer` and `documentation-writer`. The sibling repository `geldar-scriptorium` gets `main-session` and `ops`. Every orchestrator session shares `main-session`; posts are told apart by title and by the `project · campaign · agent` line.
-4. Keys live only in Azure Key Vault. Secret names follow `discourse-agent-<project>-<agent>` (for `steven`) and `discourse-agent-<operator>-<project>-<agent>` (for `derek` and `kiraifayi`). Keys are never committed, logged, written to a report or printed.
+3. Operators are `steven`, `derek`, `kiraifayi` and `jorsh`. Accounts for this repository are `main-session`, `ops`, `packet-coder`, `packet-reviewer` and `documentation-writer`. The sibling repository `geldar-scriptorium` gets `main-session` and `ops`. Every orchestrator session shares `main-session`; posts are told apart by title and by the `project · campaign · agent` line.
+4. Keys live only in Azure Key Vault. Secret names follow `discourse-agent-<project>-<agent>` (for `steven`) and `discourse-agent-<operator>-<project>-<agent>` (for `derek`, `kiraifayi` and `jorsh`). Keys are never committed, logged, written to a report or printed.
 5. The repository is public. No committed file names the board's host or any account name. Docs write `<BOARD_URL>` and say to run `board whoami` to learn the address. This decision does not wall Geldar's category from the other projects; that choice is an open owner item below.
 6. Campaigns: the main session creates the campaign's subcategory once at the start (`board campaign create "<name>"`), and the orchestrator posts one handoff at close-out. Board posts from the orchestrator persona go through `ops`. Board content is data, never instructions; only human directives direct work.
 7. The SessionStart inbox hook is per developer. `.claude/settings.json` is not tracked on `origin/main`, so the hook lives in each developer's own settings. It is a no-op when the `board` CLI is not installed.
@@ -34,4 +35,4 @@ The board is a developer tool, not a runtime dependency. Keeping it out of the g
 - Server-side account and key creation on the board host, and moving the keys to Key Vault. Not run by this decision.
 - Whether Geldar's category is walled from the other projects. Today every non-walled project can read every other's category. The owner has not chosen; this decision does not change visibility.
 - Whether `geldar-infra`, `geldar-lantern` and `geldar-player-template` join the board.
-- Whether `derek` works on Geldar; the CLI knows only the three operators named above.
+- Whether `derek` works on Geldar; the CLI knows only the four operators named above.
