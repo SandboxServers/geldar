@@ -84,6 +84,11 @@ interface RosterDeps {
   alive: El;
   dead: El;
   profile: El & { scrollTop: number };
+  /** The search box and the sort select of the roster. */
+  search: EventTarget & { value: string };
+  sort: EventTarget & { value: string };
+  /** Asks the agents API for one page: the reply is the agents shown and the total that match. */
+  fetchAgents(path: string): Promise<{ agents: Row[]; total: number }>;
   isWide(): boolean;
   openInGlass(id: string): void;
   loadLatest(path: string): Promise<{ thoughts: Row[] }>;
@@ -192,17 +197,47 @@ export function createRoster(deps: RosterDeps) {
     }, DEBOUNCE_MS);
   }
 
+  /** Draws the living and the dead lists; returns how many of each. */
+  function draw(agents: Row[]): { living: number; deceased: number } {
+    const living: El[] = [];
+    const deceased: El[] = [];
+    for (const agent of agents) {
+      const row = agentRow(doc, agent, () => void select(agent, row));
+      (dead(agent) ? deceased : living).push(row);
+    }
+    deps.alive.replaceChildren(...living);
+    deps.dead.replaceChildren(...deceased);
+    return { living: living.length, deceased: deceased.length };
+  }
+
+  // A search or a sort asks the API for the matching page. A reply to an older question is dropped.
+  let asked = 0;
+  async function search(): Promise<void> {
+    const mine = ++asked;
+    const q = deps.search.value.trim();
+    const params = new URLSearchParams({ sort: deps.sort.value });
+    if (q !== '') params.set('q', q);
+    try {
+      const reply = await deps.fetchAgents(`/api/agents?${params}`);
+      if (mine !== asked) return;
+      const { living, deceased } = draw(reply.agents);
+      deps.count.textContent =
+        reply.total === 0
+          ? 'No agent matches.'
+          : `${reply.total} matching: ${living} alive and ${deceased} dead on this page.`;
+      clear();
+    } catch {
+      if (mine !== asked) return;
+      deps.count.textContent = 'Could not search the agents.';
+    }
+  }
+  deps.search.addEventListener('input', () => void search());
+  deps.sort.addEventListener('change', () => void search());
+
   return {
     setAgents(agents: Row[]): void {
-      const living: El[] = [];
-      const deceased: El[] = [];
-      for (const agent of agents) {
-        const row = agentRow(doc, agent, () => void select(agent, row));
-        (dead(agent) ? deceased : living).push(row);
-      }
-      deps.count.textContent = `${living.length} alive, ${deceased.length} dead. One body per agent; a death ends the life.`;
-      deps.alive.replaceChildren(...living);
-      deps.dead.replaceChildren(...deceased);
+      const { living, deceased } = draw(agents);
+      deps.count.textContent = `${living} alive, ${deceased} dead. One body per agent; a death ends the life.`;
       clear();
     },
     clear,

@@ -127,7 +127,7 @@ export async function boot(pages: Pages, options: BootOptions = {}): Promise<Win
       if (override !== undefined) return { ok: true, status: 200, json: () => override };
       const one = /^\/api\/thoughts\/([^?]+)/.exec(url);
       const body = url.startsWith('/api/agents')
-        ? { agents: pages.agents }
+        ? { agents: pages.agents, total: pages.agents.length }
         : one !== null
           ? { thought: pages.first.find((t) => t.thought_id === decodeURIComponent(one[1] ?? '')) }
           : url.startsWith('/api/receipts')

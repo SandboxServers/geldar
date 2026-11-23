@@ -59,16 +59,32 @@ export interface ThoughtFilter {
 export async function listAgents(
   db: SqlClient,
   shown: Visibility = DEFAULT_VISIBILITY,
+  options: { activity?: boolean } = {},
 ): Promise<Row[]> {
-  const result = await db.query(
-    `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
-            a.death_cause
-       FROM agents a
-      WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
-             OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
-      ORDER BY a.agent_id LIMIT 500`,
-    [shown.showLivingSovereign, owned(shown)],
-  );
+  const visible = shown.showLivingSovereign;
+  const result = options.activity
+    ? // The newest thought the viewer may see (the delay applies), for the sort by latest activity.
+      await db.query(
+        `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
+                a.death_cause,
+                (SELECT max(t.at) FROM thoughts t WHERE t.life_id = a.agent_id
+                  AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR t.life_id = ANY($2::text[])))
+                  AS last_active
+           FROM agents a
+          WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                 OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+          ORDER BY a.agent_id LIMIT 500`,
+        [visible, owned(shown), shown.shownUntil],
+      )
+    : await db.query(
+        `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
+                a.death_cause
+           FROM agents a
+          WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+                 OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
+          ORDER BY a.agent_id LIMIT 500`,
+        [visible, owned(shown)],
+      );
   return result.rows.map((r) => withAlias(r, 'agent_id'));
 }
 
