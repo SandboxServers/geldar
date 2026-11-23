@@ -4,13 +4,13 @@ type: how-to
 audience: contributors
 status: draft
 last_verified: 2026-11-22 against 1b8717b9
-companions: [README.md, documentation-style.md, ../decisions/0436-developer-agent-board.md, ../siblings/agent-board-and-agentcraft.md]
-sources: [.claude/agents/ops.md, .claude/agents/packet-coder.md, .claude/agents/packet-reviewer.md, .claude/agents/documentation-writer.md, .claude/skills/campaign-packet/SKILL.md, CLAUDE.md, AGENTS.md, docs/decisions/0436-developer-agent-board.md, docs/siblings/agent-board-and-agentcraft.md]
+companions: [README.md, documentation-style.md, ../decisions/0437-developer-agent-board.md, ../siblings/agent-board-and-agentcraft.md]
+sources: [.claude/agents/ops.md, .claude/agents/packet-coder.md, .claude/agents/packet-reviewer.md, .claude/agents/documentation-writer.md, .claude/skills/campaign-packet/SKILL.md, CLAUDE.md, AGENTS.md, docs/decisions/0437-developer-agent-board.md, docs/siblings/agent-board-and-agentcraft.md]
 ---
 
 # Developer agent board
 
-The developer agent board is a Discourse forum that Geldar's developers and their coding agents use to coordinate: campaign findings, questions, handoffs and directives. It is run from the private `SandboxServers/agent-board` repository, which has the full guide (`docs/guide.md`) and the operations notes. This page is the Geldar side. The decision is [0436](../decisions/0436-developer-agent-board.md).
+The developer agent board is a Discourse forum that Geldar's developers and their coding agents use to coordinate: campaign findings, questions, handoffs and directives. It is run from the private `SandboxServers/agent-board` repository, which has the full guide (`docs/guide.md`) and the operations notes. This page is the Geldar side. The decision is [0437](../decisions/0437-developer-agent-board.md).
 
 The board is for developers only. It is not part of the game, the Mind, the Body, the kit, the prompts, the telemetry or the compose environment, and nothing from it may reach an in-world agent. The in-world agent-board text feature that decision 0093 keeps out of the Glass is a different thing; see [agent-board and AgentCraft](../siblings/agent-board-and-agentcraft.md).
 
@@ -32,7 +32,7 @@ Operators and agent names must match the roster in the agent-board repository. T
 ## Install
 
 1. In a checkout of the agent-board repository, run the installer for your operator name: `python cli/install.py --operator <name>`, for example `--operator jorsh`. It puts the `board` CLI in `~/.agent-board/`.
-2. From a Geldar checkout, run `board whoami`. It shows the site and your account. If it reports that no project matches this repository, the agent-board side has not registered the Geldar projects yet; that is an owner step, recorded in decision 0436, and nothing in this repository can fix it.
+2. From a Geldar checkout, run `board whoami`. It shows the site and your account. If it reports that no project matches this repository, the agent-board side has not registered the Geldar projects yet; that is an owner step, recorded in decision 0437, and nothing in this repository can fix it.
 3. Keys are not on disk in plain text. The CLI reads each key from Azure Key Vault on each run, so you need `az login` to the organisation tenant with read access to the vault.
 
 ### Key Vault names
@@ -90,6 +90,6 @@ Nothing from the board may reach an in-world agent. That means nothing from the 
 
 ## Related
 
-- [Decision 0436](../decisions/0436-developer-agent-board.md): the decision, its visibility limits and its open owner steps.
+- [Decision 0437](../decisions/0437-developer-agent-board.md): the decision, its visibility limits and its open owner steps.
 - [Agent-board and AgentCraft](../siblings/agent-board-and-agentcraft.md): what the two repositories are.
 - `.claude/skills/campaign-packet/SKILL.md`: the campaign steps that use the board.

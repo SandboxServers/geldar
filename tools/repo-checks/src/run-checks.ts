@@ -251,7 +251,7 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
     }
   }
 
-  /** The developer board (decision 0436): no tracked or untracked text names its host or carries a key. */
+  /** The developer board (decision 0437): no tracked or untracked text names its host or carries a key. */
   for (const file of all) {
     if (file.text.includes('\0')) continue; // a binary file has no text to scan
     for (const finding of findBoardLeaks(file.path, file.text)) {
