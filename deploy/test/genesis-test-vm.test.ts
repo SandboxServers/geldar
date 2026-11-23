@@ -8,12 +8,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { PWSH_PROBE, pwshCommand, toolAvailable } from './tool-probe';
 
 vi.setConfig({ testTimeout: 60_000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const SCRIPT = join(DEPLOY, 'genesis', 'New-TestVm.ps1');
 const TEMPLATES = join(DEPLOY, 'genesis', 'vm');
-const PWSH = process.env.GELDAR_TEST_PWSH ?? 'pwsh';
+const PWSH = pwshCommand();
 const MARKER = 'AAAAC3NzaC1lZDI1NTE5AAAAIMARKERONLY';
 const KEY_LINE = `ssh-ed25519 ${MARKER} operator@test`;
 const IMAGE_SHA = createHash('sha512').update('fake-image-bytes').digest('hex');
@@ -102,111 +103,114 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('New-TestVm.ps1 dry run and refusals (stubbed Hyper-V)', () => {
-  it('dry run prints every action, calls no mutating cmdlet and never prints the key', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir));
-    expect(r.status).toBe(0);
-    expect(r.calls).toEqual([]);
-    expect(r.text).toContain('[dry-run] create VM Geldar-Test');
-    expect(r.text).toContain('[dry-run] start Geldar-Test');
-    expect(r.text).toContain('nothing was changed');
-    expect(r.text).not.toContain(MARKER);
-  });
+describe.skipIf(!toolAvailable(PWSH_PROBE))(
+  'New-TestVm.ps1 dry run and refusals (stubbed Hyper-V)',
+  () => {
+    it('dry run prints every action, calls no mutating cmdlet and never prints the key', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir));
+      expect(r.status).toBe(0);
+      expect(r.calls).toEqual([]);
+      expect(r.text).toContain('[dry-run] create VM Geldar-Test');
+      expect(r.text).toContain('[dry-run] start Geldar-Test');
+      expect(r.text).toContain('nothing was changed');
+      expect(r.text).not.toContain(MARKER);
+    });
 
-  it('refuses an existing VM name without -Reuse and changes nothing', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir), { GTVM_EXISTS: '1' });
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('already exists');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses an existing VM name without -Reuse and changes nothing', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir), { GTVM_EXISTS: '1' });
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('already exists');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('with -Reuse an existing VM is kept: exit 0, no change, no removal', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir, { Reuse: true }), { GTVM_EXISTS: '1' });
-    expect(r.status).toBe(0);
-    expect(r.text).toContain('no change');
-    expect(r.calls).toEqual([]);
-  });
+    it('with -Reuse an existing VM is kept: exit 0, no change, no removal', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir, { Reuse: true }), { GTVM_EXISTS: '1' });
+      expect(r.status).toBe(0);
+      expect(r.text).toContain('no change');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('refuses a missing switch, in dry run and with -Apply, before any change', () => {
-    const dir = fixture();
-    const dry = run(dir, baseArgs(dir), { GTVM_SWITCH: '0' });
-    expect(dry.status).not.toBe(0);
-    expect(dry.text).toContain("switch 'Internet' does not exist");
-    expect(dry.calls).toEqual([]);
-    const applied = run(dir, baseArgs(dir, { Apply: true }), { GTVM_SWITCH: '0' });
-    expect(applied.status).not.toBe(0);
-    expect(applied.calls).toEqual([]);
-  });
+    it('refuses a missing switch, in dry run and with -Apply, before any change', () => {
+      const dir = fixture();
+      const dry = run(dir, baseArgs(dir), { GTVM_SWITCH: '0' });
+      expect(dry.status).not.toBe(0);
+      expect(dry.text).toContain("switch 'Internet' does not exist");
+      expect(dry.calls).toEqual([]);
+      const applied = run(dir, baseArgs(dir, { Apply: true }), { GTVM_SWITCH: '0' });
+      expect(applied.status).not.toBe(0);
+      expect(applied.calls).toEqual([]);
+    });
 
-  it('refuses when free memory is below the request plus 4 GB', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir), { GTVM_FREE_KB: FREE_27GB_KB });
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('below the requested 24 GB plus 4 GB');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses when free memory is below the request plus 4 GB', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir), { GTVM_FREE_KB: FREE_27GB_KB });
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('below the requested 24 GB plus 4 GB');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('refuses an image whose sha512 does not match, before any use', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir, { ImageSha512: 'a'.repeat(128), Apply: true }));
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('does not match -ImageSha512');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses an image whose sha512 does not match, before any use', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir, { ImageSha512: 'a'.repeat(128), Apply: true }));
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('does not match -ImageSha512');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('refuses a sha512 that is not 128 hex characters', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir, { ImageSha512: 'abc' }));
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('128 hex characters');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses a sha512 that is not 128 hex characters', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir, { ImageSha512: 'abc' }));
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('128 hex characters');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('accepts an image whose sha512 matches', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir));
-    expect(r.status).toBe(0);
-    expect(r.text).toContain('matches -ImageSha512');
-  });
+    it('accepts an image whose sha512 matches', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir));
+      expect(r.status).toBe(0);
+      expect(r.text).toContain('matches -ImageSha512');
+    });
 
-  it('refuses to overwrite an existing OS disk file', () => {
-    const dir = fixture();
-    writeFileSync(join(dir, 'Geldar-Test-os.vhdx'), 'existing');
-    const r = run(dir, baseArgs(dir, { Apply: true }));
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('already exists; refusing to overwrite');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses to overwrite an existing OS disk file', () => {
+      const dir = fixture();
+      writeFileSync(join(dir, 'Geldar-Test-os.vhdx'), 'existing');
+      const r = run(dir, baseArgs(dir, { Apply: true }));
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('already exists; refusing to overwrite');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('refuses a private key file and never echoes its text', () => {
-    const dir = fixture();
-    // Built at run time so no committed file holds the contiguous private-key marker.
-    const privateKeyText = ['-----BEGIN', 'OPENSSH', 'PRIVATE', 'KEY-----\n'].join(' ');
-    writeFileSync(join(dir, 'deploy.pub'), privateKeyText);
-    const r = run(dir, baseArgs(dir));
-    expect(r.status).not.toBe(0);
-    expect(r.text).toContain('exactly one OpenSSH public key line');
-    expect(r.text).not.toContain('PRIVATE KEY-----\n');
-    expect(r.calls).toEqual([]);
-  });
+    it('refuses a private key file and never echoes its text', () => {
+      const dir = fixture();
+      // Built at run time so no committed file holds the contiguous private-key marker.
+      const privateKeyText = ['-----BEGIN', 'OPENSSH', 'PRIVATE', 'KEY-----\n'].join(' ');
+      writeFileSync(join(dir, 'deploy.pub'), privateKeyText);
+      const r = run(dir, baseArgs(dir));
+      expect(r.status).not.toBe(0);
+      expect(r.text).toContain('exactly one OpenSSH public key line');
+      expect(r.text).not.toContain('PRIVATE KEY-----\n');
+      expect(r.calls).toEqual([]);
+    });
 
-  it('with -Apply runs the Hyper-V steps in order, never removes a VM and never prints the key', () => {
-    const dir = fixture();
-    const r = run(dir, baseArgs(dir, { Apply: true }));
-    expect(r.status).toBe(0);
-    const at = (name: string) => r.calls.indexOf(name);
-    for (const name of ['qemu-img', 'New-VM', 'Set-VMFirmware', 'Start-VM'])
-      expect(at(name)).toBeGreaterThanOrEqual(0);
-    expect(at('qemu-img')).toBeLessThan(at('New-VM'));
-    expect(at('New-VM')).toBeLessThan(at('Set-VMFirmware'));
-    expect(at('Set-VMFirmware')).toBeLessThan(at('Start-VM'));
-    expect(r.calls).not.toContain('Remove-VM');
-    expect(r.text).not.toContain(MARKER);
-  });
-});
+    it('with -Apply runs the Hyper-V steps in order, never removes a VM and never prints the key', () => {
+      const dir = fixture();
+      const r = run(dir, baseArgs(dir, { Apply: true }));
+      expect(r.status).toBe(0);
+      const at = (name: string) => r.calls.indexOf(name);
+      for (const name of ['qemu-img', 'New-VM', 'Set-VMFirmware', 'Start-VM'])
+        expect(at(name)).toBeGreaterThanOrEqual(0);
+      expect(at('qemu-img')).toBeLessThan(at('New-VM'));
+      expect(at('New-VM')).toBeLessThan(at('Set-VMFirmware'));
+      expect(at('Set-VMFirmware')).toBeLessThan(at('Start-VM'));
+      expect(r.calls).not.toContain('Remove-VM');
+      expect(r.text).not.toContain(MARKER);
+    });
+  },
+);
 
 describe('cloud-init templates', () => {
   const names = ['user-data', 'meta-data', 'network-config'];

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DOCKER_COMPOSE_PROBE, toolAvailable } from '../../../deploy/test/tool-probe.js';
 
 // The explicit NF_TELEMETRY=off overlay, rendered by the docker compose CLI (it reads the files and starts nothing).
 // The overlay sets GELDAR_NF_TELEMETRY=off on neoforge only; the base file has no such key.
@@ -39,7 +40,9 @@ function envOf(svc: Service | undefined): Record<string, string> {
   );
 }
 
-describe('the NF_TELEMETRY=off overlay under docker compose config', () => {
+const DOCKER = toolAvailable(DOCKER_COMPOSE_PROBE);
+
+describe.skipIf(!DOCKER)('the NF_TELEMETRY=off overlay under docker compose config', () => {
   it(
     'sets GELDAR_NF_TELEMETRY=off on neoforge and on no other service',
     () => {

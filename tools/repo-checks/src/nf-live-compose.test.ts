@@ -10,15 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DOCKER_COMPOSE_PROBE, toolAvailable } from '../../../deploy/test/tool-probe.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const NF_PATH = 'compose/nf-live.yml';
 const NF_TEXT = readFileSync(`${ROOT}${NF_PATH}`, 'utf8');
-const DOCKER = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' }).status === 0;
-
-/** Skips the render tests when docker compose is missing; in CI a missing docker fails the run instead. */
-if (!DOCKER && process.env.CI)
-  throw new Error('docker compose is not on PATH and CI is set: the nf-live render tests must run');
+/** The render tests skip, with a message naming docker compose, when it is missing; in CI a missing docker fails the run. */
+const DOCKER = toolAvailable(DOCKER_COMPOSE_PROBE);
 
 const DUMMY_MARKER = 'DUMMY-NF-SECRET-MARKER-7f3a9c';
 const DUMMY_SHA256 = 'a'.repeat(64);
@@ -127,7 +125,7 @@ function addPorts(taken: Set<number>, text: string): void {
 
 const services = () => Object.entries(rendered.services);
 
-describe('nf-live compose: project and services', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: project and services', () => {
   it('renders with dummy secret files and a dummy mod jar', () => {
     expect(rendered.name).toBe('geldar-nf');
   });
@@ -171,7 +169,7 @@ describe('nf-live compose: project and services', () => {
   });
 });
 
-describe('nf-live compose: ports', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: ports', () => {
   it('publishes only on 127.0.0.1, never on another address', () => {
     for (const [name, svc] of services()) {
       for (const port of svc.ports ?? []) {
@@ -202,7 +200,7 @@ describe('nf-live compose: ports', () => {
   });
 });
 
-describe('nf-live compose: isolation', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: isolation', () => {
   it('declares no external network or volume', () => {
     expect(NF_TEXT).not.toMatch(/^\s*external\s*:/m);
     for (const net of Object.values(rendered.networks ?? {})) expect(net.external).toBeFalsy();
@@ -226,7 +224,7 @@ describe('nf-live compose: isolation', () => {
   });
 });
 
-describe('nf-live compose: secrets', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: secrets', () => {
   it('holds no secret value: the dummy secret text is not in the render', () => {
     expect(renderedText).not.toContain(DUMMY_MARKER);
     expect(NF_TEXT).not.toMatch(/(PASSWORD|SECRET|TOKEN)[A-Z_]*:[ \t]*["']?[A-Za-z0-9]/i);
@@ -241,7 +239,7 @@ describe('nf-live compose: secrets', () => {
 const VELOCITY_PATH = 'compose/velocity/velocity-nf.toml';
 const velocityText = (): string => readFileSync(`${ROOT}${VELOCITY_PATH}`, 'utf8');
 
-describe('nf-live compose: service uid and gid', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: service uid and gid', () => {
   // The services run as NF_SERVICE_UID:NF_SERVICE_GID, and the gid defaults to the uid. Rendered only; no container starts.
   const withIds = (env: Record<string, string>) => {
     const dirs = {
@@ -291,7 +289,7 @@ const servicesMounting = (secret: string): string[] =>
     .map(([name]) => name)
     .sort();
 
-describe('nf-live compose: secret mounts', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: secret mounts', () => {
   it('mounts velocity-forwarding into exactly velocity and neoforge (both sides of the shared secret)', () => {
     expect(servicesMounting('velocity-forwarding')).toEqual(['neoforge', 'velocity']);
   });
@@ -305,7 +303,7 @@ describe('nf-live compose: secret mounts', () => {
   });
 });
 
-describe('nf-live compose: RCON', () => {
+describe.skipIf(!DOCKER)('nf-livecompose: RCON', () => {
   it('enables RCON on neoforge from the rcon secret file, and publishes no port', () => {
     const neo = services().find(([name]) => name === 'neoforge')?.[1] as
       | { environment?: Record<string, string>; ports?: unknown[] }
@@ -336,7 +334,7 @@ function tomlValue(text: string, key: string): string | undefined {
   return m?.[1]?.replace(/^"(.*)"$/, '$1');
 }
 
-describe('nf-live velocity config: bot ingress', () => {
+describe.skipIf(!DOCKER)('nf-livevelocity config: bot ingress', () => {
   it('exists at the path the velocity service mounts', () => {
     expect(velocityText().length).toBeGreaterThan(0);
   });
