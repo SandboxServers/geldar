@@ -14,7 +14,9 @@ export function findBoardLeaks(path: string, text: string): string[] {
     if (BOARD_HOST.test(line)) {
       findings.push(`${path}:${index + 1}: names the developer board host (docs/agents/board.md)`);
     } else if (BOARD_KEY_HEADER.test(line) || BOARD_KEY_ASSIGNMENT.test(line)) {
-      findings.push(`${path}:${index + 1}: looks like a board API key (keys live only in Key Vault)`);
+      findings.push(
+        `${path}:${index + 1}: looks like a board API key (keys live only in Key Vault)`,
+      );
     }
   }
   return findings;

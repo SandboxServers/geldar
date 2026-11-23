@@ -23,8 +23,7 @@ describe('findBoardLeaks', () => {
   });
 
   it('flags an Api-Key header with 20 or more hex characters', () => {
-    expect(findBoardLeaks('a.txt', ['Api-Key:', HEX24].join(' ')))
-      .toHaveLength(1);
+    expect(findBoardLeaks('a.txt', ['Api-Key:', HEX24].join(' '))).toHaveLength(1);
   });
 
   it('does not flag an Api-Key header with fewer than 20 hex characters', () => {
@@ -67,7 +66,11 @@ describe('runRepoChecks wiring of the board check', () => {
   it('fails the gate and names the file when a board host is in the tree', () => {
     const result = runRepoChecks(portWith(`see ${HOST}`), new Date('2026-11-23'));
     expect(result.failed).toBe(true);
-    expect(result.lines.some((line) => line.startsWith('error: docs/x.md:1: names the developer board host'))).toBe(true);
+    expect(
+      result.lines.some((line) =>
+        line.startsWith('error: docs/x.md:1: names the developer board host'),
+      ),
+    ).toBe(true);
   });
 
   it('reports no board finding for a clean file', () => {
