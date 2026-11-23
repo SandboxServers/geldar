@@ -3,6 +3,7 @@
  * a `RepoPort` and the clock is a parameter, so tests run it in-process. `cli.ts`
  * wires the real git-backed port. Output order and wording are the CLI's contract.
  */
+import { findBoardLeaks } from './board-literals.ts';
 import { findControlChar, type IndexEntry } from './control-chars.ts';
 import { checkDecisionIndex } from './decision-index.ts';
 import { checkDecisionRows } from './decision-rows.ts';
@@ -245,6 +246,15 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
   for (const file of all) {
     if (file.text.includes('\0')) continue; // a binary file has no IPv4 text to scan
     for (const finding of findIpLiterals(file.path, file.text, ipAllowed)) {
+      log(`error: ${finding}`);
+      failed = true;
+    }
+  }
+
+  /** The developer board (decision 0436): no tracked or untracked text names its host or carries a key. */
+  for (const file of all) {
+    if (file.text.includes('\0')) continue; // a binary file has no text to scan
+    for (const finding of findBoardLeaks(file.path, file.text)) {
       log(`error: ${finding}`);
       failed = true;
     }

@@ -267,3 +267,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0433](0433-who-rules-on-what-and-test-shard-waivers.md) | Who rules on what, and test-shard waivers | Proposed |
 | [0434](0434-deploy-windows.md) | Deploy windows | Proposed |
 | [0435](0435-kit-version-plan-after-0-1-0.md) | Kit version plan after 0.1.0 | Proposed |
+| [0436](0436-developer-agent-board.md) | Developer agent board | Accepted |
