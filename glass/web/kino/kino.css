@@ -312,6 +312,14 @@ kbd { font: inherit; padding: 1px 3px; border: 1px solid var(--rule); border-rad
   #open-guide, .guide-close { display: none; }
   #guide-inline { padding: 8px 24px 24px; }
 }
+/* Wide desktops: the wall takes the room and the channel pane stops at 420 px. */
+@media (min-width: 1100px) {
+  .kino { grid-template-columns: minmax(0, 1fr) minmax(0, 420px); }
+}
+/* Narrow phones: the camera mode and chase distance buttons give up padding so "Medium" fits at 360 px. */
+@media (max-width: 399px) {
+  .camera-segments button { padding: 0 4px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
