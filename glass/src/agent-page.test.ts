@@ -95,9 +95,14 @@ describe('the agents search and sort', () => {
     const delayed = { shownUntil: '2026-01-01T00:00:00Z', showLivingSovereign: false };
     await listThoughts(recording(), { limit: 10 }, delayed);
     await listAgents(recording(), delayed, { activity: true });
-    const [thoughtSql, activitySql] = texts.map((text) => text.replace(/\s+/g, ' ').replace(/\$\d+/g, '$P'));
+    const [thoughtSql = '', activitySql = ''] = texts.map((text) =>
+      text.replace(/\s+/g, ' ').replace(/\$\d+/g, '$P'),
+    );
     // The newest-thought subquery alone: the outer WHERE of the statement has the sovereign clause anyway.
-    const newest = activitySql.slice(activitySql.indexOf('(SELECT max(t.at)'), activitySql.indexOf('AS last_active'));
+    const newest = activitySql.slice(
+      activitySql.indexOf('(SELECT max(t.at)'),
+      activitySql.indexOf('AS last_active'),
+    );
     const clauses = [
       "a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL OR a.thoughts_delayed_public OR a.agent_id = ANY($P::text[])",
       't.at <= $P::timestamptz OR a.died_at IS NOT NULL OR a.agent_id = ANY($P::text[])',
