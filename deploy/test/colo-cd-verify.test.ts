@@ -38,8 +38,8 @@ describe('colo-cd.sh image verification', () => {
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`image verified: GELDAR_EVENTSINK_IMAGE is built from ${REL_SHA}`);
     expect(r.out).toContain(`release images verified against ${REL_SHA}`);
-    // All seven images are read from the registry before the first change.
-    expect(cdCalls(cd).filter((c) => c.includes('buildx imagetools inspect'))).toHaveLength(7);
+    // All six manifest images are read from the registry before the first change.
+    expect(cdCalls(cd).filter((c) => c.includes('buildx imagetools inspect'))).toHaveLength(6);
     expect(upServices(cdCalls(cd))).toEqual(['eventsink']);
   });
 

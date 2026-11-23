@@ -32,6 +32,27 @@ describe('place: the place action against a real server', () => {
     });
   });
 
+  it('refuses a stair facing as state_unachievable and places nothing (no verified facing rule)', async () => {
+    await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      const { x: cx, z: cz } = arena.center;
+      await ctl.command(`kill @e[type=item,x=${cx},y=200,z=${cz},distance=..40]`);
+      await ctl.give(BOT, 'oak_stairs', 1);
+      const target = { x: cx + 2, y: 200, z: cz };
+      const run = await runAction(
+        registry,
+        bot,
+        { do: 'place', block: 'oak_stairs', at: target },
+        { placeState: { facing: 'east', half: 'bottom' } },
+      );
+      expect(run.result, JSON.stringify(run.result)).toMatchObject({
+        status: 'failed',
+        reason: 'state_unachievable',
+      });
+      expect(bot.blockAt(new Vec3(target.x, target.y, target.z))?.name).not.toBe('oak_stairs');
+      expect(await heldCount(ctl, BOT, 'oak_stairs')).toBe(1);
+    });
+  });
+
   it('places dirt on top of a placed block', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       const { x: cx, z: cz } = arena.center;

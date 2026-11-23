@@ -73,6 +73,23 @@ export const INPUT_ROWS: Row[] = [
     invalid: [{ verbose: true }],
   },
   {
+    tool: 'survey',
+    valid: [{ box: { from: { x: 0, y: 64, z: 0 }, to: { x: 4, y: 70, z: 4 } } }],
+    invalid: [{}, { box: { from: { x: 0, y: 64, z: 0 } } }],
+  },
+  {
+    tool: 'plan_check',
+    valid: [
+      {
+        plan: {
+          palette: { s: { block: 'stone' } },
+          steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+        },
+      },
+    ],
+    invalid: [{}, { plan: { palette: {}, steps: [] } }],
+  },
+  {
     tool: 'view',
     valid: [{}, { cols: 21, rows: 9 }],
     invalid: [{ cols: 42 }, { reach: 1 }],
@@ -232,6 +249,34 @@ export const RESULT_ROWS: Row[] = [
       },
     ],
     invalid: [{ caption: 'x' }, {}],
+  },
+  {
+    tool: 'survey',
+    valid: [{ text: 'legend ?=unknown\ny=64\n  z=0 25?', truncated: false }],
+    invalid: [{ text: 'x' }, { text: 'x', truncated: false, owner: 'ag_billy_01' }],
+  },
+  {
+    tool: 'plan_check',
+    valid: [
+      {
+        cells: 1,
+        material_needs: { stone: { need: 1, have: 0 } },
+        unknown_cells: 0,
+        estimated_ticks: 1,
+        invalid_steps: [],
+      },
+    ],
+    invalid: [
+      { cells: 1 },
+      {
+        cells: 1,
+        material_needs: {},
+        unknown_cells: 0,
+        estimated_ticks: 1,
+        invalid_steps: [],
+        owner: 'ag_billy_01',
+      },
+    ],
   },
   {
     tool: 'status',

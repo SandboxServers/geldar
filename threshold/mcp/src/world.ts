@@ -43,11 +43,19 @@ import { bestEffortPresence, causeOf, rateLimitedPresenceLog } from './presence-
 import { type ActArgs, ActToolError, actTool } from './tools/act.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall } from './tools/look.ts';
+import { PLAN_CHECK_MESSAGES, planCheckTool } from './tools/plan-check.ts';
 import { readBookTool } from './tools/read-book.ts';
 import { sayTool } from './tools/say.ts';
 import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
 import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
+import {
+  createSurveyLimiter,
+  type SurveyDeps,
+  type SurveyError,
+  type SurveyRead,
+  surveyTool,
+} from './tools/survey.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
 import {
@@ -161,6 +169,22 @@ const SEE_MESSAGES = {
   session_closed: 'The session ended, so no picture was taken.',
   body_unavailable: BODY_UNAVAILABLE_MESSAGE,
 } as const;
+
+/** The fixed messages for the `survey` codes (the body's own failure reuses BODY_UNAVAILABLE_MESSAGE). */
+const SURVEY_MESSAGES: Record<SurveyError, string> = {
+  invalid_input:
+    'survey takes a box of two corners, layers from 1 to 384 when given, and no other input. A box of over 32768 cells after the layers clamp is refused.',
+  session_closed: 'The session ended, so no survey was read.',
+  rate_limited: 'Surveys are limited to one every 5 seconds. Survey again shortly.',
+  body_unavailable: BODY_UNAVAILABLE_MESSAGE,
+};
+
+/** The survey read, or a typed ToolError for each failure: a failed `survey` is never returned as data. */
+async function surveyOf(deps: SurveyDeps, call: ToolCall, input: unknown): Promise<SurveyRead> {
+  const outcome = await surveyTool(deps, call, input);
+  if ('error' in outcome) throw new ToolError(outcome.error, SURVEY_MESSAGES[outcome.error]);
+  return outcome.survey;
+}
 
 /** The picture, or a typed ToolError for each failure: a failed `see` is never returned as data. */
 async function seeOf(deps: SeeDeps, call: ToolCall, input: unknown): Promise<ImageToolResult> {
@@ -371,10 +395,37 @@ export function createWorld(deps: WorldDeps): World {
     buildSleepPlan: sleepPlanOf(wired.expiresAfterTicks),
   };
   const stopSettle = startSettle(wired);
+  const surveys = createSurveyLimiter(wired.now);
   const tools: ToolHandlers = {
     act: bound(wired, (call, input) => actTool(wired, call, input as ActArgs)),
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),
+    // Hidden and refused while the building flag is off (unavailable.ts); on, it reads the Body's seen map.
+    survey: bound(wired, (call, input, ctx) =>
+      surveyOf(
+        {
+          survey: (lifeId, request) => wired.body.survey(lifeId, request),
+          isOpen: () => !ctx.signal.aborted,
+          limiter: surveys,
+        },
+        call,
+        input,
+      ),
+    ),
+    // Hidden and refused while the building flag is off (unavailable.ts); on, the Body runs the dry run.
+    plan_check: bound(wired, async (call, input, ctx) => {
+      const outcome = await planCheckTool(
+        {
+          check: (lifeId, request) => wired.body.planCheck(lifeId, request),
+          isOpen: () => !ctx.signal.aborted,
+        },
+        call,
+        input,
+      );
+      if ('error' in outcome)
+        throw new ToolError(outcome.error, PLAN_CHECK_MESSAGES[outcome.error]);
+      return outcome.check;
+    }),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),
     look: bound(wired, (call) => lookTool(wired, call), true),
     status: bound(wired, (call) => statusTool(wired, call), true),

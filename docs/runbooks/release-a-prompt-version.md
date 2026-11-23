@@ -25,7 +25,7 @@ Every command below is PowerShell 7, run from the repo root. Checked at 03c1f5de
 
 ## Steps
 
-1. **Pick the version number.** It is the next integer for that kind. At 03c1f5de: `thought` v1 to v5, `reflection` v1 to v2, `body-api` v1 to v10 (`git ls-files prompts`). Check reservations before you take one: on 2026-11-10 the Phase 1 registry reserved `thought` v6 and v7 for two packets ([decision-number registry](../analysis/phase1/packets/decision-number-registry.md), "Prompt version reservation"). Neither file exists at 03c1f5de, and whether those reservations still hold is unverified; ask the orchestrator.
+1. **Pick the version number.** It is the next integer for that kind. At 03c1f5de: `thought` v1 to v5, `reflection` v1 to v2, `body-api` v1 to v10 and v12 (`git ls-files prompts`; v11 is not in the repo, AN-45b reserves it). Check reservations before you take one: on 2026-11-10 the Phase 1 registry reserved `thought` v6 and v7 for two packets ([decision-number registry](../analysis/phase1/packets/decision-number-registry.md), "Prompt version reservation"). Neither file exists at 03c1f5de, and whether those reservations still hold is unverified; ask the orchestrator.
 
 2. **Copy the current default to the new file.** For example, for the thought template:
 
@@ -33,7 +33,7 @@ Every command below is PowerShell 7, run from the repo root. Checked at 03c1f5de
    Copy-Item prompts/thought/v5.md prompts/thought/v6.md
    ```
 
-   The defaults at 03c1f5de are `DEFAULT_THOUGHT_VERSION = 5`, `DEFAULT_REFLECTION_VERSION = 2` and `DEFAULT_BODY_API_VERSION = 10` (`animus/src/prompts/library.ts` lines 132 to 138). The file name must be `v<N>.md` (thought, reflection) or `v<N>.json` (body-api): the library builds the path from the number (`createPromptLibrary`).
+   The defaults at 03c1f5de are `DEFAULT_THOUGHT_VERSION = 5`, `DEFAULT_REFLECTION_VERSION = 2` and `DEFAULT_BODY_API_VERSION = 10` (`animus/src/prompts/library.ts` lines 135 to 138). While `body_actions.building` is on, the Mind renders body-api v12 instead (`bodyApiVersionFor`, lines 138 to 142). The file name must be `v<N>.md` (thought, reflection) or `v<N>.json` (body-api): the library builds the path from the number (`createPromptLibrary`).
 
 3. **Edit only the new file.** Keep the layout: `<<block N>>` lines, the blocks each kind needs, the `<<variant degraded>>` section in a reflection, and only known slots. In a `body-api` file, set the `version` field to the new N; the loader requires a number but does not compare it with the file name (`animus/src/prompts/body-api.ts`), so nothing catches a stale value (the `body-api/v8.json` history shows one: [prompt templates](../reference/prompt-templates.md#conflicts-recorded), item 5). Follow the in-world-text and no-model-identity rules in `prompts/README.md`.
 
@@ -45,7 +45,7 @@ Every command below is PowerShell 7, run from the repo root. Checked at 03c1f5de
 
 5. **Make it the default, if it should be.**
    - Change the matching `DEFAULT_*_VERSION` constant in `animus/src/prompts/library.ts`.
-   - For `thought`, also set `mind.thought_version` in `shards/phase0.yaml` and `shards/colo-mind.yaml` (both `5` at 03c1f5de) and their "v1 to v5 exist" comments. `animus/src/main.ts` passes only the thought version from the shard file; the reflection and body-api versions come from the constants alone.
+   - For `thought`, also set `mind.thought_version` in `shards/phase0.yaml` and `shards/colo-mind.yaml` (both `5` at 03c1f5de) and their "v1 to v5 exist" comments. `animus/src/main.ts` passes the thought version from the shard file. The reflection version comes from its constant alone; the body-api version comes from its constant or, with `body_actions.building` on, from `bodyApiVersionFor`.
    - Update the default list in `animus/src/prompts/agent-text.test.ts` (`DEFAULT_TEMPLATES`) so the scan covers the new default, and the default assertions in `library.test.ts`.
    - Update the listing in `prompts/README.md` (the new file's line, and "the default" moved to it) and its "Running with these templates" paragraph.
 

@@ -16,9 +16,8 @@ import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
 import { parse } from 'yaml';
-import { managerAcquire } from '../adam/main.ts';
+import { managerAcquire, restartKvFor } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
-import { openRestartKv } from '../body/restart.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
@@ -95,7 +94,8 @@ export async function runManagedBody(
     timeout: 5_000,
     ...golemNatsAuth(),
   });
-  const restartKv = await openRestartKv(natsUrl).catch(async (error: unknown) => {
+  // The plan and seen buckets follow the life's body_actions.building, as in runPlayer (A1).
+  const restartKv = await restartKvFor(config, natsUrl).catch(async (error: unknown) => {
     await nc.close();
     throw error;
   });

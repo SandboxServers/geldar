@@ -37,8 +37,12 @@ export interface IntentStartDeps {
   ): Promise<void>;
   current(): ActiveIntent | null;
   install(a: ActiveIntent): void;
+  /** Holds the plan lane for the installed intent (BLD-14): it pauses until the intent ends. */
+  holdLane(a: ActiveIntent): Promise<void>;
   /** The death floor (decision 0191): a change while the start runs means the Body died during it. */
   deathFloor(): number | null;
+  /** True once the executor is stopping: an intent started during the hold must not run. */
+  stopping(): boolean;
 }
 
 /** How an intent starts: fresh from its arguments, or again after a Body restart. */
@@ -69,9 +73,6 @@ export async function startIntentRun(
   const old = deps.current();
   // The floor the plan was checked against: a death from here on refuses the start below.
   const floor = deps.deathFloor();
-  // Its checkpoint stays until the new intent's checkpoint overwrites it, so a kill in between
-  // leaves a checkpoint, never none. If the new intent fails before it runs, it ends and deletes it.
-  if (old) await deps.end(old, 'cancelled', `replaced by ${id}`, undefined, true);
 
   const controller = new AbortController();
   const view = runtime.view;
@@ -118,6 +119,11 @@ export async function startIntentRun(
     resumedAbandoned: false,
   };
   a.limits.addBlockOperations(mode.usedBlockOperations ?? 0);
+  // The hold is taken before the old intent ends, so the lane never resumes in between (BLD-fix7a F5).
+  const holding = deps.holdLane(a);
+  // Its checkpoint stays until the new intent's checkpoint overwrites it, so a kill in between
+  // leaves a checkpoint, never none. If the new intent fails before it runs, it ends and deletes it.
+  if (old) await deps.end(old, 'cancelled', `replaced by ${id}`, undefined, true);
   deps.setState(a, 'accepted');
 
   const verdict = deps.preconditions.evaluate(a.preconditions, view);
@@ -142,11 +148,14 @@ export async function startIntentRun(
     await deps.end(a, 'failed', errorText(error));
     return 'invalid_arguments';
   }
-  // The awaits above can outlast a death: the plan was made before it, so the intent never runs.
-  if (deps.deathFloor() !== floor) {
-    await deps.end(a, 'interrupted', 'the Body died');
+  // The awaits above and the hold can outlast a death or a stop. The intent is not installed yet, so
+  // a stop finds nothing to end: this check ends it, and its end releases the hold.
+  await holding;
+  if (deps.deathFloor() !== floor || deps.stopping()) {
+    await deps.end(a, 'interrupted', deps.stopping() ? 'body stopped' : 'the Body died');
     return 'skipped';
   }
+  // Installed only now: a tick during the hold finds no intent to step.
   deps.install(a);
   deps.setState(a, 'running');
   return 'started';

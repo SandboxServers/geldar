@@ -9,8 +9,8 @@ import {
   isObject,
   MAX_CHECKPOINT_BYTES,
   PHASE0_PROGRAMS,
-  PHASE0_VERBS,
   safeName,
+  verbAllowed,
 } from './bounds.ts';
 import { type InputOptions, readJson, splitSchemaMessage } from './json-input.ts';
 
@@ -18,6 +18,7 @@ import { type InputOptions, readJson, splitSchemaMessage } from './json-input.ts
 const ACTION_POSITION_FIELD: Record<string, string> = {
   goto: 'target',
   place: 'at',
+  break: 'at',
   open: 'at',
   deposit: 'at',
   withdraw: 'at',
@@ -31,13 +32,13 @@ const ACTION_POSITION_FIELD: Record<string, string> = {
  * program gets the reason `not_allowed` rather than a wall of schema errors. Skills, `build`,
  * `follow`, `give`, signs, books, `offer`, governance and `note` all stop here.
  */
-function checkAllowList(value: unknown, errors: ErrorList): void {
+function checkAllowList(value: unknown, errors: ErrorList, bounds: Bounds): void {
   if (!isObject(value)) return;
   if (Array.isArray(value.actions)) {
     value.actions.forEach((action: unknown, i: number) => {
       if (!isObject(action)) return;
       const verb = action.do;
-      if (typeof verb === 'string' && !PHASE0_VERBS.includes(verb)) {
+      if (typeof verb === 'string' && !verbAllowed(verb, bounds)) {
         errors.add(
           'not_allowed',
           `/actions/${i}/do`,
@@ -58,12 +59,35 @@ function checkAllowList(value: unknown, errors: ErrorList): void {
   }
 }
 
+/** The border rule for every `{x, y, z}` inside a plan: its origin and each step's coordinates. */
+function checkPlanCoordinates(
+  value: unknown,
+  path: string,
+  bounds: Bounds,
+  errors: ErrorList,
+): void {
+  if (Array.isArray(value)) {
+    for (const [i, item] of value.entries()) {
+      checkPlanCoordinates(item, `${path}/${i}`, bounds, errors);
+    }
+  } else if (isObject(value)) {
+    if ('x' in value && 'z' in value) {
+      checkPosition(value, path, bounds, errors);
+      return;
+    }
+    for (const [key, item] of Object.entries(value)) {
+      checkPlanCoordinates(item, `${path}/${safeName(key)}`, bounds, errors);
+    }
+  }
+}
+
 /** Bounds the schema cannot express, on a thought that already passed it. */
 function checkBounds(thought: Thought, bounds: Bounds, errors: ErrorList): void {
   if (typeof thought.say === 'string' && Array.from(thought.say).length > bounds.sayMaxChars) {
     errors.add('out_of_bounds', '/say', `must be at most ${bounds.sayMaxChars} characters`);
   }
   (thought.actions ?? []).forEach((action, i) => {
+    if (action.do === 'plan') checkPlanCoordinates(action, `/actions/${i}`, bounds, errors);
     const field = ACTION_POSITION_FIELD[action.do];
     if (field === undefined) return;
     const value = (action as unknown as Record<string, unknown>)[field];
@@ -118,7 +142,7 @@ export function parseThoughtOutput(
   const read = readJson(text, input);
   if (!read.ok) return read;
   const errors = new ErrorList();
-  checkAllowList(read.value, errors);
+  checkAllowList(read.value, errors, bounds);
   if (!errors.empty) return { ok: false, errors: errors.errors };
   const schema = validateThought(read.value);
   if (!schema.ok) {

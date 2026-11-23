@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { lookVector } from '../perception/view/viewport.ts';
 import { moveNear } from './pathing.ts';
 import { fakeBot, place } from './place.fakes.ts';
 import { confirmsPlacement, pickReference, placeAction } from './place.ts';
@@ -106,6 +107,56 @@ describe('place reference selection', () => {
   });
 });
 
+describe('place into plants and two-cell items', () => {
+  it('places into a poppy cell', async () => {
+    const fake = fakeBot({ blocks: { '2,63,0': 'stone', '2,64,0': 'poppy' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.bot.blockAt(new Vec3(2, 64, 0))?.name).toBe('dirt');
+  });
+
+  it('stays blocked when the target is lava', async () => {
+    const fake = fakeBot({ blocks: { '2,63,0': 'stone', '2,64,0': 'lava' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('places both halves of a door, and the second pass sees the door already placed', async () => {
+    const fake = fakeBot({ blocks: { '2,63,0': 'stone' }, items: ['oak_door'] });
+    const first = await place(fake, 'oak_door', { x: 2, y: 64, z: 0 });
+    expect(first.status).toBe('completed');
+    expect(fake.bot.blockAt(new Vec3(2, 64, 0))?.name).toBe('oak_door');
+    expect(fake.bot.blockAt(new Vec3(2, 65, 0))?.name).toBe('oak_door');
+    const second = await place(fake, 'oak_door', { x: 2, y: 64, z: 0 });
+    expect(second).toMatchObject({ status: 'completed', detail: { already: true } });
+    expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a door whose upper cell is solid, and places nothing', async () => {
+    const fake = fakeBot({ blocks: { '2,63,0': 'stone', '2,65,0': 'stone' }, items: ['oak_door'] });
+    const outcome = await place(fake, 'oak_door', { x: 2, y: 64, z: 0 });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('places a tall plant as two cells, and blocks when the upper cell is solid', async () => {
+    const fake = fakeBot({ blocks: { '2,63,0': 'dirt' }, items: ['sunflower'] });
+    const outcome = await place(fake, 'sunflower', { x: 2, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.bot.blockAt(new Vec3(2, 65, 0))?.name).toBe('sunflower');
+
+    const solid = fakeBot({
+      blocks: { '2,63,0': 'dirt', '2,65,0': 'stone' },
+      items: ['sunflower'],
+    });
+    const blocked = await place(solid, 'sunflower', { x: 2, y: 64, z: 0 });
+    expect(blocked).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(solid.placeBlock).not.toHaveBeenCalled();
+  });
+});
+
 describe('place', () => {
   it('places a non-collision block at feet against the block below', async () => {
     const fake = fakeBot({ blocks: { '0,63,0': 'stone' }, items: ['torch'] });
@@ -191,6 +242,28 @@ describe('place', () => {
     expect(reference.position).toEqual(new Vec3(1, 63, 0));
     expect(face).toEqual(new Vec3(0, 1, 0));
     expect(fake.look).toHaveBeenCalledWith(-Math.PI / 2, 0, true);
+  });
+
+  // Each direction has its own look formula; east and west agree between the old and new one, so
+  // every side is checked through the viewport's look vector (the bot looks along the step).
+  it.each([
+    ['east', new Vec3(1, 0, 0)],
+    ['south', new Vec3(0, 0, 1)],
+    ['west', new Vec3(-1, 0, 0)],
+    ['north', new Vec3(0, 0, -1)],
+  ])('looks along the %s step when the bed goes that way', async (_name, step) => {
+    // Ground only under the one free cell beside the bot, so freeBeside picks that step.
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', [`${step.x},63,${step.z}`]: 'stone' },
+      items: ['white_bed'],
+    });
+    const outcome = await place(fake, 'white_bed', 'feet');
+    expect(outcome.status).toBe('completed');
+    const bedLook = fake.look.mock.calls.find((call) => call[2] === true);
+    expect(bedLook).toBeDefined();
+    const [vx, , vz] = lookVector(bedLook?.[0] as number, 0);
+    expect(vx).toBeCloseTo(step.x, 9);
+    expect(vz).toBeCloseTo(step.z, 9);
   });
 
   it('says you are standing in that spot when the target is the bot head cell', async () => {

@@ -19,12 +19,26 @@ export const NOT_AVAILABLE_TOOLS = [
 
 export type NotAvailableTool = (typeof NOT_AVAILABLE_TOOLS)[number];
 
+/**
+ * The building tools (BLD-S3b) that the contract does not expose yet (S1 NOT_YET_EXPOSED): no tool
+ * list entry, no sovereign_call verb, so they are not in NOT_AVAILABLE_TOOLS. Hidden by name while the
+ * flag is off, and their stub bodies refuse with the same not_available message.
+ */
+export const NOT_YET_EXPOSED_TOOLS = ['survey', 'plan_check'] as const;
+
 /** The one message every unavailable tool gives. It names no observer and no audience. */
 export const NOT_AVAILABLE_MESSAGE = 'This is not available in this world yet.';
 
-/** The tools to hide from the tool list: none when the flag is on, the unavailable ones when it is off. */
-export function hiddenToolsFor(showUnavailableTools: boolean): readonly string[] {
-  return showUnavailableTools ? [] : NOT_AVAILABLE_TOOLS;
+/**
+ * The tools to hide from the tool list: none when `show_unavailable_tools` is on; otherwise the unavailable
+ * ones, and the building tools too unless `body_actions.building` is on (then survey and plan_check are listed).
+ */
+export function hiddenToolsFor(
+  showUnavailableTools: boolean,
+  buildingOn = false,
+): readonly string[] {
+  if (showUnavailableTools) return [];
+  return [...NOT_AVAILABLE_TOOLS, ...(buildingOn ? [] : NOT_YET_EXPOSED_TOOLS)];
 }
 
 /**

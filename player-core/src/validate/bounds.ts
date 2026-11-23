@@ -20,7 +20,12 @@ export const PHASE0_VERBS: readonly string[] = [
   'till',
   'edit_sign',
   'use',
+  'break',
+  'plan',
 ];
+
+/** The verbs that exist only while `body_actions.building` is on (the Body refuses them otherwise). */
+export const BUILDING_VERBS: readonly string[] = ['break', 'plan'];
 
 /** The programs an intent may name. Everything else (skills, `build`, `trade_wait`) is refused. */
 export const PHASE0_PROGRAMS: readonly string[] = [
@@ -55,15 +60,24 @@ export interface Bounds {
   maxWorldTicks: number;
   /** The largest `limits.max_block_operations` an intent may ask for. */
   maxBlockOperations: number;
+  /** `body_actions.building` of the shard file. Off unless the shard turns it on: then break and plan are allowed. */
+  buildingOn: boolean;
 }
 
-/** Phase 0 defaults: `shards/phase0.yaml` and the contract's own caps. */
+/** Phase 0 defaults: `shards/phase0.yaml` and the contract's own caps. The building flag is off. */
 export const DEFAULT_BOUNDS: Bounds = {
   worldBorderRadius: 1500,
   sayMaxChars: 256,
   maxWorldTicks: 240_000,
   maxBlockOperations: 10_000,
+  buildingOn: false,
 };
+
+/** Whether the verb may appear in `actions` under these bounds: the building verbs need the flag on. */
+export function verbAllowed(verb: string, bounds: Bounds): boolean {
+  if (!PHASE0_VERBS.includes(verb)) return false;
+  return bounds.buildingOn || !BUILDING_VERBS.includes(verb);
+}
 
 /** How far past the world border a coordinate may point. */
 export const BORDER_MARGIN = 16;

@@ -1,13 +1,25 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { breakHandler } from '../actions/break.ts';
 import { editSignHandler } from '../actions/edit-sign.ts';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { useHandler } from '../actions/use.ts';
 import { setSwimEnabled } from '../actions/water-rules.ts';
+import type { PlanQueueStore } from '../building/queue.ts';
+import { planHandler } from '../building/queue-action.ts';
+import type { WallClock } from '../building/tps-estimate.ts';
+import { createPlanSource, pinOrigin } from '../building/wire-expand.ts';
+import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
+import {
+  createSeenWiring,
+  type SeenWiring,
+  type SeenWiringOptions,
+} from '../building/wire-seen.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
-import { cancelForDeath } from './death-cancel.ts';
+import { cancelForDeath, type DeathTarget } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
 import { InflightStore } from './inflight.ts';
 import type { ProgramRegistry } from './program.ts';
@@ -44,6 +56,16 @@ export interface CreateBodyOptions {
   editSign?: boolean;
   /** The shard's `body_actions.use` flag; the verb is refused while off. Default: off (decision 0218). */
   use?: boolean;
+  /** The shard's `body_actions.building` flag; break and plan are refused while off. Default: off. */
+  building?: boolean;
+  /** The seen store's bucket and the predecessor life; with the building flag on only. Left out: in memory. */
+  seen?: Partial<Pick<SeenWiringOptions, 'kv' | 'agentId' | 'predecessor' | 'log'>>;
+  /** Where queued plans and plan progress are stored (wire-plan-store); with the building flag on only. */
+  planStore?: PlanQueueStore;
+  /** Wall-clock ms for the plan's TPS estimate and progress cadence. Default: Date.now. Tests inject one. */
+  wallClock?: WallClock;
+  /** The Body's metrics (metrics.ts); the plan and seen counters are fed from them. Default: none kept. */
+  metrics?: GolemMetrics;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -85,6 +107,10 @@ export interface Body {
   records: RecordSink;
   /** The checkpoint writer, when checkpoints was given. */
   checkpoints: CheckpointStore | null;
+  /** The plan queue and lane, when body_actions.building is on; null when it is off. */
+  plan: LaneWiring | null;
+  /** The seen-block map and its store, when body_actions.building is on; null when it is off. */
+  seen: SeenWiring | null;
 }
 
 /**
@@ -142,6 +168,8 @@ export function createBody(options: CreateBodyOptions): Body {
           flushable: records,
           ...(options.checkpoints.log === undefined ? {} : { log: options.checkpoints.log }),
         });
+  // The plan lane is built only with body_actions.building on; it steps after the reflexes each tick.
+  let plan: LaneWiring | null = null;
   const built = new BodyRuntime({
     lifeId: options.lifeId,
     bodyGeneration: options.bodyGeneration,
@@ -154,21 +182,59 @@ export function createBody(options: CreateBodyOptions): Body {
     programs: options.programs ?? createProgramRegistry(),
     ...(options.view === undefined ? {} : { view: options.view }),
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
+    ...(options.building === true
+      ? {
+          tickHook: async (tick: number, reflexBusy: boolean) => {
+            await plan?.onTick(tick, reflexBusy);
+          },
+        }
+      : {}),
   });
   runtime = built;
   // The swim flag is read by goto and the planner at walk time; set it before the first walk.
   setSwimEnabled(options.bot, options.swim ?? false);
   // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
   for (const handler of allActions) {
-    if (handler.kind !== 'edit_sign' && handler.kind !== 'use') built.actions.register(handler);
+    if (
+      handler.kind !== 'edit_sign' &&
+      handler.kind !== 'use' &&
+      handler.kind !== 'break' &&
+      handler.kind !== 'plan'
+    ) {
+      built.actions.register(handler);
+    }
   }
   built.actions.register(editSignHandler(options.editSign ?? false));
   built.actions.register(useHandler(options.use ?? false));
+  // break and plan follow body_actions.building (BLD-S3a, decision 0218 plumbing; default off).
+  built.actions.register(breakHandler(options.building ?? false));
+  if (options.building === true) {
+    // The origin `here` is the feet, as the floor of the bot's position.
+    const feet = () => {
+      const p = options.bot.entity?.position;
+      return p
+        ? { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }
+        : { x: 0, y: 0, z: 0 };
+    };
+    plan = createLaneWiring({
+      lifeId: options.lifeId,
+      bot: options.bot,
+      runtime: built,
+      expand: createPlanSource(feet),
+      pin: (body) => pinOrigin(body, feet),
+      ...(options.planStore === undefined ? {} : { store: options.planStore }),
+      ...(options.wallClock === undefined ? {} : { wallClock: options.wallClock }),
+      ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
+    });
+  }
+  built.actions.register(planHandler(options.building ?? false, plan?.queue ?? null));
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,
     currentRevision: options.currentRevision,
     wakeTap: tap,
+    // A running intent pauses the plan lane (BLD-14); nothing is held when building is off.
+    ...(plan === null ? {} : { foreground: plan.contention }),
     ...(checkpoints === null ? {} : { observer: checkpoints }),
     ...(options.snapshotWindow === undefined ? {} : { snapshotWindow: options.snapshotWindow }),
     ...(options.nearbyAgents === undefined ? {} : { nearbyAgents: options.nearbyAgents }),
@@ -189,9 +255,16 @@ export function createBody(options: CreateBodyOptions): Body {
     options.timeScale === undefined ? {} : { timeScale: options.timeScale },
   );
   // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
+  // The plan queue is cleared with the executor: its lane drops the plan and aborts the cell.
+  const deathTarget: DeathTarget = {
+    endForDeath: (revision) =>
+      Promise.all([executor.endForDeath(revision), plan?.queue.cancel('all')]).then(
+        () => undefined,
+      ),
+  };
   if (typeof options.bot.on === 'function') {
     options.bot.on('death', () => {
-      cancelForDeath(executor, options.currentRevision).catch((error: unknown) => {
+      cancelForDeath(deathTarget, options.currentRevision).catch((error: unknown) => {
         console.warn(`death hook failed: ${String(error)}`);
       });
     });
@@ -224,7 +297,18 @@ export function createBody(options: CreateBodyOptions): Body {
       reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });
-  return { runtime: built, executor, tap, records, checkpoints };
+  // The seen map is kept only with body_actions.building on (BLD-38d); off, nothing is constructed.
+  const seen: SeenWiring | null =
+    options.building === true
+      ? createSeenWiring({
+          bot: options.bot,
+          ticks: options.ticks,
+          lifeId: options.lifeId,
+          ...(options.seen ?? {}),
+          ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
+        })
+      : null;
+  return { runtime: built, executor, tap, records, checkpoints, plan, seen };
 }
 
 /** True for a value that names a verb; `runAction` also reports actions that failed validation. */

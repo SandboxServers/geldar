@@ -32,7 +32,7 @@ Every file in this folder on 2026-11-16 at 3f07a4be: 31 documents and this index
 | R05 | [mcp-tools.md](mcp-tools.md) | Every tool, resource and prompt of `threshold/mcp` and `threshold/mcp-mock`; budgets, limits, errors | reference | contributors | draft | `1b114276` |
 | R06 | [register-service.md](register-service.md) | `threshold/register`: routes, sign-in, sessions, consent, owner API, deletion and export | reference | operators | draft | `1b114276` |
 | R07 | [golem-body.md](golem-body.md) | `golem/`: actions, runtime, reflexes, perception, interfaces, benchmark | reference | contributors | draft | `1b114276` |
-| R08 | [animus-mind.md](animus-mind.md) | `animus/`: what remains after the freeze, ports, data, prompt use | reference | agents-never | draft | `1b114276` |
+| R08 | [animus-mind.md](animus-mind.md) | removed, see [0430](../decisions/0430-remove-animus.md) | reference | agents-never | draft | `1b114276` |
 | R09 | [player-core.md](player-core.md) | `player-core/`: modules, Mind event types, allow-lists | reference | contributors | draft | `1b114276` |
 | R10 | [psyche-engine.md](psyche-engine.md) | `psyche/`: modules, users, the rules of decision 0281, release record | reference | contributors | draft | `1b114276` |
 | R11 | [prompt-templates.md](prompt-templates.md) **(a-n)** | `prompts/`: kinds, file layout, every version, how a version is released | reference | agents-never | draft | `1b114276` |

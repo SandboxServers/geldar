@@ -1,9 +1,11 @@
 import {
   type PlanAck,
   type PlanMessage,
+  planCheckSubject,
   planSubject,
   type Snapshot,
   snapshotSubject,
+  surveySubject,
   viewSubject,
   type WorldEvent,
 } from '@geldar/contract';
@@ -82,10 +84,16 @@ describe('SnapshotRevision', () => {
 });
 
 describe('MindLinkServer snapshots', () => {
-  it('serves exactly the three subjects of its life', () => {
+  it('serves exactly the snapshot, plan, view, survey and plan_check subjects of its life', () => {
     const { transport } = rig();
     expect(transport.subjects.sort()).toEqual(
-      [snapshotSubject(SHARD, LIFE), planSubject(SHARD, LIFE), viewSubject(SHARD, LIFE)].sort(),
+      [
+        snapshotSubject(SHARD, LIFE),
+        planSubject(SHARD, LIFE),
+        viewSubject(SHARD, LIFE),
+        surveySubject(SHARD, LIFE),
+        planCheckSubject(SHARD, LIFE),
+      ].sort(),
     );
   });
 
@@ -196,6 +204,35 @@ describe('MindLinkServer snapshots', () => {
       action: 'travel',
       status: 'running',
     });
+  });
+});
+
+describe('MindLinkServer survey', () => {
+  it('logs a survey callback that throws instead of leaving an unhandled rejection', async () => {
+    const transport = new FakeRequestServer();
+    const logs: string[] = [];
+    const server = new MindLinkServer({
+      shard: SHARD,
+      lifeId: LIFE,
+      bodyGeneration: GENERATION,
+      revision: new SnapshotRevision(),
+      server: transport,
+      executor: new StubExecutor(),
+      perception: new FakePerception(),
+      ears: new FakeEars(),
+      voice: new FakeVoice(),
+      buildSnapshot: snapshotFrom,
+      tick: () => 10,
+      publisher: new MemoryPublisher(),
+      log: (line) => logs.push(line),
+      survey: () => {
+        throw new Error('map gone');
+      },
+    });
+    server.start();
+    const reply = await transport.request(surveySubject(SHARD, LIFE), JSON.stringify({ box: {} }));
+    expect(reply).toBeNull();
+    expect(logs).toContainEqual(expect.stringContaining('survey not answered: Error: map gone'));
   });
 });
 

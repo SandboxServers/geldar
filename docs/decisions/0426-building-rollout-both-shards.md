@@ -14,3 +14,27 @@
 ## Consequences
 
 - Rollback: flag off and restart; or revert the bundle and redeploy the previous image. A saved checkpoint with an unknown program ends idle on restart (existing behavior).
+
+## Addendum, 2026-11-22: PR #932 merges as one PR in one window
+
+Owner ruling, 2026-11-22. The decision above is not edited. For PR #932 this addendum replaces consequence 4's three bundles (windows R1 to R3) with a single rollout.
+
+- PR #932 merges whole, as one PR, in one deploy window. It is not split into bundles.
+- The PR stays a draft and does not merge until the release owner (Sam) posts the go. The go waits on the 24-hour kit rc23 report and on the `geldar-v0.1.0` and `kit-v0.1.0` tags.
+- After that merge, PR #932 is the first change in 0.2.0.
+- The NATS role and bucket steps (`docs/analysis/building/RESUME.md`, manual steps 1 and 2) still come before `body_actions.building` is turned on. This addendum does not change them.
+
+## Addendum, 2026-11-22: the hold on PR #932 is lifted
+
+Owner ruling, 2026-11-22. This addendum supersedes the hold sentence in the addendum above ("The PR stays a draft and does not merge until the release owner (Sam) posts the go. The go waits on ..."). That sentence is kept as written and is no longer in force.
+
+- PR #932 may merge once it is ready. It does not wait for the 24-hour kit rc23 report or for the `geldar-v0.1.0` and `kit-v0.1.0` tags.
+- The PR stays draft until the final readiness report and the merge-queue owner's own check of the head sha and green CI. The merge-queue owner runs the merge on that exact head and warns the owner about the Body restart first.
+- It is still one PR in one deploy window, not split into bundles.
+
+## Addendum, 2026-11-22: no body-api v13
+
+- After the animus removal (decision 0430), nothing in this repo renders `prompts/body-api/*.json`. `git grep -n -E "prompts/body-api|createPromptLibrary" -- '*.ts' ':!*.test.ts'` finds nothing.
+- body-api v12 (v10 plus `break` and `plan`) is unused by live code.
+- `break` and `plan` are gated on `body_actions.building`: the Body refuses them with the flag off (golem), the MCP act description and refusal use the same gate (`threshold/mcp/src/tools/building-verbs.ts`), and so does the player-core validator (`Bounds.buildingOn`).
+- So no v13 was added. A Mind that teaches the verbs per shard flag is scriptorium work.

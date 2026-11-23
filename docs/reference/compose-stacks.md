@@ -119,7 +119,6 @@ Standalone, on its own network `colo` (name `${GELDAR_NETWORK:-geldar-colo}`, su
 | `velocity` | default | 0.5, 1024m, 256 | itzg/mc-proxy, digest | `${GELDAR_PORT_BOT:-25567}` to 25565 | `velocity.toml`; `velocity-data`; velocity-identity jar | Identity ready marker and port open | `paper`, `nats` healthy |
 | `eventsink` | default | 0.5, 512m, 256 | `GELDAR_EVENTSINK_IMAGE` | none | none | none | `postgres`, `nats` healthy |
 | `golem-body` | `adam` | 1, 2048m, 256 | `GELDAR_BODY_IMAGE`; entry `src/adam/main.ts` | none | `shards/colo-mind.yaml` read-only as `/opt/geldar/shards/colo.yaml` | none | `nats` healthy |
-| `animus` | `mind` | 1, 2048m, 256 | `GELDAR_MIND_IMAGE`; entry `src/main.ts` | none | Mind shard file, as above | none | `postgres` healthy |
 | `geldar-mcp` | default | 0.5, 512m, 128 | `GELDAR_MCP_IMAGE` | `${GELDAR_PORT_MCP:-8788}` | Mind shard file; read-only root, `/tmp` tmpfs | Node TCP connect to 8788 | `postgres`, `nats` healthy |
 | `register` | `register` | 0.25, 128m, 64 | `GELDAR_REGISTER_IMAGE` | `${GELDAR_PORT_REGISTER:-18090}` to 8090 | read-only root, `/tmp` tmpfs | HTTP GET `/` returns 200 or 503 | `postgres` healthy |
 | `glass` | default | 0.5, 256m, 128 | `GELDAR_GLASS_IMAGE` | `${GELDAR_PORT_GLASS:-8787}` | The node's alias directory, read-only; read-only root | none | `postgres` healthy |

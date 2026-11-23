@@ -99,7 +99,7 @@ describe('checkPreconditions', () => {
   });
 
   it.each<[string, PreconditionFacts, string]>([
-    ['a dirty tree', { ...good, otherChanges: ['animus/src/x.ts'] }, 'clean tree'],
+    ['a dirty tree', { ...good, otherChanges: ['golem/src/x.ts'] }, 'clean tree'],
     [
       'a life that already has thoughts',
       { ...good, lifeRows: { thoughts: 3, intents: 0 } },
@@ -119,10 +119,10 @@ describe('checkPreconditions', () => {
       'a select edit next to a code change',
       {
         ...good,
-        otherChanges: ['animus/src/x.ts'],
+        otherChanges: ['golem/src/x.ts'],
         shardEdit: { kind: 'select', changes: [] },
       },
-      'animus/src/x.ts',
+      'golem/src/x.ts',
     ],
     ['no bench result file', { ...good, bench: null }, 'no bench-results/*.json file'],
     [

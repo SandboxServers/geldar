@@ -32,6 +32,7 @@ import {
   readPlayerResource,
 } from './resources.ts';
 import type { ToolCallSpan } from './telemetry.ts';
+import { forBuildingFlag, hiddenVerbsFor } from './tools/building-verbs.ts';
 import { hiddenToolsFor, refuseHiddenCall } from './tools/unavailable.ts';
 
 /** The text a keepalive carries. It names no observer (decision 0059). */
@@ -52,6 +53,8 @@ export interface WorldSessionDeps {
   maxResultBytes?: number | undefined;
   /** `sovereign.mcp.show_unavailable_tools`: false hides the tools this world does not run. Default true. */
   showUnavailableTools?: boolean | undefined;
+  /** `body_actions.building`: survey and plan_check are listed while it is on, even when the tools are hidden. */
+  buildingOn?: boolean | undefined;
   log?: (line: Record<string, unknown>) => void;
 }
 
@@ -243,13 +246,20 @@ export function createWorldSession(
   // A random id per MCP session. It keys what `wait` remembers about what this session was sent; it
   // carries no token, life id or secret, and is never logged.
   const session = newSessionId();
-  const hidden = hiddenToolsFor(deps.showUnavailableTools ?? true);
+  const buildingOn = deps.buildingOn ?? false;
+  // The building verbs are refused by name inside act while the flag is off (building-verbs.ts).
+  const hidden = [
+    ...hiddenToolsFor(deps.showUnavailableTools ?? true, buildingOn),
+    ...hiddenVerbsFor(buildingOn),
+  ];
   const mcp = new McpServer(
     { name: 'geldar-mcp', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} } },
   );
   mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: listTools(hidden).map((tool) => forConnection(tool, source)),
+    tools: listTools(hidden).map((tool) =>
+      forConnection(forBuildingFlag(tool, buildingOn), source),
+    ),
   }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;

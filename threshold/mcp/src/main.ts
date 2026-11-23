@@ -402,7 +402,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       events,
       presence,
       limiter,
-      validator: createOutputValidator(),
+      validator: createOutputValidator({ buildingOn: config.buildingOn }),
       clock: ports.clock,
       runs,
       wake,
@@ -439,6 +439,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       keepaliveMs: config.sovereign.keepaliveSeconds * 1000,
       maxResultBytes: config.sovereign.maxResultBytes,
       showUnavailableTools: config.sovereign.showUnavailableTools,
+      buildingOn: config.buildingOn,
       log,
     };
     const front = (ports.frontDoor ?? createFrontDoor)({

@@ -76,29 +76,21 @@ describe('mineAction', () => {
     expect(bot.dig).not.toHaveBeenCalled();
   });
 
-  it('refuses a block with water beside it, and one with gravel above the bot', async () => {
+  it('digs a block with water beside it, and one with gravel above the bot (decision 0428)', async () => {
     const stone = block(STONE, new Vec3(3, 64, 0), [], { 270: true }, 'stone');
     const water = block(WATER, new Vec3(3, 65, 0), [], undefined, 'water');
     const wet = fakeBot([stone, water]);
-    expect(await mine(wet, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'stone is unsafe to dig: water would flow in on you',
-    });
-    expect(wet.dig).not.toHaveBeenCalled();
+    expect(await mine(wet, 1, 'stone')).toMatchObject({ status: 'completed' });
+    expect(wet.dig).toHaveBeenCalledTimes(1);
 
     const gravel = block(GRAVEL, new Vec3(0, 66, 0), [], undefined, 'gravel');
     const above = block(STONE, new Vec3(0, 65, 0), [], undefined, 'stone');
     const bot = fakeBot([above, gravel]);
-    expect(await mine(bot, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'stone is unsafe to dig: gravel above it would fall on you',
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a stone beside a 1x2 pit when gravel above it would fall on the Body', async () => {
+  it('digs a stone beside a 1x2 pit with gravel above it, and takes the fall (decision 0428)', async () => {
     const OAK = OAK_LOG;
     const walls = [
       block(OAK, new Vec3(-1, 64, 0), [OAK], undefined, 'oak_log'),
@@ -111,15 +103,11 @@ describe('mineAction', () => {
     const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
     const gravel = block(GRAVEL, new Vec3(1, 65, 0), [], undefined, 'gravel');
     const bot = fakeBot([...walls, stone, gravel]);
-    expect(await mine(bot, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'stone is unsafe to dig: gravel above it would fall on you',
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses gravel dug in a 1-wide pit with the Body walled in, and names no coordinates', async () => {
+  it('digs gravel in a 1-wide pit with the Body walled in (decision 0428)', async () => {
     const OAK = OAK_LOG;
     const walls = [
       block(OAK, new Vec3(0, 63, 0), [OAK], undefined, 'oak_log'),
@@ -133,15 +121,11 @@ describe('mineAction', () => {
     ];
     const gravel = block(GRAVEL, new Vec3(1, 64, 0), [], undefined, 'gravel');
     const bot = fakeBot([...walls, gravel]);
-    expect(await mine(bot, 1, 'gravel')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'gravel falls when dug, and you have no open cell beside you',
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1, 'gravel')).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses each falling block type above a stone that the Body stands beside', async () => {
+  it('digs each falling block type above a stone the Body stands beside (decision 0428)', async () => {
     const types = [
       'sand',
       'red_sand',
@@ -157,12 +141,8 @@ describe('mineAction', () => {
       const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
       const falling = block(999, new Vec3(1, 65, 0), [], undefined, name);
       const bot = fakeBot([stone, falling]);
-      expect(await mine(bot, 1, 'stone')).toMatchObject({
-        status: 'failed',
-        reason: 'not_possible',
-        message: `stone is unsafe to dig: ${name} above it would fall on you`,
-      });
-      expect(bot.dig).not.toHaveBeenCalled();
+      expect(await mine(bot, 1, 'stone')).toMatchObject({ status: 'completed' });
+      expect(bot.dig).toHaveBeenCalledTimes(1);
     }
   });
 
@@ -176,15 +156,11 @@ describe('mineAction', () => {
     expect(far.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('returns not_possible and never digs a block under the bot', async () => {
+  it('digs the block under the bot when it is the only one in reach (decision 0428)', async () => {
     const under = block(OAK_LOG, new Vec3(0, 63, 0), [OAK_LOG]);
     const bot = fakeBot([under]);
-    expect(await mine(bot, 1)).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      detail: { mined: 0 },
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
   it('returns invalid_args for a name that is not a block', async () => {
@@ -241,19 +217,15 @@ describe('mineAction', () => {
     expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([0]);
   });
 
-  it('fails not_possible when the reach walk ends on the block, and digs nothing', async () => {
+  it('digs the block the reach walk ends on, with the bot on it (decision 0428)', async () => {
     const bot = fakeBot([block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG])]);
     // Out of dig reach, so the walk runs; it moves the bot onto the cell above the block.
     vi.mocked(moveNear).mockImplementationOnce(async () => {
       bot.entity.position = new Vec3(3, 64, 0);
       return { ok: true, distance: 0 };
     });
-    expect(await mine(bot, 1)).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      detail: { mined: 0 },
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
   it('walks once toward a block that is not in view, then digs it again', async () => {
@@ -285,7 +257,7 @@ describe('mineAction', () => {
     expect(bot.dig).toHaveBeenCalledTimes(2);
   });
 
-  it('fails not_possible when the retry walk ends on the block, and digs nothing more', async () => {
+  it('digs the block the retry walk ends on, with the bot on it (decision 0428)', async () => {
     const bot = fakeBot([block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG])]);
     bot.canDigBlock.mockReturnValue(true);
     bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
@@ -294,15 +266,11 @@ describe('mineAction', () => {
       bot.entity.position = new Vec3(3, 64, 0);
       return { ok: true, distance: 0 };
     });
-    expect(await mine(bot, 1)).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      detail: { mined: 0 },
-    });
-    expect(bot.dig).toHaveBeenCalledTimes(1);
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(2);
   });
 
-  it('digs the wall beside the bot, not the stone under its feet', async () => {
+  it('digs the stone under its feet when it is the nearest, as the wall is not (decision 0428)', async () => {
     // The floor is listed first: the fake returns matches in order, as Mineflayer returns the nearest.
     const floor = block(STONE, new Vec3(0, 63, 0), [], undefined, 'stone');
     const wall = block(STONE, new Vec3(1, 64, 0), [], undefined, 'stone');
@@ -312,23 +280,20 @@ describe('mineAction', () => {
       detail: { mined: 1 },
     });
     expect(bot.dig).toHaveBeenCalledTimes(1);
-    expect(bot.dig.mock.calls[0]?.[0]).toBe(wall);
-    expect(floor.type).toBe(STONE);
+    expect(bot.dig.mock.calls[0]?.[0]).toBe(floor);
   });
 
-  it('fails would drop you when the only stone in reach is under its feet', async () => {
+  it('digs the only stone in reach when it is under its feet (decision 0428)', async () => {
     const floor = block(STONE, new Vec3(0, 63, 0), [], undefined, 'stone');
     const bot = fakeBot([floor]);
     expect(await mine(bot, 1, 'stone')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'would drop you',
-      detail: { mined: 0 },
+      status: 'completed',
+      detail: { mined: 1 },
     });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
-  it('digs the next block when the walk to a target ends with the bot on it', async () => {
+  it('digs the target when the walk to it ends with the bot on it (decision 0428)', async () => {
     const target = block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]);
     const next = block(OAK_LOG, new Vec3(6, 64, 0), [OAK_LOG]);
     const bot = fakeBot([target, next]);
@@ -339,47 +304,38 @@ describe('mineAction', () => {
     });
     expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
     expect(bot.dig).toHaveBeenCalledTimes(1);
-    expect(bot.dig.mock.calls[0]?.[0]).toBe(next);
-    expect(target.type).toBe(OAK_LOG);
+    expect(bot.dig.mock.calls[0]?.[0]).toBe(target);
   });
 
-  it('digs the next block when the retry walk ends with the bot on the block', async () => {
+  it('digs the target when the retry walk ends with the bot on it (decision 0428)', async () => {
     const target = block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]);
     const next = block(OAK_LOG, new Vec3(6, 64, 0), [OAK_LOG]);
     const bot = fakeBot([target, next]);
     bot.canDigBlock.mockReturnValue(true);
     bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
-    // The retry walk ends on the first target, so the bot stands on it and it is skipped.
+    // The retry walk ends on the first target, so the bot stands on it; it is dug all the same.
     vi.mocked(moveNear).mockImplementationOnce(async () => {
       bot.entity.position = new Vec3(3, 64, 0);
       return { ok: true, distance: 0 };
     });
     expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
     expect(bot.dig).toHaveBeenCalledTimes(2);
-    expect(bot.dig.mock.calls[0]?.[0]).toBe(target);
-    expect(bot.dig.mock.calls[1]?.[0]).toBe(next);
-    expect(target.type).toBe(OAK_LOG);
+    expect(bot.dig.mock.calls[1]?.[0]).toBe(target);
   });
 
-  it('ends with would drop you when every walk target ends under it, one walk each', async () => {
+  it('digs a walk target that ends under the bot, one walk for it (decision 0428)', async () => {
     const targets = [
       block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]),
       block(OAK_LOG, new Vec3(4, 63, 0), [OAK_LOG]),
       block(OAK_LOG, new Vec3(5, 63, 0), [OAK_LOG]),
     ];
     const bot = fakeBot(targets);
-    // Every walk ends on its target, so each candidate is skipped once and none is dug.
+    // Every walk ends on its target; the first one reached is dug and the action completes.
     vi.mocked(moveNear).mockImplementation(async (_walker, at) => {
       bot.entity.position = new Vec3(at.x, at.y + 1, at.z);
       return { ok: true, distance: 0 };
     });
-    expect(await mine(bot, 1)).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'would drop you',
-      detail: { mined: 0 },
-    });
-    expect(vi.mocked(moveNear)).toHaveBeenCalledTimes(3);
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,7 +4,7 @@
 # files in the node's src extract (with .bak-<UTC> copies), a pg dump and the migrations when sql/ changed, and the
 # services whose image digest changed, one at a time, each with a health check. A failed health check rolls back: the
 # previous release is re-applied to the services already changed, the player hosts are recreated, and the script exits 1.
-# Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind, and golem-body (the idle Adam, profile adam,
+# Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: golem-body (the idle Adam, profile adam,
 # decision 0212) unless it is already running. Plugin, compose and Caddy/NATS changes are
 # printed as "needs manual" and not applied. REGISTER_KILL_SWITCH is read from the node env file (load_node_env, exported
 # for compose) and never written here; a value other than exactly true or false stops the deploy before anything changes.
@@ -68,7 +68,7 @@ PLAYER_WAIT=${COLO_CD_PLAYER_WAIT:-60}
 PLAYER_SETTLE=${COLO_CD_PLAYER_SETTLE:-5}
 case $PLAYER_WAIT$PLAYER_SETTLE in '' | *[!0-9]*) die "COLO_CD_PLAYER_WAIT and COLO_CD_PLAYER_SETTLE must be whole numbers of seconds" ;; esac
 OPEN_SCOPE=
-# Restart order: the services that may change. Paper, Velocity, Caddy, Postgres, NATS and mind are never in this list.
+# Restart order: the services that may change. Paper, Velocity, Caddy, Postgres and NATS are never in this list.
 ORDER="eventsink register glass geldar-mcp golem-body"
 PULL_SET="admin eventsink register glass geldar-mcp golem-body"
 
@@ -98,7 +98,6 @@ profile_of() {
   case $1 in
     register) echo register ;;
     admin) echo admin ;;
-    animus) echo mind ;;
     players-host) echo sovereign ;;
     golem-body) echo adam ;;
     *) echo "" ;;
@@ -353,7 +352,6 @@ for svc in $ORDER; do
   esac
 done
 for id in $STALE_HOSTS; do say "plan: refresh player host $id (after the shared services, one at a time)"; done
-say "plan: animus (mind) is never started; its digest is recorded only"
 
 # Read-only: the node env values (REGISTER_KILL_SWITCH included) are loaded and printed before the dry-run exit, so every
 # log, dry run or not, shows the value in force. The read happens before the lock by design: a node.env change made

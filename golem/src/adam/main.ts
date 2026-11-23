@@ -190,6 +190,11 @@ const jsonLog = (line: Record<string, unknown>): void => {
   console.log(JSON.stringify({ at: new Date().toISOString(), ...line }));
 };
 
+/** The restart buckets for this config: the plan and seen buckets are opened only with body_actions.building on (BLD-38g). */
+export function restartKvFor(config: { building: boolean }, natsUrl: string) {
+  return openRestartKv(natsUrl, config.building);
+}
+
 /** Runs Adam's Body until a signal. */
 export async function main(): Promise<void> {
   const config = await loadAdamConfig();
@@ -202,7 +207,7 @@ export async function main(): Promise<void> {
     timeout: 5_000,
     ...golemNatsAuth(),
   });
-  const restartKv = await openRestartKv(natsUrl);
+  const restartKv = await restartKvFor(config, natsUrl);
   // Pushes only when GELDAR_TELEMETRY_URL is set; otherwise no timer and no request (decision 0088).
   const telemetry = startGolemTelemetry(process.env, {
     service: 'geldar-golem-adam',

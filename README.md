@@ -28,7 +28,7 @@ Sovereign agents run their Mind in their own tools and reach the world over the 
 
 ```mermaid
 flowchart LR
-  Mind["Mind<br/>(sovereign agent, or animus)"] -->|MCP| MCP["Threshold MCP"]
+  Mind["Mind<br/>(sovereign agent, or the scriptorium)"] -->|MCP| MCP["Threshold MCP"]
   MCP -->|NATS| Body["Body (golem)"]
   Body -->|Minecraft protocol| Velocity["Velocity<br/>identity gate"]
   Velocity --> Paper["Paper + Geldar-Core"]
@@ -56,7 +56,7 @@ The work is in phases ([`docs/spec.md`](docs/spec.md), section 10).
 - **Phase 0 is done**, closed as proof of life ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)): a living agent, the Body benchmark, the MCP, and the first sovereign ranger playing.
 - **Phase 1 is in progress.** It is the shard in its final home on the Colo, reachable from the internet, invite-only ([decision 0070](docs/decisions/0070-phase1-is-the-colo-first-shard.md)). The plan is [`docs/analysis/phase1/plan.md`](docs/analysis/phase1/plan.md).
 
-On the Colo shard today: Paper and Velocity, the Body, the MCP, NATS, Postgres and the event sink, plus the public map and Glass. The Mind of our own (`animus`) is off there until a Thinker path exists ([decision 0134](docs/decisions/0134-mind-is-a-profile-until-a-thinker-exists.md)). Kino, registration and the roster are being built.
+On the Colo shard today: Paper and Velocity, the Body, the MCP, NATS, Postgres and the event sink, plus the public map and Glass. The Mind is the scriptorium, which runs outside this repository. The in-repo Mind (`animus`) was removed ([decision 0430](docs/decisions/0430-remove-animus.md)). Kino, registration and the roster are being built.
 
 ## Principles
 
@@ -102,7 +102,7 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. Security issues go through [`SE
 | `contract/` | JSON Schemas for cross-component messages, with generated types |
 | `plugin/` | Java: Geldar-Core (Paper) and the Velocity identity gate |
 | `golem/` | The Body |
-| `animus/`, `lantern-local/` | The Mind and its local Thinker |
+| `lantern-local/` | The local Thinker (`animus` was removed, see decision 0430) |
 | `threshold/` | The MCP server and its mock |
 | `glass/` | The thought stream viewer |
 | `eventsink/`, `sql/` | NATS to Postgres, and the migrations |

@@ -20,7 +20,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 adam up [--model strong|fast]   Check the shard and the pinned models, then start Adam's host processes
   ./geldar.ps1 adam select --model strong|fast  Rewrite the life lines of the shard file (no checks, starts nothing)
   ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
-  ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
+  ./geldar.ps1 adam logs [service] [--follow]  Tail body or lantern-local under .geldar/adam/
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
@@ -394,7 +394,7 @@ function Get-NatsUsers([string] $Shard) {
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   $table = [ordered]@{
-    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
+    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'), (& $kv 'geldar-plans'), (& $kv 'geldar-seen'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
       # State (0280): the body never publishes a level push, so it cannot forge a domain level. It still requests the
@@ -619,7 +619,7 @@ Usage: ./geldar.ps1 <command> [args]
   ./geldar.ps1 adam up [--model strong|fast]   Check the shard and the pinned models, then start Adam's host processes
   ./geldar.ps1 adam select --model strong|fast  Rewrite the life lines of the shard file (no checks, starts nothing)
   ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
-  ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
+  ./geldar.ps1 adam logs [service] [--follow]  Tail body or lantern-local under .geldar/adam/
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case

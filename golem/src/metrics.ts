@@ -267,6 +267,31 @@ export const BODY_TPS = 'geldar_tps';
 export const BODY_TICK_LAG_MS = 'geldar_tick_lag_ms';
 export const BODY_WAKEUPS = 'geldar_wakeups_total';
 export const BODY_ACTION_OUTCOMES = 'geldar_action_outcomes_total';
+export const BODY_PLAN_CELLS = 'geldar_plan_cells_total';
+export const BODY_PLAN_SECONDS = 'geldar_plan_seconds_total';
+export const BODY_PLAN_THROTTLE_WAITS = 'geldar_plan_throttle_waits_total';
+export const BODY_SEEN_FLUSHES = 'geldar_seen_flushes_total';
+export const BODY_SEEN_FLUSH_BYTES = 'geldar_seen_flush_bytes_total';
+export const BODY_PLAN_QUEUE_DEPTH = 'geldar_plan_queue_depth';
+
+/** Plan cell outcomes by code: the two done codes, the contract's failure codes, and `other`. */
+export const PLAN_CELL_CODE_LABELS = [
+  'placed',
+  'broken',
+  'done_already',
+  'changed',
+  'blocked',
+  'no_reference',
+  'out_of_reach',
+  'not_loaded',
+  'missing_materials',
+  'no_tool',
+  'unbreakable',
+  'state_unachievable',
+  'timeout',
+  'refused',
+  'other',
+] as const;
 
 /** A window this long is averaged into one TPS and tick-lag sample. */
 const TPS_WINDOW_MS = 10_000;
@@ -298,6 +323,14 @@ export class GolemMetrics {
       'status',
       'reason',
     ]);
+    registry.declare('counter', BODY_PLAN_CELLS, 'Plan cells by outcome code', ['code']);
+    registry.declare('counter', BODY_PLAN_SECONDS, 'Seconds a plan has run');
+    registry.declare('counter', BODY_PLAN_THROTTLE_WAITS, 'Plan throttle waits, by TPS pause', [
+      'paused',
+    ]);
+    registry.declare('counter', BODY_SEEN_FLUSHES, 'Seen-map flushes');
+    registry.declare('counter', BODY_SEEN_FLUSH_BYTES, 'Bytes written by seen-map flushes');
+    registry.declare('gauge', BODY_PLAN_QUEUE_DEPTH, 'Plans waiting in the queue');
   }
 
   /** The Body's link is up (1) or gone (0). */
@@ -341,6 +374,35 @@ export class GolemMetrics {
     const known = OUTCOME_REASON_LABELS as readonly string[];
     const reasonLabel = reason === undefined ? 'none' : known.includes(reason) ? reason : 'other';
     this.registry.add(BODY_ACTION_OUTCOMES, { status: statusLabel, reason: reasonLabel });
+  }
+
+  /** One plan cell that reached an outcome. An unknown code (or one that is not a code) is `other`. */
+  planCell(code: string): void {
+    const known = PLAN_CELL_CODE_LABELS as readonly string[];
+    this.registry.add(BODY_PLAN_CELLS, { code: known.includes(code) ? code : 'other' });
+  }
+
+  /** Seconds a plan has run; a negative or non-finite amount is ignored. */
+  planSeconds(seconds: number): void {
+    if (Number.isFinite(seconds) && seconds > 0) this.registry.add(BODY_PLAN_SECONDS, {}, seconds);
+  }
+
+  /** One throttle wait before a block operation; `paused` when the lane waited out a TPS pause. */
+  planThrottleWait(paused: boolean): void {
+    this.registry.add(BODY_PLAN_THROTTLE_WAITS, { paused: paused ? 'true' : 'false' });
+  }
+
+  /** One seen-map flush of `bytes` bytes; a negative or non-finite size is ignored. */
+  seenFlush(bytes: number): void {
+    if (!Number.isFinite(bytes) || bytes < 0) return;
+    this.registry.add(BODY_SEEN_FLUSHES, {});
+    this.registry.add(BODY_SEEN_FLUSH_BYTES, {}, bytes);
+  }
+
+  /** The plan queue depth now; a non-finite reading keeps the last value and a negative one reads 0. */
+  planQueueDepth(depth: number): void {
+    if (!Number.isFinite(depth)) return;
+    this.registry.set(BODY_PLAN_QUEUE_DEPTH, {}, Math.max(0, depth));
   }
 }
 

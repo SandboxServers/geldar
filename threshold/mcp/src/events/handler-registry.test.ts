@@ -43,6 +43,7 @@ describe('the Mind event handler registry', () => {
       'wake',
       'heard_sound',
       'observation',
+      'plan_progress',
     ]);
   });
 

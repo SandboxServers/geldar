@@ -2,6 +2,13 @@ import type { WakeEvent } from './wake.ts';
 
 /** One thing that happened to the player: a wake event plus what later tools need to rebuild it. */
 export interface SimEvent extends WakeEvent {
+  /** For plan_progress: the plan's counts as the Body reported them. Absent on other kinds. */
+  plan?: {
+    done: number;
+    total: number;
+    phase: string;
+    nextNeed?: { block: string; count: number };
+  };
   /** The game tick at which it happened. */
   tick: number;
   /** For speech: who spoke. */

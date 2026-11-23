@@ -266,10 +266,13 @@ describe('the page', () => {
     expect(wanted.size).toBeGreaterThan(20);
     for (const path of wanted) expect(STATIC_FILES.has(path), path).toBe(true);
     // And nothing in the table is dead: each file is asked for by the page, or imported by a module that is.
+    // The plan-activity panel (BLD-37) is imported by render-view as './plan-activity/index.ts'.
     const imported = RENDER_MODULES.flatMap((name) =>
-      [...text(`/js/${name}.ts`).matchAll(/from '\.\/(render-[a-z]+\.ts)'/g)].map(
-        (m) => `/js/${m[1]}`,
-      ),
+      [
+        ...text(`/js/${name}.ts`).matchAll(
+          /from '\.\/((?:render-[a-z]+|plan-activity\/index)\.ts)'/g,
+        ),
+      ].map((m) => `/js/${m[1]}`),
     );
     for (const path of STATIC_FILES.keys()) {
       expect(path === '/' || wanted.has(path) || imported.includes(path), path).toBe(true);

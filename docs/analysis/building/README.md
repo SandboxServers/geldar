@@ -1,6 +1,6 @@
 # Building campaign (free-form block placement and removal for agents)
 
-Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Written 2026-11-22 against `origin/main` = `c05574a6`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
+Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 (docs packet B8-docs2) to the integration state: `building/integration` = `a72acaac` (merge of `phase1/b8-fix12-codes`; fixes 1 to 5 merged; B8 follow-up packets through B8-prompt2 merged; the fix6 items are covered by B8-fix6a and B8-fix6b). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
 
 ## Purpose
 
@@ -8,8 +8,8 @@ Let an agent place and break any block, one at a time, with ordinary survival me
 
 ## Exit criteria
 
-1. The `break` and `plan` verbs, and the `survey` and `plan_check` tools, work on the Paper autonomous shard for all 19 agents behind `body_actions.building` (default off).
-2. A plan of any size runs between thoughts, pauses for reflexes and resumes, survives a Body restart, and stays under the KV value limit.
+1. The `break` and `plan` verbs, and the `survey` and `plan_check` tools, work on the Paper autonomous shard for all 19 agents behind `body_actions.building` (default off). Status: code merged; flag off; colo hides `survey` and `plan_check` (`show_unavailable_tools: false` in `shards/colo-mind.yaml`); live run not done (BLD-28); the 19-agent switch-on is BLD-31 (MANUAL, not run).
+2. A plan of any size runs between thoughts, pauses for reflexes and resumes, survives a Body restart, and stays under the KV value limit. Status: met in code for Adam's Body and the player hosts with the flag on (fix1, fix2d, fix4b); the live restart test is not run (BLD-28).
 3. Every edit is a survival action: no server command, no creative supply.
 4. The seen-block map never leaks an unseen block (test) and never reaches a telemetry path to an agent (test).
 5. Each behavior change has a test that fails on revert; the Paper integration test passes; the test-shard evidence note exists (or the owner waives it).
@@ -35,50 +35,82 @@ Numbers 0420 to 0429 are all used. Verified on `origin/main` and every remote br
 
 ## Packets
 
-Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done.
+Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done, Manual (not run), Partial (wiring open: merged, but a named wire or source is still missing; the note says which). Wave 3a rows (BLD-38 family) have no entry in the packet file; their scope is the one-line summary in their worknote.
 
 | ID | Title | Wave (graph) | Size | Restarts | Depends | Status |
 |---|---|---|---|---|---|---|
-| BLD-S1 | Contract scaffold (absorbs 01, 02) | 0 | M | Y | none | Ready |
-| BLD-S2 | Validator and pure-library stubs (absorbs 03) | 0 | M | Y | S1 | BlockedDependency |
-| BLD-S3a | Body scaffold (stubs, hooks, flag) | 0 | M | Y | S1 | BlockedDependency |
-| BLD-S3b | MCP scaffold (stub tools, mapper) | 0 | S | Y | S1 | BlockedDependency |
-| BLD-S3c | Glass scaffold (registry stub) | 0 | S | Y | S1 | BlockedDependency |
-| BLD-S4 | Docs scaffold | 0 | S | N | none | Ready |
-| BLD-04 | Plan expansion, geometry helpers, ordering | 1 | M | Y | S2 | BlockedDependency |
-| BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | BlockedDependency |
-| BLD-06 | `break` action | 1 | M | Y | S3a | BlockedDependency |
-| BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | BlockedDependency |
-| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | BlockedDependency |
-| BLD-09 | Standing-position solver | 1 | M | Y | S3a | BlockedDependency |
-| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | BlockedDependency |
-| BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Ready |
-| BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | BlockedDependency |
-| BLD-17 | Seen-block recorder | 1 | M | Y | S3a | BlockedDependency |
-| BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | BlockedDependency |
-| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | BlockedDependency |
-| BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | BlockedDependency |
-| BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | BlockedDependency |
-| BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | BlockedDependency |
-| BLD-20 | Body survey endpoint | 3 | M | Y | 17 | BlockedDependency |
-| BLD-14 | Queue ops, a foreground intent pauses the plan, resume | 4 | M | Y | 13 | BlockedDependency |
-| BLD-15 | TPS throttle | 4 | S | Y | 13 | BlockedDependency |
-| BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | BlockedDependency |
-| BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | BlockedDependency |
-| BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | BlockedDependency |
-| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | BlockedDependency |
-| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | BlockedDependency |
-| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | BlockedDependency |
-| BLD-30 | Operator runbook | 5 | S | N | 14 | BlockedDependency |
-| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | BlockedDependency |
-| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | BlockedDependency |
-| BLD-28 | Paper integration test | 6 | M | N | all code | BlockedDependency |
-| BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | BlockedDependency |
-| BLD-31 | Paper go-live (MANUAL) | 7 | S | Y (config) | 29 or owner go | BlockedDependency |
+| BLD-S1 | Contract scaffold (absorbs 01, 02) | 0 | M | Y | none | Done |
+| BLD-S2 | Validator and pure-library stubs (absorbs 03) | 0 | M | Y | S1 | Done |
+| BLD-S3a | Body scaffold (stubs, hooks, flag) | 0 | M | Y | S1 | Done |
+| BLD-S3b | MCP scaffold (stub tools, mapper) | 0 | S | Y | S1 | Done |
+| BLD-S3c | Glass scaffold (registry stub) | 0 | S | Y | S1 | Done |
+| BLD-S4 | Docs scaffold | 0 | S | N | none | Ready (unverified) |
+| BLD-04 | Plan expansion, geometry helpers, ordering | 1 | M | Y | S2 | Done |
+| BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | Done |
+| BLD-06 | `break` action | 1 | M | Y | S3a | Done |
+| BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | Done |
+| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | Partial (facing refused for every kind: `FACING_VERIFIED` is empty in `place-state.ts`; half and axis only; fix3a) |
+| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Partial (wired behind the flag through `cell-stand.ts`; retainBlock and orderCells open) |
+| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Partial (wired behind the flag through `cell-stand.ts`; retainBlock and orderCells open) |
+| BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Done |
+| BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | Done |
+| BLD-17 | Seen-block recorder | 1 | M | Y | S3a | Done |
+| BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | Done |
+| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Partial (wiring open): no predecessor source, nothing inherited; erase covers seen, plan chunks and checkpoint (fix4b); MANUAL NATS role open (the Body creates the buckets; no seed step) |
+| BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | Done |
+| BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | Done (review pending) |
+| BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | Done |
+| BLD-20 | Body survey endpoint | 3 | M | Y | 17 | Done |
+| BLD-14 | Queue ops, a foreground intent pauses the plan, resume | 4 | M | Y | 13 | Done |
+| BLD-15 | TPS throttle | 4 | S | Y | 13 | Done |
+| BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | Done |
+| BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | Done |
+| BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | Done |
+| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Done (wired by BLD-22b: dry run on the Body, MCP forwards; hidden on colo by `show_unavailable_tools: false`; cap 8192 cells) |
+| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | Partial (wiring open): presenter in df27bb82; `status.active_plan` has no source |
+| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Done (wired in fix1 and fix2b: series emitted for Bodies built with the flag on; pushed only when `GELDAR_TELEMETRY_URL` is set) |
+| BLD-30 | Operator runbook | 5 | S | N | 14 | Done |
+| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | Partial (wiring open): panel off; Glass feed and flag gate not wired |
+| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | Done in kit repo (kit PR 137; tag and per-player upgrades MANUAL, not run) |
+| BLD-28 | Paper integration test | 6 | M | N | all code | Done (live test written, NOT run) |
+| BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | Manual (not run) |
+| BLD-31 | Paper go-live (MANUAL) | 7 | S | Y (config) | 29 or owner go | Manual (not run) |
 | BLD-32 | NeoForge: attribution design | NF | S | N | owner on 0387, 0390 | BlockedDecision |
 | BLD-33 | NeoForge port assessment | NF | S | N | 32 | BlockedDecision |
 | BLD-34 | NeoForge edit-provenance listener | NF | M | manual mod jar | 32 accepted | BlockedDecision |
 | BLD-35 | NeoForge enablement | NF | M | MANUAL | 33, 34 | BlockedDecision |
+| BLD-38 | Wire the building modules into the Body (wiring audit; work continued in 38b to 38h) | 3a | - | Y | see worknote | Done |
+| BLD-38b | Plan queue and lane wired into the Body tick (flag on only) | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38b2 | Wiring fixes: break and replace, stateful targets, shared import | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38c | Plan store: cells as chunks in `geldar-plans`, cursor in the checkpoint | 3a | - | Y | 38 family (merge order) | Done for Adam's Body and player hosts (flag on; MANUAL NATS role open) |
+| BLD-38d | Seen map and survey wired into the Body (flag on only) | 3a | - | Y | 38 family (merge order) | Done for Adam's Body and player hosts (flag on) |
+| BLD-38e | Survey through the gateway and the golem responder | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38f | Tick-based progress throttle; failed phase on an unexpected throw | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38g | Survey reaches the production Body; seen map survives restart | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38h | Restart reloads the life's own seen map | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-22b | Plan check on the Body (`plan-check-reply.ts`), survey box cap, flag-gated reply | 5 | - | Y | 22 | Done (merged); the live run is not done |
+| BLD-fix1 | Review fixes 1 (worknote `BLD-fix1.md`) | fix | - | Y | - | Done (merged) |
+| B8-wire(2) | Stand, scaffold and hazard wiring into the cell executor (`BLD-b8-wire.md`) | b8 | - | Y | BLD-09, 10 | Merged; branch tip `b35bba5f` |
+| B8-cfg | v12 default, `survey` and `plan_check` visible with the flag, erasure removes the bare checkpoint, manual NATS order (`BLD-b8-cfg.md`) | b8 | - | Y | B8-wire(2) | Merged; branch tip `e4a4403d` |
+| B8-seen | Seen map privacy and stale cells (`BLD-b8-seen.md`) | b8 | - | Y | B8-cfg | Merged; branch tip `f91464a9` |
+| B8-lazy | Lane and queue lazy plan source, plan store format 2, yielding, flag-off refusal (`BLD-b8-lazy.md`) | b8 | - | Y | B8-seen | Merged; branch tip `52bc5b08` |
+| B8-pcheck | `plan_check` streams its dry run with no cell cap (`BLD-b8-pcheck.md`) | b8 | - | Y | B8-lazy | Merged; branch tip `a1493f5a` |
+| B8-inherit | Inherited seen flag kept through flush and reload | b8 | - | Y | B8-seen | Merged; branch tip `2bb9500a` |
+| B8-lazy7 | Lazy line, circle, wall and list steps: layer streams for box, sphere, wall, line, place, replace, break; circle keeps one sorted outline index (O(radius)), list keeps one sorted index (O(list)); stated, no cap (`BLD-b8-lazy7`) | b8 | - | Y | B8-lazy | Merged; branch tip `db02ba79`; circle and list not fully streamed (see RESUME) |
+| B8-fix6a | Lane and queue fixes: scaffold cache reset per plan start; restored lanes keep scaffold removal (`fresh`); yielding layer scan and resume walk; active-replace race guard; `prime()` cursor-past-end guard (`BLD-b8-fix6a`) | b8 | - | Y | B8-lazy7 | Merged; branch tip `02c96eeb`; scaffold removal under the agent unverified live |
+| B8-fix6b | Small review fixes: `plan_too_large` removed from the tool files; survey callback errors logged; erasure removes `<life>.inflight` keys (`BLD-b8-fix6b`) | b8 | - | Y | B8-lazy7 (both fix6 packets cut from `784b4f27`) | Merged; branch tip `8297a30b`; `plan_too_large` leftovers in the gateway and ports (RESUME open item 9) |
+| B8-fix7 | `plan_check` streams progress: idle timeout resets per chunk; cancel on the same subject; no new subject or permission (`BLD-b8-fix7`) | b8 | - | Y | B8-fix6b | Merged; branch tip `a2e25fe6`; NATS stream transport covered only by the live lane |
+| B8-fix12 | Out-of-view cells report one code (`changed`); in-view cells keep the detailed code (`BLD-b8-fix12`) | b8 | - | Y | B8-prompt2 (cut from `e40bb80d`) | Merged; branch tip `da86ca3f`; integration merge `a72acaac` |
+| B8-prompt2 | Survey description sentence in the contract: the `@<minutes>` mark and the trailing `i`; no body-api v13, `BUILDING_BODY_API_VERSION` stays 12 (`BLD-b8-prompt2`) | b8 | - | N | B8-prompt | Merged; branch tip `c6b49737` |
+| BLD-fix2a | Review fixes 2a (worknote `BLD-fix2a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix2b | Review fixes 2b (worknote `BLD-fix2b.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix2d | Review fixes 2d (worknote `BLD-fix2d.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix3a | Review fixes 3a (worknote `BLD-fix3a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix3b | Review fixes 3b (worknote `BLD-fix3b.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix4a | Review fixes 4a (worknote `BLD-fix4a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix4b | Review fixes 4b (worknote `BLD-fix4b.md`); NATS operator grants still manual | fix | - | Y | - | Done (merged) |
+| BLD-fix5 | Review fixes 5 (palette state, checkpoint on cancel, intents pause the lane) | fix | - | Y | - | Done (merged in d87221c4) |
+| BLD-fix6 | Not implemented (worknote `BLD-fix6.md` holds the plan) | fix | - | - | - | Not implemented |
 
 BLD-01, 02, 03 are delivered by S1 and S2 (their sections in the packet file are the content specs).
 

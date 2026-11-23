@@ -1,0 +1,117 @@
+import { describe, expect, it } from 'vitest';
+import { createPlanExpand, PlanNotRunnable } from './wire-expand.ts';
+
+const FEET = { x: 10, y: 70, z: -4 };
+const feet = () => FEET;
+
+const palette = { s: { block: 'stone' }, p: { block: 'oak_planks' } };
+
+describe('the plan expander the queue is built with (BLD-38b)', () => {
+  it('turns each placed cell into an empty cell that the palette block goes into, in order', () => {
+    const expand = createPlanExpand(feet);
+    const cells = expand({
+      palette,
+      steps: [{ op: 'line', pal: 's', from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(cells).toEqual([
+      { at: { x: 0, y: 64, z: 0 }, prior: 'air', target: 'stone' },
+      { at: { x: 1, y: 64, z: 0 }, prior: 'air', target: 'stone' },
+      { at: { x: 2, y: 64, z: 0 }, prior: 'air', target: 'stone' },
+    ]);
+  });
+
+  it('shifts every cell by an explicit origin, and by the feet for origin here', () => {
+    const expand = createPlanExpand(feet);
+    const steps = [{ op: 'place', pal: 'p', at: { x: 1, y: 2, z: 3 } }];
+    const absolute = expand({ palette, steps, origin: { x: 100, y: 0, z: 100 }, order: 'given' });
+    expect(absolute[0]?.at).toEqual({ x: 101, y: 2, z: 103 });
+    const here = expand({ palette, steps, origin: 'here', order: 'given' });
+    expect(here[0]?.at).toEqual({ x: 11, y: 72, z: -1 });
+  });
+
+  it('orders bottom up by default and keeps the given order when asked', () => {
+    const expand = createPlanExpand(feet);
+    const steps = [
+      { op: 'place', pal: 's', at: { x: 0, y: 65, z: 0 } },
+      { op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } },
+    ];
+    const bottomUp = expand({ palette, steps });
+    expect(bottomUp.map((c) => c.at.y)).toEqual([64, 65]);
+    const given = expand({ palette, steps, order: 'given' });
+    expect(given.map((c) => c.at.y)).toEqual([65, 64]);
+  });
+
+  it('expands a break and a replace to cells with no planned prior, read live at run time', () => {
+    const expand = createPlanExpand(feet);
+    const at = { x: 0, y: 64, z: 0 };
+    expect(expand({ palette, steps: [{ op: 'break', at }], order: 'given' })).toEqual([
+      { at, prior: null, target: 'air' },
+    ]);
+    expect(expand({ palette, steps: [{ op: 'replace', pal: 's', at }], order: 'given' })).toEqual([
+      { at, prior: null, target: 'stone' },
+    ]);
+    expect(expand({ palette, steps: [{ op: 'break', at }], origin: 'here' })).toEqual([
+      { at: { x: 10, y: 134, z: -4 }, prior: null, target: 'air' },
+    ]);
+  });
+
+  it('writes a stateful palette block in one spelling: the name, then the properties sorted', () => {
+    const expand = createPlanExpand(feet);
+    const stairs = { s: { block: 'oak_stairs[half=bottom,facing=north]' } };
+    const cells = expand({
+      palette: stairs,
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(cells[0]?.target).toBe('oak_stairs[facing=north,half=bottom]');
+  });
+
+  it('carries a palette entry state into the cell target, in the sorted spelling', () => {
+    const expand = createPlanExpand(feet);
+    const palette = { s: { block: 'oak_stairs', state: { half: 'top', facing: 'north' } } };
+    const cells = expand({
+      palette,
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(cells[0]?.target).toBe('oak_stairs[facing=north,half=top]');
+    const axis = expand({
+      palette: { l: { block: 'oak_log', state: { axis: 'x' } } },
+      steps: [{ op: 'place', pal: 'l', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(axis[0]?.target).toBe('oak_log[axis=x]');
+  });
+
+  it('refuses a palette state whose value is not a string', () => {
+    const expand = createPlanExpand(feet);
+    const palette = { s: { block: 'oak_stairs', state: { half: 1 } } };
+    expect(() =>
+      expand({ palette, steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }] }),
+    ).toThrow(PlanNotRunnable);
+  });
+
+  it('refuses a palette key that names no block, and an origin that is not a cell', () => {
+    const expand = createPlanExpand(feet);
+    const steps = [{ op: 'place', pal: 'missing', at: { x: 0, y: 64, z: 0 } }];
+    expect(() => expand({ palette, steps })).toThrow(/names no block/);
+    const ok = [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }];
+    expect(() => expand({ palette, steps: ok, origin: { x: 'a' } })).toThrow(PlanNotRunnable);
+  });
+
+  it('names the state in the message when a palette state is not a block state (review F6)', () => {
+    const expand = createPlanExpand(feet);
+    const steps = [{ op: 'place', pal: 'bad', at: { x: 0, y: 64, z: 0 } }];
+    const upper = { bad: { block: 'oak_slab', state: { type: 'TOP' } } };
+    expect(() => expand({ palette: upper, steps })).toThrow(
+      /^palette key bad has an invalid state$/,
+    );
+    const noName = { bad: { block: 'Oak Slab', state: { type: 'top' } } };
+    expect(() => expand({ palette: noName, steps })).toThrow(/^palette key bad names no block$/);
+  });
+
+  it('an empty plan has no cells', () => {
+    expect(createPlanExpand(feet)({ palette, steps: [] })).toEqual([]);
+  });
+});

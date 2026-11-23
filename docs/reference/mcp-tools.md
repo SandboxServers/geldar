@@ -131,7 +131,7 @@ The tool list is generated from every `*Input`/`*Result` pair in `contract/schem
 | `propose` | `mcp-world` | `not_available` | Simulated | Charged when it runs |
 | `vote` | `mcp-world` | `not_available` | Simulated | Charged when it runs |
 
-Real-server wiring: `createWorld` in `threshold/mcp/src/world.ts` lines 372 to 411. Mock wiring: `threshold/mcp-mock/src/sim/sim-world.ts` lines 52 to 71 and `fake-world.ts`. The unavailable set is `NOT_AVAILABLE_TOOLS` in `threshold/mcp/src/tools/unavailable.ts`. With `sovereign.mcp.show_unavailable_tools: false` (set in `shards/colo-mind.yaml`, default true) those six are left out of `tools/list`, and an `act` whose action `do` names one of them is refused whole with `not_available`.
+Real-server wiring: `createWorld` in `threshold/mcp/src/world.ts` lines 372 to 411. Mock wiring: `threshold/mcp-mock/src/sim/sim-world.ts` lines 52 to 71 and `fake-world.ts`. The unavailable set is `NOT_AVAILABLE_TOOLS` in `threshold/mcp/src/tools/unavailable.ts`. With `sovereign.mcp.show_unavailable_tools: false` (set in `shards/colo-mind.yaml`, default true) those six are left out of `tools/list`, and an `act` whose action `do` names one of them is refused whole with `not_available`. `survey` and `plan_check` (`NOT_YET_EXPOSED_TOOLS`) are left out too, unless `body_actions.building` is on: `hiddenToolsFor(showUnavailableTools, buildingOn)` takes that flag, which `threshold/mcp/src/config.ts` reads. With the flag on they are listed. With `show_unavailable_tools` true nothing is hidden, so the two tools are listed whatever the flag; with the flag off the Body answers `not_available` and the MCP returns `body_unavailable`.
 
 Input field types and limits below are the generated schemas. Every input object has `additionalProperties: false`. Re-derive a tool's full schema: open `contract/src/generated/mcp-tools.ts` at the tool's key.
 
@@ -273,7 +273,7 @@ Names only; values are in the shard files or held by the operator. Full list: th
 | `GELDAR_ACT_BUDGET_ENFORCE` | `1` enforces the act budget and act spacing |
 | `GELDAR_WAIT_DELTA_LIVES` | Turns on `wait` deduplication for `all` or listed lives |
 | `GELDAR_MCP_INSTINCT_KEY_FILE` | Turns on the second connection class ([Identity and scopes](#identity-and-scopes)) |
-| `sovereign.mcp.show_unavailable_tools` | `false` hides the six unavailable tools |
+| `sovereign.mcp.show_unavailable_tools` | `false` hides the six unavailable tools, and `survey` and `plan_check` unless `body_actions.building` is on |
 | `sovereign.mcp.wait_cap_seconds`, `keepalive_seconds`, `max_result_bytes`, `max_body_bytes` | See the tables above |
 | `sovereign.rate_limits.*`, `sovereign.budget.*` | See Rate limits and Budget |
 | `sovereign.harnesses.<name>.enabled` | `false` refuses that harness's tokens (`harness_disabled`) |

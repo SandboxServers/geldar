@@ -95,11 +95,13 @@ const SPEC_TOOLS = [
   'define_skill',
   'use_skill',
   'offer',
+  'plan_check',
   'propose',
   'vote',
   'sleep',
   'journal',
   'status',
+  'survey',
 ];
 /** Covered by mcp-play.test.ts (checked below). */
 const COVERED_ELSEWHERE = ['look', 'wait', 'act', 'say'];

@@ -85,6 +85,8 @@ export interface SovereignConfig {
 
 /** The MCP's whole configuration: the shard file's keys it reads, plus its environment. */
 export interface McpConfig {
+  /** `body_actions.building` of the shard file (off when left out). Lists survey and plan_check while on. */
+  buildingOn: boolean;
   shard: string;
   tickRate: number;
   worldBorderRadius: number;
@@ -200,6 +202,7 @@ export function parseMcpConfig(doc: unknown, options: LoadOptions = {}): McpConf
   const http = httpConfig(env, sovereign, publicSurface);
   return {
     shard,
+    buildingOn: buildingFlag(root),
     tickRate: int(root, 'tick_rate', 'shard file', 1, 200),
     worldBorderRadius: int(root, 'world_border_radius', 'shard file', 1, 30000000),
     chat: {
@@ -399,6 +402,12 @@ function httpConfig(
 
 /** GELDAR_MCP_IN_CONTAINER: unset or 0 is false, 1 is true, anything else is an error. */
 /** A true or false key that may be absent: absent gives the fallback, anything but a boolean is refused. */
+/** `body_actions.building`: off when the body_actions block or the key is left out. */
+function buildingFlag(root: Record<string, unknown>): boolean {
+  if (root.body_actions === undefined) return false;
+  return optionalFlag(map(root.body_actions, 'body_actions'), 'building', 'body_actions', false);
+}
+
 function optionalFlag(section: object, key: string, where: string, fallback: boolean): boolean {
   const raw = (section as Record<string, unknown>)[key];
   if (raw === undefined) return fallback;

@@ -1,11 +1,3 @@
 # BLD-12 worknote
 
-Status: Writing
-Branch:
-Worktree:
-Base sha:
-Commit:
-Checks:
-Revert check (test that failed):
-Live: pending
-Notes:
+Status: done. An agent's own break (the actor's name equals the Body's name, compared without case) yields no property_broken observation; the test that pins it is in property-break.test.ts.

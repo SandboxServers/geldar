@@ -11,6 +11,7 @@ import {
   recordState,
   toResult,
 } from './outcome.ts';
+import type { PlaceState } from './place-state.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 import { wakeBot } from './wake.ts';
 
@@ -30,6 +31,8 @@ export interface ActionContext {
   highLedge?: boolean;
   /** Set only by a program step (decision 0349): the one cell a `mine` digs. */
   mineAt?: Position;
+  /** Set only by a program step (decision 0349): the block state a `place` asks for. */
+  placeState?: PlaceState;
 }
 
 /** The code that carries out one verb. */
@@ -143,6 +146,8 @@ export interface ActionRunOptions {
   highLedge?: boolean;
   /** Handed to the handler as `ActionContext.mineAt`. Only `mine` takes it (decision 0349). */
   mineAt?: Position;
+  /** Handed to the handler as `ActionContext.placeState`. Only `place` takes it (decision 0349). */
+  placeState?: PlaceState;
   /**
    * Called once, before the first await, with a promise that settles when the handler itself has
    * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
@@ -170,6 +175,9 @@ async function runUnobserved(
   // An exact cell is for a program's mine only (decision 0349).
   if (opts.mineAt !== undefined && valid.do !== 'mine') {
     return finish(failed('invalid_args', 'an exact cell is for mine only'), 0, 0);
+  }
+  if (opts.placeState !== undefined && valid.do !== 'place') {
+    return finish(failed('invalid_args', 'a block state is for place only'), 0, 0);
   }
   if (opts.signal?.aborted) return finish(cancelled(), 0, 0);
 
@@ -202,6 +210,7 @@ async function runUnobserved(
     ownPlanksLast: opts.ownPlanksLast === true,
     highLedge: opts.highLedge === true,
     ...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),
+    ...(opts.placeState === undefined ? {} : { placeState: opts.placeState }),
   };
   // Clocks are read before the handler starts: a handler may run synchronously up to its first await.
   const startedAt = now();

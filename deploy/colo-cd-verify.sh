@@ -12,7 +12,6 @@ COLO_CD_IMAGE_PREFIX=${COLO_CD_IMAGE_PREFIX:-ghcr.io/sandboxservers}
 image_name_of() {
   case $1 in
     GELDAR_BODY_IMAGE) echo geldar-body ;;
-    GELDAR_MIND_IMAGE) echo geldar-mind ;;
     GELDAR_EVENTSINK_IMAGE) echo geldar-eventsink ;;
     GELDAR_MCP_IMAGE) echo geldar-mcp ;;
     GELDAR_ADMIN_IMAGE) echo geldar-admin ;;

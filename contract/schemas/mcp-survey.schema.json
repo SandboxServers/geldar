@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-survey.schema.json",
+  "title": "McpSurvey",
+  "description": "The survey tool: a read of the blocks the body has seen in a box, by height, with the age of each run.",
+  "$defs": {
+    "SurveyInput": {
+      "type": "object",
+      "description": "Read the blocks you have seen inside a box, by height. Give two corners of the box and, optionally, how many height layers to return, from the lowest. Cells you have not seen read as unknown. A large reply is cut short and marked truncated.",
+      "additionalProperties": false,
+      "required": ["box"],
+      "properties": {
+        "box": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "$ref": "build-plan.schema.json#/$defs/BuildBlockCell" },
+            "to": { "$ref": "build-plan.schema.json#/$defs/BuildBlockCell" }
+          }
+        },
+        "layers": { "type": "integer", "minimum": 1, "maximum": 384 }
+      }
+    },
+    "SurveyResult": {
+      "type": "object",
+      "description": "The survey as text: layers by height, each a list of run-length rows over a legend of block names, with the age in game minutes of each run. The name unknown marks cells not seen. A run marked @<minutes> was last seen that many game minutes ago, and a trailing i means that sighting was inherited from a previous life; the cells are not re-checked.",
+      "additionalProperties": false,
+      "required": ["text", "truncated"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 6000 },
+        "truncated": { "type": "boolean" }
+      }
+    }
+  }
+}

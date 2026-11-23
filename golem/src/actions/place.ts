@@ -8,25 +8,25 @@ import { moveNear } from './pathing.ts';
 import {
   digSideCell,
   edgeCell,
-  entityInCell,
   entityOverlapsCell,
   pillarStep,
   placeAgainst,
   sideDigCell,
 } from './pillar.ts';
+import { freeBeside, inBody, NEIGHBOR_OFFSETS, REPLACEABLE } from './place-beside.ts';
+import { footprintOf, upperCell } from './place-footprint.ts';
+
+export { REPLACEABLE } from './place-beside.ts';
+
+import {
+  planSentClick,
+  STATE_UNACHIEVABLE,
+  stateMatches,
+  takesState,
+  yawToward,
+} from './place-state.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
-/** Cells a placement may replace: the target cell must hold one of these. */
-export const REPLACEABLE = new Set([
-  'air',
-  'cave_air',
-  'void_air',
-  'water',
-  'short_grass',
-  'tall_grass',
-  'fern',
-  'snow',
-]);
 /**
  * Seed items and the crop block each plants on farmland (minecraft-data 26.1). Nether wart is left
  * out: it grows on soul sand, not farmland.
@@ -49,22 +49,6 @@ const WALK_RANGE = 3;
 const LAND_WAIT_MS = 1000;
 /** Wall-clock bound on the step onto a block's edge before a pillar, scaled by `timeScale`. */
 const EDGE_WAIT_MS = 1000;
-/** Reference candidates for a block at a position, in the order they are tried. */
-const NEIGHBOR_OFFSETS: readonly Vec3[] = [
-  new Vec3(0, -1, 0),
-  new Vec3(1, 0, 0),
-  new Vec3(-1, 0, 0),
-  new Vec3(0, 0, 1),
-  new Vec3(0, 0, -1),
-  new Vec3(0, 1, 0),
-];
-/** The four horizontal steps, in a fixed order. */
-const CARDINALS: readonly Vec3[] = [
-  new Vec3(1, 0, 0),
-  new Vec3(0, 0, 1),
-  new Vec3(-1, 0, 0),
-  new Vec3(0, 0, -1),
-];
 /** Fixed failure texts shown to the model: each states what happened, without advice (decision 0154: facts, never advice). */
 export const MESSAGE = {
   noSpace: 'no free space next to you',
@@ -74,6 +58,7 @@ export const MESSAGE = {
   noFarmland: 'seeds need farmland below',
   notLoaded: 'target is not loaded',
   noReference: 'no solid block to place against',
+  stateUnachievable: 'no click on a solid neighbour gives that block state',
   noGround: 'no solid block under your feet to build on',
   notGrounded: 'you are not on the ground',
   headroom: 'no headroom for a pillar: the two cells above your head are not clear',
@@ -126,19 +111,39 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   let target = named === null || atFeet ? feet : named;
   const targetCell = bot.blockAt(target);
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
+  // A two-cell item whose halves already stand is done: the second pass sends nothing.
+  const above = upperCell(block, target);
+  if (
+    above !== null &&
+    confirmsPlacement(targetCell.name, block) &&
+    confirmsPlacement(bot.blockAt(above)?.name ?? '', block)
+  ) {
+    return completed({ block, at: spot(target), already: true });
+  }
   if (!REPLACEABLE.has(targetCell.name)) {
     return failed('blocked', inBody(bot, target) ? MESSAGE.standing : MESSAGE.occupied);
   }
 
   // A solid block at feet is a pillar: the bot jumps and places it in the cell its feet were in
-  // (decision 0160). A bed keeps the beside path.
-  const pillarAtFeet = atFeet && boundingBox !== 'empty' && !block.endsWith('_bed');
+  // (decision 0160). A bed or a two-cell item keeps the beside path.
+  const pillarAtFeet = atFeet && boundingBox !== 'empty' && footprintOf(block) === 'single';
   // A solid block on the bot's own cells moves to the first free cell beside the bot.
   let beside: { target: Vec3; step: Vec3 } | null = null;
   if (!pillarAtFeet && boundingBox !== 'empty' && inBody(bot, target)) {
-    beside = freeBeside(bot, feetCell(bot), block.endsWith('_bed'));
+    beside = freeBeside(bot, feetCell(bot), footprintOf(block));
     if (!beside) return failed('blocked', MESSAGE.noSpace);
     target = beside.target;
+  }
+
+  // The second half of a two-cell item needs its cell clear too; a bed's is checked by freeBeside.
+  const second = upperCell(block, target);
+  if (second !== null && !REPLACEABLE.has(bot.blockAt(second)?.name ?? '')) {
+    return failed('blocked', MESSAGE.occupied);
+  }
+
+  // A state the block does not take is refused before any walk or click.
+  if (ctx.placeState !== undefined && !takesState(block, ctx.placeState)) {
+    return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
   }
 
   const walked = await reachTarget(ctx, target);
@@ -164,9 +169,24 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
   const cells = candidates.map((position) => bot.blockAt(position));
   // Every solid neighbour is a reference in turn: one can be out of sight or refused by the server.
-  const solidAt = cells.flatMap((cell, i) => (cell?.boundingBox === 'block' ? [i] : []));
+  let solidAt = cells.flatMap((cell, i) => (cell?.boundingBox === 'block' ? [i] : []));
   if (pickReference(cells.map((cell) => cell?.boundingBox === 'block')) === null) {
     return failed('blocked', MESSAGE.noReference);
+  }
+  // A block state picks the one reference whose click gives it; when no click does, nothing is placed.
+  const state = ctx.placeState;
+  const plan =
+    state === undefined
+      ? null
+      : planSentClick(
+          block,
+          state,
+          solidAt.map((i) => (candidates[i] ?? target).minus(target)),
+        );
+  if (state !== undefined) {
+    if (plan === null) return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
+    const chosen = target.plus(plan.reference);
+    solidAt = solidAt.filter((i) => candidates[i]?.equals(chosen) === true);
   }
 
   if (bot.heldItem?.name !== block) {
@@ -176,7 +196,13 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 
   // A bed's head goes the way the bot faces, so the bot turns toward the cell it moved to.
   if (beside && block.endsWith('_bed')) {
-    await bot.look(Math.atan2(-beside.step.x, beside.step.z), 0, true);
+    await bot.look(yawToward(beside.step), 0, true);
+    if (ctx.signal.aborted) return cancelled();
+  }
+
+  // The bot turns to the look that gives the state before the click (decision 0349).
+  if (plan !== null) {
+    await bot.look(plan.yaw, plan.pitch, true);
     if (ctx.signal.aborted) return cancelled();
   }
 
@@ -212,13 +238,25 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 
     // Only the target block is checked: a bed placed here also makes a second block.
     const placed = bot.blockAt(target)?.name ?? '';
-    if (!confirmsPlacement(placed, block)) {
+    const placedAbove =
+      second === null || confirmsPlacement(bot.blockAt(second)?.name ?? '', block);
+    if (!confirmsPlacement(placed, block) || !placedAbove) {
       last = failed('blocked', MESSAGE.unconfirmed);
       continue;
+    }
+    // The placed block must carry the state asked for; a mismatch is reported, not called placed.
+    if (state !== undefined && !stateMatches(block, state, propertiesAt(bot, target))) {
+      return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
     }
     return completed({ block, at: spot(target), reference: spot(referencePos) });
   }
   return last;
+}
+
+/** The properties the block at the cell reports; empty when it reports none. */
+function propertiesAt(bot: Bot, cell: Vec3): Record<string, string> {
+  const block = bot.blockAt(cell) as { getProperties?: () => Record<string, string> } | null;
+  return block?.getProperties?.() ?? {};
 }
 
 type Stack = ReturnType<Bot['inventory']['items']>[number];
@@ -433,35 +471,6 @@ async function stepToEdge(
   return reached.equals(edge) && bot.entity.onGround ? edge : null;
 }
 
-/** True when the cell is the bot's feet cell or the cell above it. */
-function inBody(bot: Bot, cell: Vec3): boolean {
-  const feet = feetCell(bot);
-  return cell.equals(feet) || cell.equals(feet.offset(0, 1, 0));
-}
-
-/**
- * The first cell beside the bot, in facing order, that is open and has a solid neighbor. A bed
- * also needs the cell one further on, where its second half goes.
- */
-function freeBeside(bot: Bot, body: Vec3, bed: boolean): { target: Vec3; step: Vec3 } | null {
-  for (const step of stepsFromFacing(bot.entity.yaw)) {
-    const cell = body.plus(step);
-    if (!isFree(bot, cell)) continue;
-    if (bed && !isOpen(bot, cell.plus(step))) continue;
-    return { target: cell, step };
-  }
-  return null;
-}
-
-/** The cardinal step the bot faces, then the other three in their fixed order. */
-function stepsFromFacing(yaw: number): Vec3[] {
-  const dx = -Math.sin(yaw);
-  const dz = Math.cos(yaw);
-  const facing =
-    Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
-  return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
-}
-
 /** Dropped items and XP orbs lie in the world without blocking a placement. */
 const LOOSE_ENTITY_NAMES: ReadonlySet<string> = new Set(['item', 'experience_orb']);
 
@@ -476,20 +485,6 @@ function occupantText(bot: Bot, cell: Vec3): string | null {
   );
   if (occupant === undefined) return null;
   return occupant.type === 'player' ? MESSAGE.somePlayer : MESSAGE.someEntity;
-}
-
-/** True when a block may replace the cell and no entity's box overlaps it. */
-function isOpen(bot: Bot, cell: Vec3): boolean {
-  const name = bot.blockAt(cell)?.name;
-  return name !== undefined && REPLACEABLE.has(name) && !entityInCell(bot, cell);
-}
-
-/** True when the cell is open and one of its neighbors is solid to place against. */
-function isFree(bot: Bot, cell: Vec3): boolean {
-  return (
-    isOpen(bot, cell) &&
-    NEIGHBOR_OFFSETS.some((o) => bot.blockAt(cell.plus(o))?.boundingBox === 'block')
-  );
 }
 
 /** A plain position for the outcome detail. */

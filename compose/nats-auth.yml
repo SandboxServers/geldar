@@ -14,7 +14,7 @@
 # it points the other secrets (threat model section 1 forbids interpolation in volume sources).
 # Each container reads its own password from a file mounted at /run/secrets/nats-<user>.txt and
 # names its user in GELDAR_NATS_USER (the TypeScript and Java connect paths read these; see
-# contract/src/nats-connect.ts). Host-run components (golem Body, animus) are not in compose: give
+# contract/src/nats-connect.ts). Host-run components (golem Body) are not in compose: give
 # them GELDAR_NATS_USER=body or mind and GELDAR_NATS_PASSWORD_FILE=compose/secrets/nats-<user>.txt.
 services:
   nats:

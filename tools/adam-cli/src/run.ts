@@ -80,18 +80,6 @@ export function startService(service: Service, env: Record<string, string>): Bod
   }
 }
 
-/** Starts the services in order; after a short wait, returns the names of those already dead. */
-export async function startAll(env: Record<string, string>, settleMs = 3_000): Promise<string[]> {
-  for (const service of SERVICES) {
-    const owner = startService(service, env);
-    console.log(`started ${service.name} (pid ${owner.pid}), log ${logFile(service)}`);
-  }
-  await sleep(settleMs);
-  return readRows()
-    .filter((r) => r.state !== 'running')
-    .map((r) => r.name);
-}
-
 /**
  * Stops one service: SIGTERM, then SIGKILL after `graceMs`. On Windows a signal ends the process
  * at once, so the Body resumes from its last checkpoint instead of writing a final one.

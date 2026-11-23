@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMcpTools, loadSchemas } from '../scripts/generator.ts';
 import { validateViewInput, validateViewResult } from '../src/generated/validators.js';
-import { viewSubject } from '../src/subjects.ts';
+import { planCheckSubject, surveySubject, viewSubject } from '../src/subjects.ts';
 
 describe('view tool schema', () => {
   it('accepts no arguments, and optional cols and rows in range', () => {
@@ -30,6 +30,19 @@ describe('view tool schema', () => {
     expect(viewSubject('phase0', 'ag_jason_01')).toBe('geldar.phase0.body.ag_jason_01.view');
     expect(() => viewSubject('phase0.*', 'ag_jason_01')).toThrow();
     expect(() => viewSubject('phase0', 'ag_jason_01.>')).toThrow();
+  });
+
+  it('names the survey subject on the life, with five tokens and the same validation', () => {
+    expect(planCheckSubject('phase0', 'ag_jason_01')).toBe(
+      'geldar.phase0.body.ag_jason_01.plan_check',
+    );
+    expect(() => planCheckSubject('phase0.*', 'ag_jason_01')).toThrow();
+    expect(() => planCheckSubject('phase0', 'ag_jason_01.>')).toThrow();
+    expect(() => planCheckSubject('phase0', 'ag_jason_01.plan_check')).toThrow();
+    expect(surveySubject('phase0', 'ag_jason_01')).toBe('geldar.phase0.body.ag_jason_01.survey');
+    expect(() => surveySubject('phase0.*', 'ag_jason_01')).toThrow();
+    expect(() => surveySubject('phase0', 'ag_jason_01.>')).toThrow();
+    expect(() => surveySubject('phase0', 'ag_jason_01.survey')).toThrow();
   });
 
   it('is in the tool list', async () => {

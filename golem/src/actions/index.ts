@@ -45,6 +45,10 @@ import { editSignAction } from './edit-sign.ts';
 // --- body use (decision 0218 step 1) ---
 import { useAction } from './use.ts';
 
+// --- BLD-S3a break and plan (decision 0218 flag plumbing) ---
+import { breakAction } from './break.ts';
+import { planAction } from '../building/queue-action.ts';
+
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
@@ -89,6 +93,10 @@ export const allActions: AnyActionHandler[] = [
   // --- body use (decision 0218 step 1) ---
   useAction,
   // --- end body use ---
+  // --- BLD-S3a break and plan (refused while body_actions.building is off) ---
+  breakAction,
+  planAction,
+  // --- end BLD-S3a ---
 ];
 
 /** A registry with every handler in `allActions` registered. */

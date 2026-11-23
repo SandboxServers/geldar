@@ -32,6 +32,11 @@ export interface BreakContext {
   canSee: (x: number, y: number, z: number) => boolean;
 }
 
+/** Whether the breaker is the Body itself. Minecraft names are not case-sensitive, so the capitals do not count. */
+function isSelf(actor: string | null | undefined, selfName: string): boolean {
+  return typeof actor === 'string' && actor.toLowerCase() === selfName.toLowerCase();
+}
+
 /** The farthest cell centre, in blocks, from the Body that still counts as in reach. */
 const REACH = 24;
 const BLOCK = /^[a-z_]{1,64}$/;
@@ -83,7 +88,7 @@ function breakerOf(ctx: BreakContext, username: string | undefined): ObservedAct
  * unattributed, and the key then carries `none` in place of a name.
  */
 export function observeBreak(msg: BreakProvenance, ctx: BreakContext): ObservationPayload | null {
-  if (msg.prior_owner !== ctx.selfName || msg.actor === ctx.selfName) return null;
+  if (msg.prior_owner !== ctx.selfName || isSelf(msg.actor, ctx.selfName)) return null;
   if (!wellFormed(msg)) return null;
   if (!inReach(ctx.bot, msg.x, msg.y, msg.z)) return null;
   if (!seesCell(ctx, msg.x, msg.y, msg.z)) return null;

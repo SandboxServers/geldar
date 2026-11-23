@@ -14,7 +14,6 @@ COPY contract ./contract
 COPY psyche ./psyche
 # telemetry: @geldar/golem depends on @geldar/telemetry, so the filtered frozen install needs it.
 COPY telemetry ./telemetry
-COPY animus ./animus
 COPY player-core ./player-core
 COPY threshold ./threshold
 COPY tools/repo-checks ./tools/repo-checks

@@ -1,6 +1,9 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
-import { Kvm } from '@nats-io/kv';
+import { type KV, Kvm } from '@nats-io/kv';
+import { PLAN_BUCKET, SEEN_BUCKET } from '../building/names.ts';
+import type { SeenKv } from '../building/seen/store.ts';
+import { PlanPersistence, planKvOf, resumePlanLane } from '../building/wire-plan-store.ts';
 import { hostAllowed } from '../config.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import {
@@ -45,7 +48,12 @@ export type RestartOutcome =
 export interface RestartBodyOptions
   extends Omit<CreateBodyOptions, 'bodyGeneration' | 'checkpoints'> {
   /** The two buckets. */
-  kv: { generations: BodyKv; checkpoints: BodyKv };
+  kv: { generations: BodyKv; checkpoints: BodyKv; plans?: BodyKv; seen?: SeenKv };
+  /**
+   * The agent whose seen map this Body keeps (BLD-38g): the seen KV is read and written under it. The
+   * caller passes the life's own agent; a restart never reads another agent's map.
+   */
+  agentId?: string;
   /** Wait before the `no_plan` wake, in ms. Default `NO_PLAN_WAIT_MS` (45 s). */
   noPlanWaitMs?: number;
   /** Starts a timer and returns its cancel function; default `setTimeout`. */
@@ -95,12 +103,35 @@ export function assertLoopbackNatsUrl(
 }
 
 /**
- * Opens NATS and the two buckets (created when missing); `close` drops the connection. The URL
- * must be on loopback. The connection reconnects without end, waiting 1 s, 2 s, ... up to 15 s
+ * Adapts a JetStream KV bucket to the seen store's `SeenKv` (BLD-38g). `list` returns the live keys
+ * under `prefix`, using the subject filter `prefix>`; a deleted key is not listed.
+ */
+export function natsSeenKv(kv: KV): SeenKv {
+  return {
+    put: (key, value) => kv.put(key, value),
+    get: async (key) => {
+      const entry = await kv.get(key);
+      return entry === null || entry.operation !== 'PUT' ? null : entry.string();
+    },
+    delete: (key) => kv.delete(key),
+    list: async (prefix) => {
+      const keys: string[] = [];
+      for await (const key of await kv.keys(`${prefix}>`)) keys.push(key);
+      return keys;
+    },
+  };
+}
+
+/**
+ * Opens NATS and the buckets (created when missing); `close` drops the connection. The URL
+ * must be on loopback. The generation and checkpoint buckets are always opened. The plan and seen
+ * buckets are opened only with body_actions.building on (`building`); off, they are not touched.
+ * The connection reconnects without end, waiting 1 s, 2 s, ... up to 15 s
  * between tries (the wait starts over after a successful reconnect).
  */
 export async function openRestartKv(
   natsUrl: string,
+  building = false,
 ): Promise<{ kv: RestartBodyOptions['kv']; close(): Promise<void> }> {
   assertLoopbackNatsUrl(natsUrl);
   let tries = 0;
@@ -118,7 +149,17 @@ export async function openRestartKv(
     const kvm = new Kvm(jetstream(nc));
     const generations = natsBodyKv(await kvm.create(GENERATION_BUCKET));
     const checkpoints = natsBodyKv(await kvm.create(CHECKPOINT_BUCKET));
-    return { kv: { generations, checkpoints }, close: () => nc.close().then(() => undefined) };
+    const plans = building ? natsBodyKv(await kvm.create(PLAN_BUCKET)) : undefined;
+    const seen = building ? natsSeenKv(await kvm.create(SEEN_BUCKET)) : undefined;
+    return {
+      kv: {
+        generations,
+        checkpoints,
+        ...(plans === undefined ? {} : { plans }),
+        ...(seen === undefined ? {} : { seen }),
+      },
+      close: () => nc.close().then(() => undefined),
+    };
   } catch (error) {
     await nc.close().catch(() => undefined);
     throw error;
@@ -139,17 +180,49 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     options.lifeId,
     options.generation,
   );
-  const { kv, noPlanWaitMs, schedule, generation: _g, log, bindThreat, ...bodyOptions } = options;
+  const {
+    kv,
+    noPlanWaitMs,
+    schedule,
+    generation: _g,
+    log,
+    bindThreat,
+    agentId,
+    ...bodyOptions
+  } = options;
   // The policy is bound to this generation's draws before the Body is built, so nothing decides first.
   const threat = bindThreat?.(generation);
+  // The plan store is kept only with body_actions.building on (BLD-05 wiring); off, nothing is stored.
+  const persistence =
+    options.building === true && kv.plans !== undefined
+      ? new PlanPersistence({
+          lifeId: options.lifeId,
+          plans: planKvOf(kv.plans),
+          checkpoints: planKvOf(kv.checkpoints),
+          ...(log === undefined ? {} : { log }),
+        })
+      : null;
   const body = createBody({
     ...bodyOptions,
     bodyGeneration: generation,
     checkpoints: { kv: kv.checkpoints, ...(log === undefined ? {} : { log }) },
+    // The seen map is kept under this life's agent. No predecessor is passed: a restart is the same
+    // life (lifeId is the account), and no source for a predecessor life id exists yet (see the report).
+    seen: {
+      ...(kv.seen === undefined ? {} : { kv: kv.seen }),
+      ...(agentId === undefined ? {} : { agentId }),
+      ...(log === undefined ? {} : { log }),
+    },
     ...(threat === undefined ? {} : { threat }),
+    ...(persistence === null ? {} : { planStore: persistence }),
   });
   body.runtime.start();
   body.executor.start();
+  // A plan saved before the restart is put back on the lane from its cursor (BLD-13 resume).
+  const resumed =
+    persistence !== null && body.plan !== null
+      ? await resumePlanLane(body.plan.queue, persistence, log)
+      : 'none';
   // A give the previous run left open is closed before anything resumes (inflight.ts). A failure is
   // logged by the store and the key stays for the next start.
   await new InflightStore({
@@ -163,7 +236,7 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     .catch(() => undefined);
   const outcome = await recover(body, options.lifeId, options.tickWaitMs ?? TICK_WAIT_MS, log);
   let cancel: () => void = () => undefined;
-  if (outcome.kind === 'idle') {
+  if (outcome.kind === 'idle' && resumed !== 'resumed') {
     const plansBefore = body.executor.plansReceived;
     cancel = (schedule ?? afterMs)(() => {
       if (body.executor.plansReceived > plansBefore || body.executor.intentId !== null) return;
@@ -184,6 +257,14 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
       await body.executor.stop();
       await body.runtime.stop();
       await body.checkpoints?.flush();
+      // The seen wiring's flush timer stops here and its queued cells are written once; the plan writer is flushed.
+      body.seen?.stop();
+      await body.seen?.flush().catch((error: unknown) => {
+        (log ?? ((line: string) => console.error(line)))(
+          `restart: seen flush failed: ${String(error)}`,
+        );
+      });
+      await persistence?.flush();
       const timeoutMs = options.flushTimeoutMs ?? FLUSH_TIMEOUT_MS;
       if (!(await flushSink(body.records, timeoutMs))) {
         // The records still queued (the interrupted event among them) are lost with this process.

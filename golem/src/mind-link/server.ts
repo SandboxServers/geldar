@@ -8,9 +8,11 @@ import {
   type PlanAck,
   type PlanMessage,
   type PlanResultPayload,
+  planCheckSubject,
   planSubject,
   type Snapshot,
   snapshotSubject,
+  surveySubject,
   type ViewInput,
   validatePlanAck,
   validatePlanMessage,
@@ -50,6 +52,28 @@ const THOUGHT_ID = /^th_[0-9A-HJKMNP-TV-Z]{26}$/;
 /** The view reply when a view is refused or cannot be read: a typed failure, never a bare throw. */
 const VIEW_UNAVAILABLE = JSON.stringify({ error: 'unavailable' });
 
+/** The survey reply when no survey is wired (the building flag is off) or the request is not JSON. */
+const SURVEY_NOT_AVAILABLE = JSON.stringify({ error: 'not_available' });
+
+/**
+ * Replies to a building request (survey, plan_check) with `answer`'s result for its JSON request, or the
+ * `not_available` refusal when no answer is wired or the request is not JSON.
+ */
+async function answerFrom(
+  answer: ((request: unknown, send: (body: string) => void) => unknown) | undefined,
+  data: string,
+  reply: (body: string) => void,
+): Promise<void> {
+  let request: unknown;
+  try {
+    request = JSON.parse(data) as unknown;
+  } catch {
+    request = undefined;
+  }
+  if (answer === undefined || request === undefined) reply(SURVEY_NOT_AVAILABLE);
+  else reply(JSON.stringify(await answer(request, reply)));
+}
+
 /** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */
 function parseViewRequest(data: string): ViewInput | null {
   try {
@@ -62,7 +86,8 @@ function parseViewRequest(data: string): ViewInput | null {
 
 /**
  * Where requests arrive: `serve` calls `handler` for each message on `subject`; `reply` sends the
- * answer (it may be called once, or not at all). Returns the function that stops serving.
+ * answer. It may be called several times for one request (progress chunks, then the final answer), or not
+ * at all. Returns the function that stops serving.
  */
 export interface RequestServer {
   serve(
@@ -112,6 +137,13 @@ export interface MindLinkServerOptions {
   buildSnapshot: (options: SnapshotOptions) => Snapshot;
   /** The text viewport of the bot at the size asked; throws when it cannot be read. Without it `view` is refused. */
   view?: (size: ViewInput) => Promise<string>;
+  /** Answers a survey request from the seen map (BLD-38e). Without it `survey` is refused as not_available. */
+  survey?: (request: unknown) => unknown;
+  /** Answers a plan_check request with the dry run (BLD-22b). Without it `plan_check` is refused as not_available. */
+  planCheck?: (
+    request: unknown,
+    progress: (report: { layers_done: number; cells_checked: number }) => void,
+  ) => unknown;
   /** World age now. */
   tick: () => number;
   /** Where `plan_result` events go (JetStream in production). */
@@ -145,6 +177,33 @@ export class MindLinkServer {
         Promise.resolve(this.onPlan(data, reply)),
       ),
       server.serve(viewSubject(shard, lifeId), (data, reply) => this.onViewRequest(data, reply)),
+      server.serve(surveySubject(shard, lifeId), (data, reply) =>
+        Promise.resolve(this.onSurveyRequest(data, reply)),
+      ),
+      server.serve(planCheckSubject(shard, lifeId), (data, reply) =>
+        this.onPlanCheckRequest(data, reply),
+      ),
+    );
+  }
+
+  /**
+   * Answers a plan_check request. A running walk sends `{"progress":{...}}` chunks on the same reply
+   * inbox, then the final answer; the requester's idle timer resets on each chunk.
+   */
+  private onPlanCheckRequest(data: string, reply: (body: string) => void): Promise<void> {
+    const check = this.opts.planCheck;
+    const answer =
+      check === undefined
+        ? undefined
+        : (request: unknown, send: (body: string) => void) =>
+            check(request, (report) => send(JSON.stringify({ progress: report })));
+    return answerFrom(answer, data, reply);
+  }
+
+  /** Answers a survey request with the seen map's read, or `{"error":"not_available"}` when none is wired. */
+  private onSurveyRequest(data: string, reply: (body: string) => void): void {
+    void answerFrom(this.opts.survey, data, reply).catch((error: unknown) =>
+      this.log(`survey not answered: ${String(error)}`),
     );
   }
 

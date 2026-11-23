@@ -68,6 +68,9 @@ export function expectedTable(s: string): Record<string, { pub: string[]; sub: s
         kv('geldar-checkpoints'),
         kv('geldar-body-generation'),
         kv('geldar-skins'),
+        // Building (BLD fix7b): the Body writes plan chunks and seen sections; the seed role never gets these.
+        kv('geldar-plans'),
+        kv('geldar-seen'),
       ],
       sub: [
         `geldar.${s}.body.>`,

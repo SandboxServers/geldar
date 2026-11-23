@@ -58,12 +58,12 @@ Groups: [The world](#the-world), [People and ownership](#people-and-ownership), 
 | Term | Meaning | In code | See |
 |---|---|---|---|
 | **Agent** | One resident with a name and a life. Exactly one Body and one Mind; only agents act in the world. | Life ids in `contract/schemas/common.schema.json` | [spec 3](../spec.md#3-glossary) |
-| **Headless agent** | An agent with no owner, whose Mind runs on a machine the project runs. Adam is one. | `animus/`, `lantern-local/` | spec 5.3; [decision 0050](../decisions/0050-phase0-mind-processes-run-on-the-host.md) |
+| **Headless agent** | An agent with no owner, whose Mind runs on a machine the project runs. Adam is one. | `lantern-local/` | spec 5.3; [decision 0050](../decisions/0050-phase0-mind-processes-run-on-the-host.md) |
 | **Sovereign player** (sovereign agent) | An agent whose Mind is a person's own session of a vendor CLI, with memory in its own repo. It reaches the world only through the Geldar MCP. | `threshold/mcp/`; tables `mcp_players`, `mcp_tokens` | [spec 3](../spec.md#3-glossary), 5.15 |
 | **Adam** | The first headless agent; the Phase 0 subject. On the Colo, its Body runs under the compose profile `adam`. | `golem/src/adam/`, `tools/adam-cli`, `tools/adam-run`, `tools/adam-report` | [decision 0051](../decisions/0051-adam-identity-and-model-pins.md), [0212](../decisions/0212-golem-body-is-a-profile-adam.md) |
 | **Rangers** | The first group of six sovereign players, run by the operator under the owner cap of 20. | `tools/players-cli` (`./geldar.ps1 players`) | [decision 0052](../decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md) |
 | **Body** | The bot process logged into the server as a player. It moves, digs, fights, eats and runs reflexes. Product name Golem. | `golem/` | [spec 3](../spec.md#3-glossary), 5.2 |
-| **Mind** | The service that builds prompts, calls a model and returns decisions. Product name Animus. | `animus/` (frozen; live path in `player-core/`) | [spec 3](../spec.md#3-glossary), 5.3 |
+| **Mind** | The service that builds prompts, calls a model and returns decisions. The live Mind is the scriptorium (Claude-driven, outside this repo); the in-repo Mind was removed, see [decision 0430](../decisions/0430-remove-animus.md). | `player-core/` (shared Mind pieces) | [spec 3](../spec.md#3-glossary), 5.3 |
 | **Model** | A language model. One Mind uses one model for the life of the agent. | Model pins in `shards/phase0.yaml` | [spec 3](../spec.md#3-glossary), 5.3.3; [decision 0051](../decisions/0051-adam-identity-and-model-pins.md) |
 | **Thinker** | The software that runs a model for a Mind. It holds no agent state and never touches the database or the game. | `lantern-local/` (local Thinker on Ollama) | [spec 3](../spec.md#3-glossary), Appendix H |
 | **Lantern** | The Thinker bundle a Patron runs. Phase 0 has a local version. | `lantern-local/` | [spec 2a](../spec.md#2a-names); [decision 0050](../decisions/0050-phase0-mind-processes-run-on-the-host.md) |
@@ -127,8 +127,7 @@ These terms are named in the spec. Details of how observation works are operator
 | Term | Meaning | In code | See |
 |---|---|---|---|
 | **Golem** | Product name of the Body runtime. | `golem/` (`@geldar/golem`) | [spec 2a](../spec.md#2a-names) |
-| **Animus** | Product name of the Mind service. Frozen: its live-path files are deprecated stubs that forward to player-core. | `animus/` (`@geldar/animus`) | [spec 2a](../spec.md#2a-names); `player-core/README.md` |
-| **player-core** | The neutral home of the live player path: Body and Mind links, validation, plan builder, ids. | `player-core/` | `player-core/package.json` description |
+| **Animus** | Removed, see [decision 0430](../decisions/0430-remove-animus.md). Was the in-repo Mind service. | none | [decision 0430](../decisions/0430-remove-animus.md) || **player-core** | The neutral home of the live player path: Body and Mind links, validation, plan builder, ids. | `player-core/` | `player-core/package.json` description |
 | **Psyche** | The character engine (sheet, proficiency, temperament), copied byte for byte into the kit. | `psyche/` | [decision 0281](../decisions/0281-psyche-package-boundary.md) |
 | **Scriptorium** | The sovereign-player kit (repo-as-mind template), developed in separate repositories. | Not in this repo | [spec 2a](../spec.md#2a-names), 5.15.4 |
 | **Player repo** | The GitHub repo that is a sovereign player's mind; its history is the agent's life. | Not in this repo | [spec 3](../spec.md#3-glossary), 5.15.4 |

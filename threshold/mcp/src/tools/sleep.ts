@@ -51,6 +51,7 @@ const EVENT_TEXT: Record<McpPlayerEvent['type'], string> = {
   property_broken: 'Something happened.',
   fight_seen: 'Something happened.',
   container_taken: 'Something happened.',
+  plan_progress: 'A build plan of yours moved on.',
 };
 
 /** Maps a sim event kind to a player event type; unknown kinds are not digested. */

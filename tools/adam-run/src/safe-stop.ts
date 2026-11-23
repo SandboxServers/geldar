@@ -1,5 +1,5 @@
 /**
- * The safe stop of an Adam run (W6-13). It stops lantern-local, animus and the Body (the reverse of the start order, so
+ * The safe stop of an Adam run (W6-13). It stops lantern-local and the Body (the reverse of the start order, so
  * the Body is last), then checks that no process owned by this run remains.
  *
  * A process is owned by the run when its command line holds a service entry file (the markers below, as tools/adam-cli
@@ -20,15 +20,10 @@ import {
 import { appendStatus, minuteOf, statusLine } from './status-log.ts';
 
 /** The entry files of the services, as `adam up` starts them (golem is the Body). */
-export const SERVICE_MARKERS = [
-  'golem/src/adam/main.ts',
-  'animus/src/main.ts',
-  'lantern-local/src/main.ts',
-] as const;
+export const SERVICE_MARKERS = ['golem/src/adam/main.ts', 'lantern-local/src/main.ts'] as const;
 /** The entry marker of each service, in the form `adam up` gives it in the process command line. */
 export const SERVICE_ENTRY: Record<Service, string> = {
   body: 'golem/src/adam/main.ts',
-  animus: 'animus/src/main.ts',
   'lantern-local': 'lantern-local/src/main.ts',
 };
 
@@ -39,7 +34,7 @@ export function serviceAlive(service: Service, table: ProcessView[]): boolean {
   );
 }
 /** The stop order: the reverse of the start order. */
-export const STOP_ORDER: readonly Service[] = ['lantern-local', 'animus', 'body'];
+export const STOP_ORDER: readonly Service[] = ['lantern-local', 'body'];
 export const GRACEFUL_WAIT_MS = 5_000;
 export const FORCE_WAIT_MS = 1_000;
 

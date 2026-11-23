@@ -6,6 +6,7 @@
 !pnpm-lock.yaml
 !contract
 !psyche
+!player-core
 !telemetry
 !golem
 **/node_modules

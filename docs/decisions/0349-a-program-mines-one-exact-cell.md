@@ -1,6 +1,6 @@
 # 0349: A program mines one exact cell
 
-- Status: Proposed (option (a) of AN-40 open item 1; no operator ruling is recorded in the repo)
+- Status: Superseded in part by [0421](0421-break-at-position-verb-exposes-exact-cell-dig.md): the exact-cell dig reaches agents through the `break` verb. The dig-safety refusals in this record are removed by [0428](0428-dig-safety-refusals-removed.md). Originally Proposed (option (a) of AN-40 open item 1; no operator ruling is recorded in the repo)
 - Date: 2026-11-18
 - Why: `mine` takes the nearest block of the wanted name and has no ownership gate, so a farm step that chose its own wheat could dig a nearer wheat of another player. A program that chose a cell must be able to dig that cell, or fail, and never another block.
 

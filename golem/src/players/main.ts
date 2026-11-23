@@ -13,9 +13,9 @@ import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
 import { parse } from 'yaml';
-import { managerAcquire } from '../adam/main.ts';
+import { managerAcquire, restartKvFor } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
-import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
+import { assertLoopbackNatsUrl } from '../body/restart.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
@@ -85,8 +85,9 @@ export async function runPlayer(
     timeout: 5_000,
     ...golemNatsAuth(),
   });
-  // A failure after the connection opens closes what is open, so no NATS connection leaks.
-  const restartKv = await openRestartKv(natsUrl).catch(async (error: unknown) => {
+  // A failure after the connection opens closes what is open, so no NATS connection leaks. The plan
+  // and seen buckets follow the player's body_actions.building, as Adam's Body does (A1).
+  const restartKv = await restartKvFor(config, natsUrl).catch(async (error: unknown) => {
     await nc.close();
     throw error;
   });

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-plan-check.schema.json",
+  "title": "McpPlanCheck",
+  "description": "The plan_check tool: a dry run of a building plan. It places and breaks nothing.",
+  "$defs": {
+    "PlanCheckInput": {
+      "type": "object",
+      "description": "Dry-run a building plan: counts its cells, the materials it needs against your pack, the cells never seen, and the steps that are not valid. Nothing is placed or broken.",
+      "additionalProperties": false,
+      "required": ["plan"],
+      "properties": {
+        "plan": { "$ref": "build-plan.schema.json" }
+      }
+    },
+    "PlanCheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "material_needs", "unknown_cells", "estimated_ticks", "invalid_steps"],
+      "properties": {
+        "cells": { "type": "integer", "minimum": 0 },
+        "material_needs": {
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/ItemName" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["need", "have"],
+            "properties": {
+              "need": { "type": "integer", "minimum": 0 },
+              "have": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "unknown_cells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cells you have never seen, so their state is not known."
+        },
+        "estimated_ticks": { "type": "integer", "minimum": 0 },
+        "invalid_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "reason"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string", "maxLength": 120 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

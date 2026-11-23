@@ -30,8 +30,12 @@ const JS = 'text/javascript; charset=utf-8';
 const CHECKED = 'no-cache';
 const KEPT = 'public, max-age=604800';
 
+/** The plan-activity panel (decision 0429), a human-only view. It is served with the render modules; render-view re-exports it. */
+export const PLAN_ACTIVITY_MODULE = 'plan-activity/index' as const;
+
 /** The render modules, served under /js/ as JavaScript with their types stripped. */
 export const RENDER_MODULES = [
+  PLAN_ACTIVITY_MODULE,
   'render-model',
   'render-view',
   'render-stream',

@@ -16,7 +16,9 @@ export type WakeReason =
   /** The intent hit `max_world_ticks` or `max_block_operations`. */
   | 'limit_reached'
   /** A restarted Body found no plan to resume and none arrived in the wait (spec 5.2). */
-  | 'no_plan';
+  | 'no_plan'
+  /** A plan stopped and the Mind is told why: a materials wait (building/names.ts, placeholder until BLD-14). */
+  | 'plan_stopped';
 
 /** One wake the Body decided on: the reason, the world tick, and the intent it concerns if any. */
 export interface WakeRequest {
