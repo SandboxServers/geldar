@@ -74,9 +74,14 @@ describe('findLeaks', () => {
   });
 });
 
-describe('the repository as tracked by git', () => {
-  it('contains no skin PNG and no MineSkin key', () => {
-    const listed = execFileSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf8' });
+describe('the repository as listed by git', () => {
+  it('contains no skin PNG and no MineSkin key, tracked or not yet added', () => {
+    // Tracked files plus untracked files that are not ignored, so a leak fails before it is staged.
+    const listed = execFileSync(
+      'git',
+      ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+      { cwd: REPO_ROOT, encoding: 'utf8' },
+    );
     const files: TrackedFile[] = listed
       .split('\0')
       .filter((path) => path !== '')
@@ -94,7 +99,7 @@ describe('the repository as tracked by git', () => {
     const leaks = findLeaks(files);
     expect(
       leaks,
-      `tracked files that must not be in git: ${leaks.map((l) => `${l.path} (${l.rule})`).join(', ')}`,
+      `files that must not be in git: ${leaks.map((l) => `${l.path} (${l.rule})`).join(', ')}`,
     ).toEqual([]);
   });
 });
