@@ -38,8 +38,21 @@ describe('ci gate wiring', () => {
     expect(upload?.with?.['retention-days']).toBe(7);
   });
 
-  it('has no job-level condition on a needed job (a skipped job would fail the gate)', () => {
-    for (const name of jobs.gate?.needs ?? []) expect(jobs[name]?.if).toBeUndefined();
+  // A skipped job fails the gate unless the change is docs only, so the one job-level condition allowed on a needed
+  // job is the docs-only skip, and only on a job that needs `changes` (where that output comes from).
+  it('conditions a needed job only on the docs-only skip', () => {
+    const DOCS_SKIP = "needs.changes.outputs.docs_only != 'true'";
+    for (const name of jobs.gate?.needs ?? []) {
+      const job = jobs[name];
+      if (job?.if === undefined) continue;
+      expect(job.if, name).toBe(DOCS_SKIP);
+      expect(([] as string[]).concat(job.needs ?? []), name).toContain('changes');
+    }
+  });
+
+  it('never skips changes or typescript (typescript tests read docs/)', () => {
+    expect(jobs.changes?.if).toBeUndefined();
+    expect(jobs.typescript?.if).toBeUndefined();
   });
 });
 
