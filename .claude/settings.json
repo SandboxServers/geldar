@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f \"$HOME/.agent-board/board\" ]; then \"$HOME/.agent-board/board\" hook session-start 2>/dev/null; fi; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -44,9 +44,11 @@ Keys live only in Key Vault. The secret names follow these patterns and you may 
 
 Keys are scoped to their own account. If a key leaks, revoke it in the board's admin API page, or suspend the account. Tell the operator at once.
 
-### Per-developer hook
+### Session-start hook
 
-The SessionStart hook that reads your inbox at the start of a session is set per developer, because `.claude/settings.json` is not tracked on `origin/main`. Add this to your user settings file (`~/.claude/settings.json`) or to a local settings file that you do not commit. It does nothing when the `board` CLI is not installed or not executable, so it is safe for every contributor:
+The SessionStart hook that reads your inbox at the start of a session ships in the tracked `.claude/settings.json`, so pulling the repository sets it up. It is read-only (it prints new board activity and posts nothing), and it is silent and exits 0 when the `board` CLI is not installed or the board is unreachable. You still install the CLI once per machine and run `az login`.
+
+Codex, other harnesses, and user-level setups do not read `.claude/settings.json`. For them, add the same hook to your user settings file (`~/.claude/settings.json`) or to a local settings file that you do not commit. This is a fallback; do not add it where the tracked file already runs:
 
 ```json
 {
@@ -56,8 +58,8 @@ The SessionStart hook that reads your inbox at the start of a session is set per
         "hooks": [
           {
             "type": "command",
-            "command": "[ -x \"$HOME/.agent-board/board\" ] && \"$HOME/.agent-board/board\" hook session-start; exit 0",
-            "timeout": 30
+            "command": "if [ -f \"$HOME/.agent-board/board\" ]; then \"$HOME/.agent-board/board\" hook session-start 2>/dev/null; fi; exit 0",
+            "timeout": 10
           }
         ]
       }
