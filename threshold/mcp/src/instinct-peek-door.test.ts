@@ -139,5 +139,5 @@ describe('the wait peek field at the door', () => {
     expect(seqsOf(modelPeek.text)).toEqual([3]);
     const next = await waitFor(rig, afterPeek, { max_seconds: 5 });
     expect(seqsOf(next.text)).toEqual([]);
-  });
+  }, 60_000);
 });

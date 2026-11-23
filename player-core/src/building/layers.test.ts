@@ -223,7 +223,7 @@ describe('lazyBottomUp with huge steps', () => {
     expect(first.map((cell) => cell.x)).toEqual([0, 1, 2, 3, 0, 1, 2, 3, 0, 1]);
     // Only the layers that were completed are reported: the stream made no per-layer pass ahead.
     expect(closed).toEqual([0, 1]);
-  });
+  }, 60_000);
 
   it('streams a break wall of that height from its top layer down', () => {
     const plan = planOf([

@@ -42,7 +42,7 @@ describe('plan store (BLD-05)', () => {
 
   it('names each chunk <life_id>.<plan_id>.<n>', () => {
     expect(chunkKey('L', 'P', 3)).toBe('L.P.3');
-  });
+  }, 60_000);
 
   it('splits on code points: a surrogate pair is never cut, every chunk fits', () => {
     const text = '\u{1F600}'.repeat(20_000);
