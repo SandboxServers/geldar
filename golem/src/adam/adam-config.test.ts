@@ -70,6 +70,10 @@ describe('shards/colo-mind.yaml, the file the colo Body reads', () => {
   it('keeps edit_sign off', () => {
     expect(colo().editSign).toBe(false);
   });
+
+  it('turns the building flag on (decision 0426; the NATS body role for geldar-plans and geldar-seen is applied by hand)', () => {
+    expect(colo().building).toBe(true);
+  });
 });
 
 describe('body_actions.edit_sign', () => {
