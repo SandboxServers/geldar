@@ -46,6 +46,11 @@ describe('geldar-mcp in compose/colo.yml', () => {
     expect(cfg.sovereign.port).toBe(8788);
   });
 
+  it('reads the building flag on from the colo shard file (decision 0426)', async () => {
+    const cfg = await loadMcpConfig({ env: coloServiceEnv('geldar-mcp'), file: coloShardFile() });
+    expect(cfg.buildingOn).toBe(true);
+  });
+
   it('refuses the 0.0.0.0 bind when the container flag is absent', async () => {
     const env = coloServiceEnv('geldar-mcp');
     const { GELDAR_MCP_IN_CONTAINER: _flag, ...withoutFlag } = env;

@@ -26,7 +26,8 @@ chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 
 memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
 attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
 lifecycle: { permadeath: false }
-body_actions: { edit_sign: false, use: true, swim: false }  # the Body's verb flags, as phase0; use (decision 0218) is on for the colo Body
+# building is on per decision record 0426; it needs the NATS body role for geldar-plans and geldar-seen (applied by hand on the node).
+body_actions: { edit_sign: false, use: true, swim: false, building: true }  # the Body's verb flags, as phase0; use (decision 0218) is on for the colo Body
 models:
   strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
   fast: ["qwen3:8b"]
