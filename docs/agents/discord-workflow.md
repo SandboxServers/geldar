@@ -36,14 +36,19 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
 2. When the operator asks for a CI notification, verify the required checks
    in GitHub before posting. Follow any instruction to skip the notification
    if CI was already green.
-3. Treat a `:jasonthumb:` reaction from the designated maintainer on the
-   bot's PR review request or CI update as approval of that PR head. Verify
-   the exact message, the custom emoji ID, and who reacted. Reaction counts
-   and screenshots alone cannot establish the account. Use the
-   operator-confirmed `reviewerId` and `approvalEmojiId` in the gitignored
-   local file `.geldar/discord-review.json`. If the file is absent, get both
-   IDs from the operator before treating the reaction as approval. Keep the
-   account mapping outside the public repo.
+3. On the bot's PR review request or CI update, either of these reactions
+   counts as approval of that PR head. Use the operator-confirmed IDs in
+   the gitignored local file `.geldar/discord-review.json`.
+
+   | Reviewer ID field | Approval reaction |
+   |---|---|
+   | `reviewerId` | Custom `:jasonthumb:` with the emoji ID in `approvalEmojiId` |
+   | `thumbsupReviewerId` | Plain Unicode 👍 (`:thumbsup:`) |
+
+   Verify the exact message, reaction, and reacting account. Reaction counts
+   and screenshots alone cannot establish the account. If the relevant
+   IDs are missing, get them from the operator before treating the reaction
+   as approval. Keep the account mapping outside the public repo.
 4. The current bridge exposes messages and member lookup. When asked to
    verify a reaction, use Discord's read-only Get Message and Get Reactions
    endpoints with the configured bot. The reaction's user list identifies
