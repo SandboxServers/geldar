@@ -16,6 +16,10 @@ These rules apply to Claude Code, Codex, Copilot and any other harness. Read [CL
 
 Harnesses without Claude Code's skills or subagents read those files directly: a skill's `SKILL.md` is the procedure, an agent's `.md` is the brief.
 
+## Repo rules
+
+A change that creates a one-way door needs an Accepted decision. A Proposed or assumed decision is not enough.
+
 ## Campaigns
 
 Phase 0 is closed ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)); current work is Phase 1 ([decision 0070](docs/decisions/0070-phase1-is-the-colo-first-shard.md)). Each campaign keeps its own folder under `docs/analysis/`; read its `RESUME.md` before acting, and check its date against `git log origin/main`.

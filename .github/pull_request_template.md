@@ -11,6 +11,7 @@
 - [ ] Contract changes were made in `contract/` and regenerated; no hand edits to generated code
 - [ ] New dependencies, images and actions are pinned to exact versions (actions and images by SHA or digest)
 - [ ] Prompt changes are in `prompts/` with a version bump
+- [ ] One-way door? Does this create state that can't be undone (immutable or append-only rows, adoptions, tags, deletions)? If yes, name the Accepted decision that covers it and how it is reversed.
 
 ## Docs and decisions
 
