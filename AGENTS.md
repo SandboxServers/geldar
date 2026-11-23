@@ -11,6 +11,7 @@ These rules apply to Claude Code, Codex, Copilot and any other harness. Read [CL
 | implement a packet | your packet's section of the campaign's packet file (table under "Campaigns" below) and [.claude/agents/packet-coder.md](.claude/agents/packet-coder.md) |
 | review a packet or PR | [.claude/agents/packet-reviewer.md](.claude/agents/packet-reviewer.md) |
 | open, update or merge a PR | [.claude/skills/ship-pr/SKILL.md](.claude/skills/ship-pr/SKILL.md) |
+| use Discord for team work or interpret a Discord PR review | [docs/agents/discord-workflow.md](docs/agents/discord-workflow.md) |
 | close a wave | `work-packets.md` § Wave close and the [campaign-packet skill](.claude/skills/campaign-packet/SKILL.md) § 6 |
 | start the stack or run the benchmark | [.claude/skills/run-shard/SKILL.md](.claude/skills/run-shard/SKILL.md), [.claude/skills/body-bench/SKILL.md](.claude/skills/body-bench/SKILL.md) |
 

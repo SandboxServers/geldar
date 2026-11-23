@@ -14,6 +14,7 @@ How documents in `docs/` are written, kept current and checked. Read these befor
 
 | Document | Type | Use it to |
 |---|---|---|
+| [discord-workflow.md](discord-workflow.md) | reference | Communicate in the developer channel and verify a review given by Discord reaction. |
 | [documentation-style.md](documentation-style.md) | reference | Write a document: the metadata block and when `sources:` is required, the four types and their folders (history and mixed folders included), audience labels and the `players` exception, the agents-never rule and the paths agents read, voice, evidence, what never goes in a document. |
 | [doc-update-map.md](doc-update-map.md) | reference | Find which documents a change must update, whether a gate enforces it or review does, and which gates read documents. Every document in `docs/` outside `decisions/` and `analysis/` has a row. |
 | [doc-verification.md](doc-verification.md) | how-to | Verify a document, sweep for stale ones, scan links, metadata fields, update-map coverage and agent-read placement, re-derive cited lists, and run the review checklist. |
