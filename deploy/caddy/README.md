@@ -38,7 +38,16 @@ Core Caddy has no rate limiter, and this repo adds no third-party Caddy module (
 
 1. Edit the site file, or swap a site for its kill switch (for example `map-off.caddy` in place of `map.caddy`).
 2. Validate: `bash deploy/caddy/validate.sh` (uses the pinned caddy image, `docker run --rm` only). CI runs it in the `compose` job.
-3. Apply: `caddy reload` where the admin API is on. On the Colo node it is off (R39): one `docker restart board-proxy` instead (see below and `deploy/colo-public.sh`).
+3. Apply: `caddy reload` where the admin API is on. On the Colo node it is off (R39), so the reload fails there. Run `GELDAR_PUBLIC_APPLY=restart deploy/colo-public.sh install <site>` (never the default, see the traps below), then one `docker restart board-proxy`, or set `GELDAR_PUBLIC_RESTART_OK=1` so the script restarts it once and waits for `caddy validate`. The node steps are in [open-signup.md section 3](../../docs/runbooks/open-signup.md#section-3-public-routes-node) and [kino.md, Enable step 4](../../docs/runbooks/kino.md#enable).
+4. Check that the installed file is the new one: `grep -F '<new route>' <GELDAR_CADDY_CONFIG_DIR>/geldar/<site>.caddy` must print the line. Run it after `install` and before the restart. It catches a stale source (below).
+
+Traps on the Colo node (each checked against `deploy/colo-public.sh`):
+
+- `GELDAR_PUBLIC_APPLY` defaults to `reload`. A bare `colo-public.sh install glass` writes and validates the files, then the reload fails and the script exits non-zero. The new files stay installed, and nothing is restored. Set `GELDAR_PUBLIC_APPLY=restart` on every node run.
+- The source is `GELDAR_PUBLIC_SRC`, which defaults to `deploy/caddy` in the checkout the script runs from. `deploy/colo-cd-plan.sh` skips `deploy/caddy/*` when it refreshes the node's source extract (it prints `skip` and `manual Caddy config changed ... not applied`), so that copy can be older than `main`. An install from it re-applies the old route, restarts the shared Caddy for every tenant, and prints success. Run step 4 against the file you meant to install.
+- `GELDAR_REGISTER_UPSTREAM` may be unset. The script then renders glass with `/register*` and `/roster*` answering 503 (`the register service is not deployed`) and prints no warning. If the register service is deployed, check the env file has it before `install glass`.
+- `GELDAR_KINO_ENABLED` is read from the env file (`GELDAR_PUBLIC_ENV`) when glass is rendered. Unset means `0`, so the rendered Kino switch is off, with no warning. Set it to `1` in the env file when Kino is on.
+- A restart interrupts every site behind `board-proxy` (estimate 5 to 15 seconds), so batch the changes.
 
 ## Kill procedure
 
