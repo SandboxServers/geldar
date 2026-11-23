@@ -27,12 +27,22 @@ export function pwshCommand(): string {
   return process.env.GELDAR_TEST_PWSH ?? 'pwsh';
 }
 
-export const DOCKER_COMPOSE_PROBE = probeTool('docker compose', 'docker', ['compose', 'version']);
-export const PWSH_PROBE = probeTool('PowerShell', pwshCommand(), [
-  '-NoProfile',
-  '-Command',
-  'exit 0',
-]);
+// The probes are lazy: importing this module spawns nothing. Each getter runs its command on the first call and reuses
+// the result, so a test file that never asks for a probe never starts docker or pwsh.
+let dockerComposeCache: ToolProbe | undefined;
+let pwshCache: ToolProbe | undefined;
+
+/** Whether `docker compose version` works. Runs once, on the first call. */
+export function dockerComposeProbe(): ToolProbe {
+  dockerComposeCache ??= probeTool('docker compose', 'docker', ['compose', 'version']);
+  return dockerComposeCache;
+}
+
+/** Whether the pwsh command runs. Runs once, on the first call, with the command from GELDAR_TEST_PWSH or pwsh. */
+export function pwshProbe(): ToolProbe {
+  pwshCache ??= probeTool('PowerShell', pwshCommand(), ['-NoProfile', '-Command', 'exit 0']);
+  return pwshCache;
+}
 
 /**
  * True when the probed tool is present, so `describe.skipIf(!toolAvailable(PROBE))` runs the tests. When it is missing

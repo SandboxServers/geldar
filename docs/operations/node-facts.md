@@ -108,7 +108,7 @@ Repo facts, re-read 2026-11-16 at 03c1f5de:
 
 - Images are built in CI and pulled by digest; nothing is built on the node (decision [0084](../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md) item 1).
 - Deploys go through the self-hosted runner or the owner's SSH access; no deploy account exists (decision [0130](../decisions/0130-phase1-owner-rulings-for-c1.md) ruling 1).
-- `deploy/colo-cd.sh` never restarts Paper, Velocity, Caddy, Postgres or NATS. Changes under `plugin/`, `compose/`, `deploy/caddy/` and NATS are listed as `needs manual` (`deploy/colo-cd-plan.sh`; [colo-deploy](../runbooks/colo-deploy.md#needs-manual)).
+- `deploy/colo-cd.sh` never restarts Paper, Velocity, Caddy, Postgres or NATS. `colo-cd.sh` prints `needs manual` for `plugin/`, `compose/`, `deploy/caddy/` and NATS config only while the export's hash of that folder differs from the record that `colo-cd.sh --record-applied` wrote (`deploy/colo-cd-plan.sh` folder hashes; [colo-deploy](../runbooks/colo-deploy.md#needs-manual)).
 - A change to the live NATS file is made in place, never by replacing the file, and must land in the generator in the same change ([nats-auth-inplace](../runbooks/nats-auth-inplace.md), "Facts the procedure depends on" and "Drift to resolve first").
 
 ## Recorded drift
