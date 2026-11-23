@@ -32,8 +32,8 @@ export interface ThoughtView {
   /** The world day and tick of the thought. Null for a journal line, and for a live frame, which carries neither. */
   worldDay: number | null;
   worldTick: number | null;
-  /** The action the thought led to, when the API names one. Empty otherwise: its receipts cannot be asked for. */
-  actionId: string;
+  /** The actions the thought led to, in order, when the API names them (A8). Empty otherwise: no receipts are asked for. */
+  actionIds: string[];
 }
 
 export interface ThoughtFilter {
@@ -85,7 +85,9 @@ export function toView(row: Row): ThoughtView {
     plan: journal ? text(row.text) : planOf(parsed),
     worldDay: whole(row.world_day),
     worldTick: whole(row.world_tick),
-    actionId: typeof row.action_id === 'string' ? row.action_id : '',
+    actionIds: Array.isArray(row.action_ids)
+      ? row.action_ids.filter((id): id is string => typeof id === 'string')
+      : [],
   };
 }
 

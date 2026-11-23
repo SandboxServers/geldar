@@ -6,9 +6,12 @@
  */
 import { type Element, Window } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderDetail, renderReaderHead } from '../src/render-detail.ts';
 import type { Row } from '../src/render-model.ts';
 import { display, toView } from '../src/render-model.ts';
-import { type Doc, renderRow } from '../src/render-view.ts';
+import { moreItem } from '../src/render-more.ts';
+import { type Doc, type El, renderChips, renderRow } from '../src/render-view.ts';
+import { auditTree, freshDoc } from './audit.ts';
 import { CORPUS } from './corpus.ts';
 import { type Running, send, startGlass } from './harness.ts';
 
@@ -166,6 +169,84 @@ describe('adversarial fixtures through the page', () => {
       expect((globalThis as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();
       expect((win as unknown as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();
       void win.close();
+    },
+  );
+});
+
+describe('adversarial fixtures through the detail, the reader head and the agent chips', () => {
+  it.each(CORPUS.map((c) => [c.name, c.value] as const))(
+    'renders %s as text only in the detail, the reader head and the chips',
+    (_name, value) => {
+      // The detail: the hostile text in every receipt field, and the copied entry as plain text.
+      const detailDoc = freshDoc();
+      const detailBody = detailDoc.body as unknown as El;
+      const receipts = [{ kind: value, phase: value, item: value, count: 1, credits: 2 }];
+      const copied: string[] = [];
+      detailBody.append(
+        renderDetail(detailDoc as unknown as Doc, toView(rowWith('plan', value, 1)), receipts, {
+          onCopy: (text) => copied.push(text),
+        }),
+      );
+      auditTree(detailDoc.body);
+      expect(detailDoc.body.textContent).toContain(display(value).slice(0, 40));
+      // A phase the page does not know gets no colour of its own: it is world text, not a class.
+      expect(detailDoc.body.querySelector('.outcome')?.className).toBe('outcome other');
+      (detailDoc.body.querySelector('button.copy') as unknown as { click(): void }).click();
+      expect(copied).toHaveLength(1);
+      expect(copied[0]).toContain(display(value));
+
+      // The reader head: every text field in turn, with a search keyword marked.
+      for (const field of TEXT_FIELDS) {
+        const headDoc = freshDoc();
+        const headBody = headDoc.body as unknown as El;
+        headBody.append(
+          ...renderReaderHead(headDoc as unknown as Doc, toView(rowWith(field, value, 2)), {
+            keyword: 'alert',
+          }),
+        );
+        auditTree(headDoc.body);
+        expect(headDoc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
+      }
+
+      // The agent chips: a hostile agent name, and a press reports the chip's position.
+      const chipDoc = freshDoc();
+      const row = chipDoc.createElement('div');
+      chipDoc.body.append(row);
+      const picked: number[] = [];
+      const { buttons } = renderChips(
+        chipDoc as unknown as Doc,
+        row as unknown as El,
+        [{ name: value, dead: false }],
+        0,
+        (index) => picked.push(index),
+      );
+      auditTree(chipDoc.body);
+      expect(buttons).toHaveLength(2);
+      expect(row.querySelectorAll('.chip-name')[1]?.textContent).toContain(
+        display(value).slice(0, 40),
+      );
+      (buttons[1] as unknown as { click(): void }).click();
+      expect(picked).toEqual([0]);
+
+      // The More agents list (#902): the same name, drawn by the same path, audited the same way.
+      const moreDoc = freshDoc();
+      const moreRoot = moreDoc.createElement('ol');
+      moreDoc.body.append(moreRoot);
+      const moreAgent: Row = { agent_id: 'h', name: value, died_at: null } as Row;
+      const moreIds: string[] = [];
+      moreRoot.append(
+        moreItem(moreDoc as unknown as Doc, moreAgent, (id) =>
+          moreIds.push(id),
+        ) as unknown as Element,
+      );
+      auditTree(moreDoc.body);
+      expect(moreRoot.querySelector('.chip-name')?.textContent).toContain(
+        display(value).slice(0, 40),
+      );
+      (moreRoot.querySelector('button') as unknown as { click(): void }).click();
+      expect(moreIds).toEqual(['h']);
+
+      expect((globalThis as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();
     },
   );
 });

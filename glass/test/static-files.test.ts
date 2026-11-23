@@ -13,9 +13,11 @@ import type { PublicPolicy } from '../src/policy.ts';
 import type { SqlClient } from '../src/query.ts';
 import type { SseHub } from '../src/sse.ts';
 import {
+  etagOf,
   FONT_FILES,
   ICON_FILES,
   pageWithDelay,
+  pageWithOptions,
   RENDER_MODULES,
   STATIC_FILES,
   WORKER_PATH,
@@ -47,9 +49,14 @@ interface Reply {
   body: Buffer;
 }
 
-function send(port: number, method: string, path: string): Promise<Reply> {
+function send(
+  port: number,
+  method: string,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<Reply> {
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: '127.0.0.1', port, method, path }, (res) => {
+    const req = httpRequest({ host: '127.0.0.1', port, method, path, headers }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () =>
@@ -60,6 +67,81 @@ function send(port: number, method: string, path: string): Promise<Reply> {
     req.end();
   });
 }
+
+/** The tag Glass sends for a path. The page is built per configuration (delay 0, no Kino tab here), so it is not the table's entry. */
+function servedTag(path: string): string {
+  return path === '/' ? pageWithOptions(0, false).etag : (STATIC_FILES.get(path)?.etag as string);
+}
+
+describe('the static files: ETag and 304', () => {
+  it('give every file a strong ETag of its body, hashed at load', () => {
+    for (const [path, file] of STATIC_FILES) {
+      expect(file.etag, path).toMatch(/^"[\w-]{22}"$/);
+      expect(file.etag, path).toBe(etagOf(file.body));
+    }
+  });
+
+  it('send the ETag on a 200, with the cache rule and the file headers', async () => {
+    const port = await start();
+    for (const path of STATIC_FILES.keys()) {
+      const reply = await send(port, 'GET', path);
+      expect(reply.status, path).toBe(200);
+      expect(reply.headers.etag, path).toBe(servedTag(path));
+      expect(reply.headers['cache-control'], path).toBe(STATIC_FILES.get(path)?.cache);
+    }
+  });
+
+  it('answer 304 with no body when If-None-Match matches, keeping the headers', async () => {
+    const port = await start();
+    for (const path of STATIC_FILES.keys()) {
+      const etag = servedTag(path);
+      const reply = await send(port, 'GET', path, { 'if-none-match': etag });
+      expect(reply.status, path).toBe(304);
+      expect(reply.body.length, path).toBe(0);
+      expect(reply.headers.etag, path).toBe(etag);
+      expect(reply.headers['cache-control'], path).toBe(STATIC_FILES.get(path)?.cache);
+      for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+        expect(reply.headers[name.toLowerCase()], `${path} ${name}`).toBe(value);
+      }
+    }
+    // The worker's Service-Worker-Allowed is one of the file's own headers, so the 304 keeps it too.
+    const worker = await send(port, 'GET', WORKER_PATH, {
+      'if-none-match': STATIC_FILES.get(WORKER_PATH)?.etag as string,
+    });
+    expect(worker.headers['service-worker-allowed']).toBe('/');
+    // A HEAD with a matching tag is the same 304.
+    const head = await send(port, 'HEAD', '/app.js', {
+      'if-none-match': STATIC_FILES.get('/app.js')?.etag as string,
+    });
+    expect(head.status).toBe(304);
+  });
+
+  it('answer 200 with the body when If-None-Match is another tag or absent', async () => {
+    const port = await start();
+    const other = await send(port, 'GET', '/app.js', {
+      'if-none-match': '"0000000000000000000000"',
+    });
+    expect(other.status).toBe(200);
+    expect(other.body.length).toBeGreaterThan(0);
+    const none = await send(port, 'GET', '/app.js');
+    expect(none.status).toBe(200);
+    expect(none.body.length).toBeGreaterThan(0);
+  });
+
+  it('change the ETag when the content changes: the page with another delay or Kino tab', async () => {
+    expect(pageWithDelay(60).etag).not.toBe(pageWithDelay(0).etag);
+    expect(pageWithDelay(60).etag).toBe(etagOf(pageWithDelay(60).body));
+    expect(pageWithOptions(0, true).etag).not.toBe(pageWithOptions(0, false).etag);
+    expect(pageWithOptions(0, false).etag).not.toBe(STATIC_FILES.get('/')?.etag);
+    // A client holding the tag of the page with delay 0 gets a fresh 200 from a server with delay 60.
+    const old = pageWithOptions(0, false).etag;
+    const port = await start({ delaySeconds: 60 });
+    const reply = await send(port, 'GET', '/', { 'if-none-match': old });
+    expect(reply.status).toBe(200);
+    expect(String(reply.body)).toContain('data-delay="60"');
+    expect(reply.headers.etag).toBe(pageWithOptions(60, false).etag);
+  });
+});
 
 const TYPES: [RegExp, string][] = [
   [/^\/$/, 'text/html; charset=utf-8'],

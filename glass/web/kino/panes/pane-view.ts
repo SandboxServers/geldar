@@ -217,6 +217,8 @@ export function createPaneView(
   let waitingAtGate = false;
   let session = makeSession();
 
+  /** True while the "waiting for the relay" progress line is up (cleared when the subscribe is sent). */
+  let gateNoticeShown = false;
   /** Sends the wanted agent and mode once the gate allows; a newer ask replaces a waiting one. */
   const request = (delayMs = 0): void => {
     const c = session.current;
@@ -227,6 +229,10 @@ export function createPaneView(
       bucket,
       () => {
         waitingAtGate = false;
+        if (gateNoticeShown) {
+          gateNoticeShown = false;
+          notice(null);
+        }
         if (disposed) return;
         // A retune on a monitor whose connection ended opens a new connection.
         if (session.isEnded) session = makeSession();
@@ -236,6 +242,11 @@ export function createPaneView(
       },
       delayMs,
     );
+    // Still queued at the gate (the relay's burst is spent): show progress instead of a blank monitor.
+    if (waitingAtGate && !disposed) {
+      gateNoticeShown = true;
+      notice(`Opening ${deps.labelOf(want.target)}: waiting for the relay's subscribe limit.`);
+    }
   };
   /** Retries a refused first subscribe after a wait, showing "Retrying"; false once the retries are used up. */
   let retriesMade = 0;

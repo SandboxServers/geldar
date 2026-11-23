@@ -3,6 +3,7 @@
  * the JSON bodies. Agent-authored text leaves as JSON data; the page (a later packet) escapes it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { agentPageOf, pageAgents } from './agent-page.ts';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
 import { listThoughtsWithJournal } from './journal.ts';
 import { ownedAgentsOf } from './owner-view.ts';
@@ -11,6 +12,7 @@ import {
   getThought,
   listAgents,
   listReceipts,
+  listThoughtActions,
   type Row,
   type SqlClient,
   type ThoughtCursor,
@@ -20,7 +22,7 @@ import {
 import { resolveRoute } from './routes.ts';
 import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
-import { pageWithOptions, STATIC_FILES } from './static-files.ts';
+import { etagMatches, pageWithOptions, STATIC_FILES } from './static-files.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
 export const MAX_TARGET_CHARS = 2048;
@@ -165,7 +167,9 @@ async function serveRoute(
     ),
   });
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db, await shown()) });
+    const page = agentPageOf(query);
+    const rows = await listAgents(deps.db, await shown(), { activity: page.sort === 'latest' });
+    sendJson(res, 200, pageAgents(rows, page));
     return;
   }
   if (name === 'thoughts') {
@@ -178,14 +182,18 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '', await shown());
+    const visible = await shown();
+    const thoughtId = params.id ?? '';
+    const row = await getThought(deps.db, thoughtId, visible);
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     // Never send the prompt or the raw reply, even if a query returned them (R21).
     const { model_input: _prompt, raw_output: _raw, ...thought } = row;
-    sendJson(res, 200, { thought });
+    // Every action the thought led to, in order: the page asks for the receipts of each (A8).
+    const action_ids = await listThoughtActions(deps.db, thoughtId, visible);
+    sendJson(res, 200, { thought: { ...thought, action_ids } });
     return;
   }
   if (name === 'receipts') {
@@ -271,11 +279,15 @@ export function createHandler(deps: GlassHandlerDeps) {
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
-      res.writeHead(200, {
-        'Content-Type': file.type,
-        'Cache-Control': file.cache,
-        ...file.headers,
-      });
+      // The ETag is hashed at load. A reload that sends it back gets a 304 with no body; the rule and the
+      // file's own headers stay on it, and the security headers are already set on every response above.
+      const fileHeaders = { 'Cache-Control': file.cache, ETag: file.etag, ...file.headers };
+      if (etagMatches(req.headers['if-none-match'], file.etag)) {
+        res.writeHead(304, fileHeaders);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': file.type, ...fileHeaders });
       res.end(file.body);
       return;
     }

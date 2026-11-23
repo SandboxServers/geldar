@@ -113,18 +113,6 @@ describe('renderDetail', () => {
     expect(unknown.querySelector('.none, .receipts, h3')).toBeNull();
   });
 
-  it('shows hostile receipts as text, with the same element set', () => {
-    for (const [index, value] of HOSTILE.entries()) {
-      const receipts = [{ kind: value, phase: value, item: value, count: 1, credits: 2 }];
-      const body = bodyWithDetail(toView(hostileRow(value, index)), receipts);
-      auditTree(body);
-      expect(body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
-      expect(body.textContent).toContain(display(value).slice(0, 40));
-      // A phase the page does not know gets no colour of its own: it is world text, not a class.
-      expect(body.querySelector('.outcome')?.className).toBe('outcome other');
-    }
-  });
-
   it('has no copy button unless the page can copy', () => {
     expect(bodyWithDetail(toView(plainRow(1)), null).querySelector('button')).toBeNull();
   });
@@ -148,19 +136,6 @@ describe('renderDetail', () => {
     expect(copied).toEqual([copyText(view)]);
     say('Copied');
     expect(copy?.textContent).toBe('Copied');
-  });
-
-  it('copies hostile text as the text on the page, never as markup', () => {
-    for (const [index, value] of HOSTILE.entries()) {
-      const copied: string[] = [];
-      const body = bodyWithDetail(toView(hostileRow(value, index)), null, {
-        onCopy: (text) => copied.push(text),
-      });
-      auditTree(body);
-      (body.querySelector('button.copy') as unknown as { click(): void }).click();
-      expect(copied).toHaveLength(1);
-      expect(copied[0]).toContain(display(value));
-    }
   });
 });
 

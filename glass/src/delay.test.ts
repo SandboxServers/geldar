@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getThought, listReceipts, listThoughts, type SqlClient, thoughtsAfter } from './query.ts';
+import {
+  getThought,
+  listReceipts,
+  listThoughtActions,
+  listThoughts,
+  type SqlClient,
+  thoughtsAfter,
+} from './query.ts';
 
 /**
  * The delay cut-off (0072 item 5) without Postgres: each statement must compare the row time with
@@ -31,6 +38,7 @@ const RUNS: [string, string, (db: SqlClient, shown: typeof SHOWN) => Promise<unk
     (db, s) => thoughtsAfter(db, { at: '2026-11-11 00:00:00+00', id: '' }, 5, s),
   ],
   ['listReceipts', 'r', (db, s) => listReceipts(db, 'ac-1', s)],
+  ['listThoughtActions', 't', (db, s) => listThoughtActions(db, 'th-1', s)],
 ];
 
 describe('the delay cut-off in every statement', () => {

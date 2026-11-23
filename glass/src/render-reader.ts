@@ -28,6 +28,8 @@ export interface ReaderFacts {
   view: ThoughtView;
   /** The receipts of the entry's action; null when the entry names no action. */
   receipts: Row[] | null;
+  /** How many of the action's receipt requests failed. They are named in the detail, not hidden. */
+  unloaded?: number;
 }
 
 export interface ReaderDeps {
@@ -83,7 +85,9 @@ export function createReader(deps: ReaderDeps): Reader {
     const journal = view.kind === 'journal';
     const shown = facts?.view ?? view;
     const receipts = facts !== null ? facts.receipts : journal ? [] : null;
-    const next = renderDetail(deps.doc, shown, receipts, deps.options(shown)) as Swappable;
+    const unloaded = facts?.unloaded;
+    const options = { ...deps.options(shown), unloaded };
+    const next = renderDetail(deps.doc, shown, receipts, options) as Swappable;
     if (failed) next.append(renderNote(deps.doc, 'Could not load this thought.'));
     detail = next;
     deps.pane.replaceChildren(...renderReaderHead(deps.doc, view, deps.options(view)), next);
@@ -95,12 +99,10 @@ export function createReader(deps: ReaderDeps): Reader {
       (loaded) => {
         if (mine !== turn) return;
         facts = loaded;
-        const next = renderDetail(
-          deps.doc,
-          loaded.view,
-          loaded.receipts,
-          deps.options(loaded.view),
-        ) as Swappable;
+        const next = renderDetail(deps.doc, loaded.view, loaded.receipts, {
+          ...deps.options(loaded.view),
+          unloaded: loaded.unloaded,
+        }) as Swappable;
         detail?.replaceWith(next);
         detail = next;
       },
@@ -159,7 +161,8 @@ export function createReader(deps: ReaderDeps): Reader {
 
   return {
     select(id: string): void {
-      selectedId = id;
+      // A second press on the selected entry, or '' (Escape, the "new entries" press), follows the feed again.
+      selectedId = id === '' || id === selectedId ? '' : id;
       draw();
     },
     draw,
