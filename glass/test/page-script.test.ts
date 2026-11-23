@@ -285,8 +285,9 @@ describe('the page script', () => {
     expect(win.document.querySelectorAll('#thoughts mark').length).toBe(0);
   });
 
-  it('loads the receipts of five actions four at a time, and says which one could not load', async () => {
-    const ids = ['a1', 'a2', 'a3', 'a4', 'a5'];
+  it('loads the receipts of six actions four at a time, and says which one could not load', async () => {
+    // The failing request (a3) answers at once and never reaches reply, so a sixth id is what shows a bound of five.
+    const ids = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'];
     let inFlight = 0;
     let peak = 0;
     const win = await boot(PAGES, {
