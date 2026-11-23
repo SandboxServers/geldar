@@ -30,7 +30,7 @@ export interface DetailOptions {
    */
   onCopy?: (text: string, say: (label: string) => void) => void;
   /** How many of the entry's actions had no receipts loaded (a failed request). Each one is named, not hidden. */
-  unloaded?: number;
+  unloaded?: number | undefined;
 }
 
 /** How long the copy control says how the copy went before its label comes back. */
