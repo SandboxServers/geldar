@@ -406,6 +406,7 @@ const fresh = createFresh({
   waiting: () => (state.paused ? filterThoughts(state.pending, filters.current()).length : null),
   onPress: () => {
     if (state.paused) togglePause();
+    reader.select('');
   },
 });
 
@@ -448,6 +449,8 @@ function togglePause() {
 
 /** "/" puts the cursor in the search field, unless the reader is already typing in a field. */
 function onKey(event) {
+  // Escape lets the reader follow the feed again (a selected entry stays until then).
+  if (event.key === 'Escape' && !glassView.hidden) reader.select('');
   if (glassView.hidden || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey)
     return;
   const tag = document.activeElement?.tagName ?? '';
