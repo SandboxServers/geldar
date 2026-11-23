@@ -29,9 +29,10 @@ Codex or Claude Code on demand. [Bridge setup](../../tools/discord-bridge/README
 
 ## PR review in Discord
 
-1. Ask for review in the developer channel after the PR is pushed. Include
-   the PR link and direct the mention to the reviewer. On a CI update, include
-   the checked head SHA so the review has a clear revision.
+1. Tag the reviewer in the developer channel only after GitHub shows that
+   all required CI checks passed on the current PR head. Include the PR
+   link and the checked head SHA. While CI is pending or failing, hold
+   the review request.
 2. When the operator asks for a CI notification, verify the required checks
    in GitHub before posting. Follow any instruction to skip the notification
    if CI was already green.
