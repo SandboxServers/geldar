@@ -25,7 +25,9 @@ const THOUGHT_ROW = {
 
 type Call = { text: string; values: unknown[] };
 
-function fakeDb(thoughtRows: unknown[], actionRows: unknown[]): { db: SqlClient; calls: Call[] } {
+type Row = Record<string, unknown>;
+
+function fakeDb(thoughtRows: Row[], actionRows: Row[]): { db: SqlClient; calls: Call[] } {
   const calls: Call[] = [];
   const db: SqlClient = {
     query: async (text, values) => {
@@ -48,7 +50,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function getThought(thoughtRows: unknown[], actionRows: unknown[], cookie?: string) {
+async function getThought(thoughtRows: Row[], actionRows: Row[], cookie?: string) {
   const { db, calls } = fakeDb(thoughtRows, actionRows);
   server = createServer(createHandler({ db, hub: {} as SseHub, sessionKey: KEY, now: () => 100 }));
   await new Promise<void>((r) => server?.listen(0, '127.0.0.1', r));

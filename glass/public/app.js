@@ -192,19 +192,35 @@ async function loadFacts(view) {
   if (view.kind === 'journal') return { view, receipts: [] };
   const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(view.id)}`);
   const full = toView(thought);
-  // Without an action the page cannot ask for receipts, and says nothing about them (null). With many, it
-  // asks for each in the order the API gave and shows them together.
-  const receipts =
-    full.actionIds.length === 0
-      ? null
-      : (
-          await Promise.all(
-            full.actionIds.map((id) =>
-              getJson(`/api/receipts?action_id=${encodeURIComponent(id)}`),
-            ),
-          )
-        ).flatMap((reply) => reply.receipts);
+  // Without an action the page cannot ask for receipts, and says nothing about them (null).
+  const receipts = full.actionIds.length === 0 ? null : await receiptsOf(full.actionIds);
   return { view: full, receipts };
+}
+
+/** At most this many receipt requests are in flight at once, so one thought cannot use up the limiter. */
+const RECEIPT_CONCURRENCY = 4;
+
+/**
+ * The receipts of each action id, in the order the API gave, a few requests at a time. A request that fails
+ * (a 429, say) drops only its own receipts: the facts and the other receipts still show.
+ */
+async function receiptsOf(ids) {
+  const replies = new Array(ids.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const i = next;
+      next += 1;
+      try {
+        const reply = await getJson(`/api/receipts?action_id=${encodeURIComponent(ids[i])}`);
+        replies[i] = reply.receipts;
+      } catch {
+        replies[i] = [];
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(RECEIPT_CONCURRENCY, ids.length) }, worker));
+  return replies.flat();
 }
 
 const reader = createReader({
