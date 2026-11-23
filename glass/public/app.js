@@ -105,7 +105,12 @@ const filters = createFilters({
 
 async function getJson(path) {
   const res = await fetch(path, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    err.httpStatus = res.status;
+    err.retryAfter = res.headers.get('Retry-After');
+    throw err;
+  }
   return res.json();
 }
 
@@ -222,6 +227,9 @@ const roster = createRoster({
   alive: byId('roster-alive'),
   dead: byId('roster-dead'),
   profile: byId('roster-profile'),
+  search: byId('roster-search'),
+  sort: byId('roster-sort'),
+  fetchAgents: getJson,
   isWide,
   openInGlass: (id) => tabs.openInGlass(id),
   loadLatest: getJson,

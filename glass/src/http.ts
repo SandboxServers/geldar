@@ -3,6 +3,7 @@
  * the JSON bodies. Agent-authored text leaves as JSON data; the page (a later packet) escapes it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { agentPageOf, pageAgents } from './agent-page.ts';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
 import { listThoughtsWithJournal } from './journal.ts';
 import { ownedAgentsOf } from './owner-view.ts';
@@ -166,7 +167,9 @@ async function serveRoute(
     ),
   });
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db, await shown()) });
+    const page = agentPageOf(query);
+    const rows = await listAgents(deps.db, await shown(), { activity: page.sort === 'latest' });
+    sendJson(res, 200, pageAgents(rows, page));
     return;
   }
   if (name === 'thoughts') {
