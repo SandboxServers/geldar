@@ -264,6 +264,21 @@ describe('pane view: retunes', () => {
     m.advance(2000);
     expect(m.sock().sent.at(-1)?.target_agent_id).toBe('ag_b');
   });
+  it('says the retune waits for the relay while it is held at the gate, and drops that line once it is sent', async () => {
+    const m = monitor({ burst: 1 });
+    await m.flush();
+    m.sock().feed(hello('ag_a'));
+    expect(m.notice()).toBeNull();
+    m.view.setTarget('ag_b');
+    expect(m.sock().sent).toHaveLength(1);
+    expect(m.notice()).toBe("Opening Moss: waiting for the relay's subscribe limit.");
+    m.advance(1999);
+    expect(m.sock().sent).toHaveLength(1);
+    expect(m.notice()).toBe("Opening Moss: waiting for the relay's subscribe limit.");
+    m.advance(1);
+    expect(m.sock().sent.at(-1)?.target_agent_id).toBe('ag_b');
+    expect(m.notice()).toBeNull();
+  });
 });
 
 describe('pane view: graphics', () => {
