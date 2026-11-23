@@ -1,6 +1,9 @@
 # Runs on every PR, on main, and on every merge queue entry (merge_group, decision 0220). `main` requires one
-# check, `ci gate`, which passes only when every job below passed. merge_group has no paths filter, so the
-# queue always runs the whole suite. A job whose part of the repo does
+# check, `ci gate`, which passes only when every job below passed. There is no workflow-level paths filter, so
+# `ci gate` always reports. Instead the `changes` job diffs the change against its base: when every changed path is
+# documentation (docs/**, or Markdown outside prompts/; tools/repo-checks/src/docs-only.ts), the heavy jobs are
+# skipped and the gate accepts "skipped" for them. `typescript` always runs, because its tests read docs/.
+# workflow_dispatch, or a base that cannot be fetched, runs the whole suite. A job whose part of the repo does
 # not exist yet (plugin/, compose/) says so and passes; the packet that creates
 # that part makes the job do real work. Mirrors `./geldar.ps1 check`, except
 # the `sql` job, which has no local `check` counterpart.
@@ -22,6 +25,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Is this change documentation only? Fails closed: any doubt (no base, fetch failure) gives docs_only=false.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: classify the change (docs only or not)
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            pull_request) base=$PR_BASE ;;
+            merge_group) base=$QUEUE_BASE ;;
+            push) base=$PUSH_BEFORE ;;
+            *) base= ;;
+          esac
+          if ! printf '%s' "$base" | grep -Eq '^[0-9a-f]{40}$' || [ "$base" = 0000000000000000000000000000000000000000 ] \
+            || ! git fetch --no-tags --depth=1 origin "$base"; then
+            echo "::notice::no base to diff against ($EVENT); running the whole suite"
+            echo docs_only=false >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --no-renames --name-only "$base" HEAD > "$RUNNER_TEMP/changed.txt"
+          node tools/repo-checks/src/docs-only.ts < "$RUNNER_TEMP/changed.txt" | tee -a "$GITHUB_OUTPUT"
+
   typescript:
     name: typescript
     runs-on: ubuntu-24.04
@@ -49,6 +87,8 @@ jobs:
 
   plugin:
     name: plugin
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -78,12 +118,13 @@ jobs:
           done
 
   # neoforge/ (the progression mod) and neoforge-ledger/ (the telemetry adapter; it consumes plugin/ledger-core as a
-  # composite build) are separate Gradle builds. Not path filtered: a skipped job is not "success", so the gate would
-  # fail, and merge_group has no paths filter anyway. Dependency verification stays on (gradle/verification-metadata.xml
+  # composite build) are separate Gradle builds. Skipped only for a docs-only change (the `changes` job). Dependency verification stays on (gradle/verification-metadata.xml
   # in each build); locks are never rewritten here. No server start. The build is retried once, and only when the log
   # shows a network error (never for a test failure). Gradle's dependency cache is kept by setup-gradle, as in `plugin`.
   neoforge:
     name: neoforge
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -157,6 +198,8 @@ jobs:
 
   compose:
     name: compose
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -226,6 +269,8 @@ jobs:
 
   sql:
     name: sql
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
@@ -270,6 +315,8 @@ jobs:
 
   images:
     name: images
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -300,6 +347,8 @@ jobs:
 
   integration:
     name: integration
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -418,18 +467,25 @@ jobs:
   gate:
     name: ci gate
     if: always()
-    needs: [typescript, plugin, neoforge, compose, sql, images, integration]
+    needs: [changes, typescript, plugin, neoforge, compose, sql, images, integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: every job passed
+      - name: every job passed (a docs-only change may skip the heavy jobs)
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          CHANGES: ${{ needs.changes.result }}
+          TYPESCRIPT: ${{ needs.typescript.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: |
-          echo "job results: $RESULTS"
+          echo "job results: $RESULTS (docs only: ${DOCS_ONLY:-unset})"
+          if [ "$CHANGES" != success ] || [ "$TYPESCRIPT" != success ]; then
+            echo "::error::changes ($CHANGES) and typescript ($TYPESCRIPT) must succeed on every change"
+            exit 1
+          fi
           for r in $RESULTS; do
-            if [ "$r" != "success" ]; then
-              echo "::error::a required job did not succeed ($r)"
-              exit 1
-            fi
+            if [ "$r" = success ]; then continue; fi
+            if [ "$r" = skipped ] && [ "$DOCS_ONLY" = true ]; then continue; fi
+            echo "::error::a required job did not succeed ($r)"
+            exit 1
           done
