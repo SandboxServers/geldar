@@ -33,6 +33,8 @@ describe('the operator diag line for a recipient not in sight', () => {
       entity: null,
       dist: null,
       los_block: null,
+      los_block_pos: null,
+      rays: null,
       loaded_players: [{ username: 'Pike', dist: Math.round(self.distanceTo(pike) * 100) / 100 }],
     });
     vi.restoreAllMocks();
@@ -79,6 +81,30 @@ describe('the operator diag line for a recipient not in sight', () => {
       check: 'los_blocked',
       entity: { x: 0.5, y: 64, z: 2.5, height: 1 },
       los_block: 'stone',
+      los_block_pos: { x: 0, y: 65, z: 1 },
+      rays: { feet: 'stone', middle: 'stone', eyes: 'stone' },
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('a low border blocks the middle line but leaves the eyes line clear', async () => {
+    const { world, run } = setup();
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    // A standing player five blocks off, behind one plank at foot height one block before it.
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 5.5),
+      height: 1.8,
+    };
+    world.set('oak_planks', 0, 64, 4);
+    const out = await run('Pike');
+    expect(out).toMatchObject({ status: 'failed', message: NOT_IN_SIGHT });
+    expect(notInSightLines(log.mock.calls)[0]).toMatchObject({
+      check: 'los_blocked',
+      los_block: 'oak_planks',
+      los_block_pos: { x: 0, y: 64, z: 4 },
+      rays: { feet: 'oak_planks', middle: 'oak_planks', eyes: null },
     });
     vi.restoreAllMocks();
   });

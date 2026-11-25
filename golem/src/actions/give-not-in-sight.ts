@@ -41,8 +41,14 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** The name of the first block that stops the line from the eyes to `at`, or null when none does. */
-function firstBlockingBlock(bot: Bot, at: Vec3): string | null {
+/** The first block that stops a line, by name and block position. */
+interface Blocker {
+  name: string;
+  pos: { x: number; y: number; z: number };
+}
+
+/** The first block that stops the line from the eyes to `at`, or null when none does. */
+function firstBlockingBlock(bot: Bot, at: Vec3): Blocker | null {
   const eyes = eyePosition(bot);
   const toPoint = at.minus(eyes);
   const range = toPoint.norm();
@@ -56,7 +62,28 @@ function firstBlockingBlock(bot: Bot, at: Vec3): string | null {
   );
   if (!hit) return null;
   // The block is read by its position, which every raycast result carries.
-  return bot.blockAt(hit.position)?.name ?? null;
+  const name = bot.blockAt(hit.position)?.name;
+  if (!name) return null;
+  return { name, pos: { x: hit.position.x, y: hit.position.y, z: hit.position.z } };
+}
+
+/** Where on a standing player the eyes are, as a share of its height (1.62 of 1.8). */
+const EYE_SHARE = 0.9;
+/** How far above the feet the feet line ends, so it does not graze the floor under them. */
+const FEET_LIFT = 0.1;
+
+/**
+ * The block that stops each of three lines from the Body's eyes: to the target's feet, to the middle
+ * of its body (the line the visible check uses) and to its eyes; null where that line is clear. A
+ * clear eyes line beside a blocked middle line means a low obstacle, not a wall.
+ */
+function rayBlockers(
+  bot: Bot,
+  feet: Vec3,
+  height: number,
+): { feet: string | null; middle: string | null; eyes: string | null } {
+  const at = (lift: number) => firstBlockingBlock(bot, feet.offset(0, lift, 0))?.name ?? null;
+  return { feet: at(FEET_LIFT), middle: at(height / 2), eyes: at(height * EYE_SHARE) };
 }
 
 /**
@@ -90,6 +117,7 @@ export function notInSightFacts(bot: Bot, to: string): Record<string, unknown> {
       null,
       loadedPlayers,
       null,
+      null,
     );
   }
   const height = entity.height ?? 1;
@@ -104,9 +132,10 @@ export function notInSightFacts(bot: Bot, to: string): Record<string, unknown> {
     pose,
   };
   if (dist > ENTITY_RANGE)
-    return facts(bot, to, 'out_of_range_24', shape, dist, loadedPlayers, null);
+    return facts(bot, to, 'out_of_range_24', shape, dist, loadedPlayers, null, null);
   const los = firstBlockingBlock(bot, entity.position.offset(0, height / 2, 0));
-  return facts(bot, to, 'los_blocked', shape, dist, loadedPlayers, los);
+  const rays = rayBlockers(bot, entity.position, height);
+  return facts(bot, to, 'los_blocked', shape, dist, loadedPlayers, los, rays);
 }
 
 /** The diag line's fields, in one place. */
@@ -117,7 +146,8 @@ function facts(
   entity: Record<string, unknown> | null,
   dist: number | null,
   loadedPlayers: { username: string; dist: number }[],
-  losBlock: string | null,
+  los: Blocker | null,
+  rays: Record<string, string | null> | null,
 ): Record<string, unknown> {
   const self = bot.entity.position;
   return {
@@ -128,7 +158,9 @@ function facts(
     entity,
     dist: dist === null ? null : round(dist),
     loaded_players: loadedPlayers,
-    los_block: losBlock,
+    los_block: los?.name ?? null,
+    los_block_pos: los?.pos ?? null,
+    rays,
     tick: bot.time?.age ?? null,
   };
 }
