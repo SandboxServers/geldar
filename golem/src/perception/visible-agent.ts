@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { canSeeBody } from './body-sight.ts';
 import { ENTITY_RANGE } from './entities.ts';
-import { canSeePoint } from './notable-blocks.ts';
 
 /** The fields of a visible agent the actions read. */
 export interface VisibleAgent {
@@ -56,14 +56,14 @@ function listedDisplayName(bot: Bot, username: string | undefined): string | nul
 }
 
 /**
- * The visible view of one loaded player: within `ENTITY_RANGE` and with a clear line from the eyes
- * to the middle of the body (the same rule `observeEntities` uses). Null when it is not visible.
+ * The visible view of one loaded player: within `ENTITY_RANGE` and with some part of the body in
+ * sight (`canSeeBody`, the same rule `observeEntities` uses). Null when it is not visible.
  */
 function visibleView(bot: Bot, entity: PlayerEntity): VisibleAgent | null {
   const distance = bot.entity.position.distanceTo(entity.position);
   if (distance > ENTITY_RANGE) return null;
   const height = entity.height ?? 1;
-  if (!canSeePoint(bot, entity.position.offset(0, height / 2, 0))) return null;
+  if (!canSeeBody(bot, entity.position, height)) return null;
   return { username: entity.username ?? '', position: entity.position, height, distance };
 }
 

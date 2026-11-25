@@ -4,8 +4,8 @@ import type { Vec3 } from 'vec3';
 import { GIVE_REACH } from '../actions/give.ts';
 import { worldAge } from '../world-clock.ts';
 import { compass } from './blocks-summary.ts';
+import { canSeeBody } from './body-sight.ts';
 import { ALWAYS_HOSTILE } from './hostile-types.ts';
-import { canSeePoint } from './notable-blocks.ts';
 
 type Surroundings = Snapshot['surroundings'];
 type Entity = Surroundings['entities'][number];
@@ -216,8 +216,8 @@ function toRecords(here: Vec3, sighted: Sighted[]): Entity[] {
 }
 
 /**
- * The entities and the other players the agent sees: within `ENTITY_RANGE` and with a clear line
- * from the eyes to the middle of the body. Nothing out of sight is reported. Players go to
+ * The entities and the other players the agent sees: within `ENTITY_RANGE` and with some part of
+ * the body in sight (`canSeeBody`: a clear line to its middle, eyes or feet). Nothing out of sight is reported. Players go to
  * `agents` (name, distance, held item, health unknown) and everything else to `entities`, each
  * with its integer block coordinates. A mob carries its threat fields; an arrow is reported only
  * while it is closing.
@@ -233,8 +233,7 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
     if (entity === (bot.entity as unknown as SeenEntity)) continue;
     const distance = here.distanceTo(entity.position);
     if (distance > ENTITY_RANGE) continue;
-    const body = entity.position.offset(0, (entity.height ?? 1) / 2, 0);
-    if (!canSeePoint(bot, body)) continue;
+    if (!canSeeBody(bot, entity.position, entity.height ?? 1)) continue;
     const id = Number(key);
     const closing =
       tick !== null && Number.isInteger(id) && Number.isFinite(distance)

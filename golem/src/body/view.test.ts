@@ -78,7 +78,9 @@ describe('view: hostiles need line of sight', () => {
     };
     const view = createBodyView(bot);
     expect(view.nearbyHostiles()).toHaveLength(1);
+    // A wall two high: one block at head height leaves the feet in sight (decision 0446).
     state.blocks[cell] = 'stone';
+    state.blocks[cell.replace(',65,', ',64,')] = 'stone';
     expect(view.nearbyHostiles()).toEqual([]);
   });
 });

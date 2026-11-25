@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { EYE_SHARE, FEET_LIFT } from '../perception/body-sight.ts';
 import { ENTITY_RANGE } from '../perception/entities.ts';
 import { eyePosition, isSeeThrough } from '../perception/notable-blocks.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
@@ -66,11 +67,6 @@ function firstBlockingBlock(bot: Bot, at: Vec3): Blocker | null {
   if (!name) return null;
   return { name, pos: { x: hit.position.x, y: hit.position.y, z: hit.position.z } };
 }
-
-/** Where on a standing player the eyes are, as a share of its height (1.62 of 1.8). */
-const EYE_SHARE = 0.9;
-/** How far above the feet the feet line ends, so it does not graze the floor under them. */
-const FEET_LIFT = 0.1;
 
 /**
  * The block that stops each of three lines from the Body's eyes: to the target's feet, to the middle
