@@ -402,7 +402,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       events,
       presence,
       limiter,
-      validator: createOutputValidator({ buildingOn: config.buildingOn }),
+      validator: buildActValidator(config),
       clock: ports.clock,
       runs,
       wake,
@@ -486,6 +486,14 @@ async function stopInOrder(
     }
   }
   log({ event: 'mcp_stopped' });
+}
+
+/** The output validator for `act` thoughts, built from the shard's bounds and the building flag. */
+export function buildActValidator(config: Pick<McpConfig, 'buildingOn' | 'worldBorderRadius'>) {
+  return createOutputValidator({
+    buildingOn: config.buildingOn,
+    worldBorderRadius: config.worldBorderRadius,
+  });
 }
 
 /** The shard rules the `shard/rules` resource shows, from the loaded config. */
