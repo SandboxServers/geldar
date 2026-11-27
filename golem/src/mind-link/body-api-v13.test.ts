@@ -9,6 +9,7 @@ import {
 } from '@geldar/contract';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
+import { PROGRAM_ARGS } from '../../../player-core/src/validate/bounds.ts';
 import { createProgramRegistry } from '../body/programs/index.ts';
 import { contextFor, newWorld } from '../body/programs/programs.fakes.ts';
 import { repoRoot } from '../config.ts';
@@ -97,6 +98,52 @@ describe('prompts/body-api/v13.json against the Body', () => {
     expect(summaries.patrol).toBe(
       'Walk a route of 2 to 8 block positions a set number of laps, returning to the start if looping.',
     );
+  });
+
+  it('states each argument bound as the PROGRAM_ARGS min and max', () => {
+    for (const entry of table.programs) {
+      if (!(entry.program in ARGUMENT_CHECKS)) continue;
+      const shapes = PROGRAM_ARGS[entry.program] ?? {};
+      const written = entry as unknown as { arguments: Record<string, string> };
+      expect(Object.keys(written.arguments).sort(), entry.program).toEqual(
+        Object.keys(shapes).sort(),
+      );
+      for (const [key, text] of Object.entries(written.arguments)) {
+        const spec = shapes[key];
+        if (spec.kind === 'bool') {
+          expect(text, `${entry.program}.${key}`).toBe('optional, true or false');
+          continue;
+        }
+        const numbers = /(\d+) to (\d+)/.exec(text);
+        expect(numbers, `${entry.program}.${key}`).not.toBeNull();
+        expect([Number(numbers?.[1]), Number(numbers?.[2])], `${entry.program}.${key}`).toEqual([
+          spec.min,
+          spec.max,
+        ]);
+      }
+    }
+  });
+
+  it('is version 13, and the same as v12 apart from the version, description and three programs', () => {
+    const v12 = JSON.parse(
+      readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v12.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    const v13 = JSON.parse(RAW) as Record<string, unknown>;
+    expect(v13.version).toBe(13);
+    const strip = (file: Record<string, unknown>, programs: unknown[]) => {
+      const { version: _version, description: _description, ...rest } = file;
+      return { ...rest, programs };
+    };
+    const v12Programs = v12.programs as unknown[];
+    const v13Programs = v13.programs as unknown[];
+    expect(strip(v13, v13Programs.slice(0, -3))).toEqual(strip(v12, v12Programs));
+  });
+
+  it('keeps the v12 description text', () => {
+    const v12 = JSON.parse(
+      readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v12.json'), 'utf8'),
+    ) as { description: string };
+    expect((JSON.parse(RAW) as { description: string }).description).toBe(v12.description);
   });
 
   it('carries no marker word in agent-visible text', () => {
