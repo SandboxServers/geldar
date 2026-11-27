@@ -36,12 +36,12 @@ describe('owner cap', () => {
     expect(sql.agents).toEqual(['ag_jo_01']);
   });
 
-  it('refuses a cap above 100 and a cap that is not a whole number', async () => {
+  it('refuses a cap above 50 and a cap that is not a whole number', async () => {
     const sql = new FakeSql();
-    await expect(addOwner(sql, 'jo', 101)).rejects.toThrow('0 to 100');
-    expect(() => parseCap('101')).toThrow('0 to 100');
-    expect(() => parseCap('2.5')).toThrow('0 to 100');
-    expect(parseCap('100')).toBe(100);
+    await expect(addOwner(sql, 'jo', 51)).rejects.toThrow('0 to 50');
+    expect(() => parseCap('51')).toThrow('0 to 50');
+    expect(() => parseCap('2.5')).toThrow('0 to 50');
+    expect(parseCap('50')).toBe(50);
     await addOwner(sql, 'jo');
     expect(sql.owners.get('jo')).toBe(3);
     await setOwnerCap(sql, 'jo', 50);

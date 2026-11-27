@@ -144,12 +144,12 @@ roster_list_args() {
   roster_owner=$2
 }
 
-# owner-set-cap <owner id> <N>: the owner id as roster_owner_ok checks it; N a whole number from 0 to 100 with no leading
+# owner-set-cap <owner id> <N>: the owner id as roster_owner_ok checks it; N a whole number from 0 to 50 with no leading
 # zero (the CLI's set-cap range, decision 0052). The shard's owner_cap_owner (20) is not applied: set-cap takes N as given.
 owner_set_cap_args() {
   [ $# -eq 2 ] || die "owner-set-cap takes <owner id> <N>"
   roster_owner_ok "$1"
-  case $2 in 0 | [1-9] | [1-9][0-9] | 100) ;; *) die "N must be a whole number from 0 to 100" ;; esac
+  case $2 in 0 | [1-9] | [1-4][0-9] | 50) ;; *) die "N must be a whole number from 0 to 50" ;; esac
   owner_cap=$2
 }
 

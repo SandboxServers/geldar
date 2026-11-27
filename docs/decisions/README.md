@@ -270,4 +270,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0436](0436-discord-for-developer-coordination.md) | A local Discord MCP bridge for developer sessions in Codex and Claude Code | Accepted for the MVP |
 | [0445](0445-human-approval-in-discord-before-merge.md) | A PR into `main` needs a rostered reviewer's approval in Discord; a ship request authorizes the review request | Accepted |
 | [0446](0446-an-entity-is-in-sight-when-any-part-is.md) | An entity is in sight when the line to its feet, middle or eyes is clear; a toss needs the middle or eyes line | Proposed |
-| [0447](0447-body-cap-50-and-owner-player-cap-100.md) | Running-Body cap 50 and per-owner player cap 100 | Accepted (the owner's instruction, 2026-11-27) |
+| [0447](0447-body-cap-50.md) | Running-Body cap raised from 40 to 50 in one step; alert at 40; amends 0261 items 3d and 3e | Accepted (the owner's instruction, 2026-11-27) |

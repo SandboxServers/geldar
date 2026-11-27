@@ -124,7 +124,7 @@ Schema `archive` exists for copies of dead agents' tables; 0001 creates it and g
 | Table | Created | Key | Columns | Changed by | Grants |
 |---|---|---|---|---|---|
 | `schema_migrations` | 0002 | `version` | `applied_at` | none | none |
-| `mcp_owners` | 0002 | `owner_id` | `display`, `player_cap` (default 3, 0 to 100) | 0025 `is_admin` | `geldar_mcp`: SELECT |
+| `mcp_owners` | 0002 | `owner_id` | `display`, `player_cap` (default 3, 0 to 50) | 0025 `is_admin` | `geldar_mcp`: SELECT |
 | `mcp_players` | 0002 | `player_id` (`^ag-[a-z0-9]+(-[a-z0-9]+)*$`) | `owner_id`, `life_id` (unique, references `agents`), `display_name`, `harness`, `status` (`active`, `paused`, `retired`) | 0063 `host_key` (UUID, server-generated) | `geldar_mcp`: SELECT `player_id`, `owner_id`, `life_id`, `display_name`, `harness`, `status` |
 | `mcp_tokens` | 0002 | `token_id`; unique `token_hash` (32 bytes, HMAC-SHA256 under a pepper; the token is never stored) | `player_id`, `label`, `created_at`, `expires_at`, `revoked_at`, `last_used_at` | none | `geldar_mcp`: SELECT, UPDATE `last_used_at` |
 | `mcp_budget` | 0002 | `life_id` | `credits` (>= 0), `accrued_at` | none | `geldar_mcp`: SELECT, UPDATE |

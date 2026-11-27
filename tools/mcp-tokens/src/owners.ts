@@ -7,7 +7,7 @@ export interface Sql {
 }
 
 /** The largest cap an owner can hold (decision 0052; the table's CHECK agrees). */
-export const MAX_OWNER_CAP = 100;
+export const MAX_OWNER_CAP = 50;
 
 /** The cap an owner gets when `owner add` names none (spec 5.15.6). */
 export const DEFAULT_OWNER_CAP = 3;

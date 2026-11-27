@@ -204,7 +204,7 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(starts(calls(fx))).toEqual([]);
   });
 
-  // The owner cap (decision 0052; set-cap takes 0 to 100 in the CLI, decision 0133 exposes it). The script checks the
+  // The owner cap (decision 0052; set-cap takes 0 to 50 in the CLI, decision 0133 exposes it). The script checks the
   // owner id and N before any container starts, so a bad value never reaches Docker.
   describe('owner-set-cap verb (decisions 0052, 0133)', () => {
     it('runs owner-set-cap as mcp-tokens owner set-cap, id and N passed as separate arguments', () => {
@@ -221,8 +221,8 @@ describe('colo-admin.sh (decision 0133)', () => {
 
     it.each([
       ['0', '0'],
-      ['100', '100'],
-    ])('accepts the cap %s at the edge of 0 to 100', (_name, n) => {
+      ['50', '50'],
+    ])('accepts the cap %s at the edge of 0 to 50', (_name, n) => {
       const fx = fixture();
       const r = run(fx, REAL, ['owner-set-cap', 'jason', n]);
       expect(r.code).toBe(0);
@@ -240,15 +240,15 @@ describe('colo-admin.sh (decision 0133)', () => {
       [
         'a non-numeric N',
         ['owner-set-cap', 'jason', 'twenty'],
-        'N must be a whole number from 0 to 100',
+        'N must be a whole number from 0 to 50',
       ],
-      ['a fraction', ['owner-set-cap', 'jason', '2.5'], 'N must be a whole number from 0 to 100'],
-      ['a negative N', ['owner-set-cap', 'jason', '-1'], 'N must be a whole number from 0 to 100'],
-      ['N above 100', ['owner-set-cap', 'jason', '101'], 'N must be a whole number from 0 to 100'],
+      ['a fraction', ['owner-set-cap', 'jason', '2.5'], 'N must be a whole number from 0 to 50'],
+      ['a negative N', ['owner-set-cap', 'jason', '-1'], 'N must be a whole number from 0 to 50'],
+      ['N above 50', ['owner-set-cap', 'jason', '51'], 'N must be a whole number from 0 to 50'],
       [
         'N with a leading zero',
         ['owner-set-cap', 'jason', '020'],
-        'N must be a whole number from 0 to 100',
+        'N must be a whole number from 0 to 50',
       ],
       ['an owner id with a capital', ['owner-set-cap', 'Jason', '20'], 'owner id must be'],
       ['an owner id with a space', ['owner-set-cap', 'jason x', '20'], 'owner id must be'],
