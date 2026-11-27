@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { parseAdamConfig } from './adam/adam-config.ts';
+import { isReflexEnabled } from './body/reflex-config.ts';
 import { assertLoopbackNatsUrl } from './body/restart.ts';
 import { coloServiceEnv } from './colo-compose.fixture.ts';
 import { loadStackConfig, repoRoot } from './config.ts';
@@ -22,6 +23,26 @@ describe('golem-body in compose/colo.yml', () => {
     const cfg = parseAdamConfig(parse(readFileSync(file, 'utf8')));
     expect(cfg.shard).toBe(env.GELDAR_SHARD);
     expect(cfg.lifeId).toBe('ag_colo_01');
+  });
+
+  it('turns the dark_shelter reflex off for the colo shard and leaves the others on', () => {
+    const file = join(repoRoot(), 'shards', 'colo-mind.yaml');
+    const { reflexes } = parseAdamConfig(parse(readFileSync(file, 'utf8')));
+    expect(reflexes.enabled).toBe(true);
+    expect(isReflexEnabled(reflexes, 'dark_shelter')).toBe(false);
+    for (const name of [
+      'eat',
+      'retreat',
+      'hazard_escape',
+      'fall_stop',
+      'fight_or_flee',
+      'blocked_path',
+      'panic_burrow',
+      'unstick',
+      'idle_stuck',
+    ] as const) {
+      expect(isReflexEnabled(reflexes, name), name).toBe(true);
+    }
   });
 
   it('accepts the NATS URL of the body container', () => {

@@ -122,7 +122,7 @@ describe('give', () => {
   it('says the items went to a bystander in sight who collected every one, with no walk', async () => {
     const { world, run, toss } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'Other' });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-2.5, 64, 2.5) };
     expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
       status: 'failed',
       reason: 'not_possible',
@@ -139,7 +139,7 @@ describe('give', () => {
     world.entities[3] = {
       type: 'player',
       username: 'ag_chapman_01',
-      position: new Vec3(-1.5, 64, 2.5),
+      position: new Vec3(-2.5, 64, 2.5),
     };
     const out = await run('Pike', 3, 'oak_log', 0.01);
     expect(out).toMatchObject({
@@ -155,7 +155,7 @@ describe('give', () => {
     world.entities[3] = {
       type: 'player',
       username: 'ag_chapman_01',
-      position: new Vec3(-1.5, 64, 2.5),
+      position: new Vec3(-2.5, 64, 2.5),
     };
     const out = await run('Pike', 3, 'oak_log', 0.01);
     expect(out).toMatchObject({
@@ -178,9 +178,9 @@ describe('give', () => {
   it('gives the combined text when the recipient got one item and a bystander in sight the other', async () => {
     const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-2.5, 64, 2.5) };
     const recipient = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    const bystander = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    const bystander = { type: 'player', username: 'Other', position: new Vec3(-2.5, 64, 2.5) };
     const item = (id: number) => ({
       id,
       name: 'item',

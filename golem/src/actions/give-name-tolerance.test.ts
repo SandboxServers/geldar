@@ -89,10 +89,11 @@ describe('give: a recipient named loosely (decision 0334)', () => {
   it('lets an unseen agent with the same name change nothing (decision 0145)', async () => {
     const { world, run, toss } = setup(5, { by: 'ag_kit_01' });
     // Only an unseen agent is called Wally: the name is as absent as any unknown name.
+    // Wally stands behind the wall, 3 blocks from Kit once the wall comes down: not a bystander.
     world.entities[2] = {
       type: 'player',
       username: 'ag_wally_01',
-      position: new Vec3(0.5, 64, 2.5),
+      position: new Vec3(-1.5, 64, 2.5),
     };
     world.setPlayer('ag_wally_01', 'Wally');
     wall(world);
@@ -145,5 +146,55 @@ describe('give: a recipient named loosely (decision 0334)', () => {
     expect(walk).toHaveBeenCalledOnce();
     expect(out).toMatchObject({ status: 'completed', detail: { to: 'mara' } });
     expect(toss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('give: a short name without the _NN number (decision 0334)', () => {
+  it('tosses to the one visible agent whose handle minus its number is the name', async () => {
+    const { world, run, toss } = setup(5, { by: 'ag_ripley_01' });
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_ripley_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    const out = await run('ripley');
+    expect(out).not.toMatchObject({ message: NOT_IN_SIGHT });
+    expect(toss).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses with the same text when two visible agents match the short name', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_ripley_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.entities[3] = {
+      type: 'player',
+      username: 'ag_ripley_02',
+      position: new Vec3(-1.5, 64, 2.5),
+    };
+    expect(await run('ripley')).toMatchObject({
+      status: 'failed',
+      reason: 'not_found',
+      message: NOT_IN_SIGHT,
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('refuses with the same text when the only match is not in sight', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_ripley_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    wall(world);
+    expect(await run('ripley')).toMatchObject({
+      status: 'failed',
+      reason: 'not_found',
+      message: NOT_IN_SIGHT,
+    });
+    expect(toss).not.toHaveBeenCalled();
   });
 });
