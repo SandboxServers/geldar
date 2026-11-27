@@ -104,7 +104,7 @@ function fakeEngine(
   return fake;
 }
 
-function harness(engine: Fake, cap = 50) {
+function harness(engine: Fake, cap = 100) {
   const audit: string[] = [];
   const lookups: Array<[string, string]> = [];
   const deps: HelperDeps = {
@@ -400,9 +400,9 @@ describe('body helper verbs', () => {
 });
 
 describe('global body cap', () => {
-  it('allows the start at 49 running and refuses the start at 50', async () => {
+  it('allows the start at 99 running and refuses the start at 100', async () => {
     const engine = fakeEngine(
-      Object.fromEntries(Array.from({ length: 49 }, (_, i) => [`p${i}`, true])),
+      Object.fromEntries(Array.from({ length: 99 }, (_, i) => [`p${i}`, true])),
     );
     const { handle, audit } = harness(engine);
     expect(await handle(req('start'))).toEqual({ ok: true, state: 'started' });
@@ -414,27 +414,27 @@ describe('global body cap', () => {
   });
 
   it('counts the sovereign host containers with the Bodies', async () => {
-    const running = Object.fromEntries(Array.from({ length: 34 }, (_, i) => [`p${i}`, true]));
+    const running = Object.fromEntries(Array.from({ length: 84 }, (_, i) => [`p${i}`, true]));
     const engine = fakeEngine(running, 15);
     const { handle } = harness(engine);
     expect(await handle(req('start'))).toEqual({ ok: true, state: 'started' });
     expect((await handle(req('start', 'miner'))).ok).toBe(false);
   });
 
-  it('writes one alert line when the count first reaches 40 and none on the next starts', async () => {
+  it('writes one alert line when the count first reaches 80 and none on the next starts', async () => {
     const engine = fakeEngine(
-      Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`p${i}`, true])),
+      Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`p${i}`, true])),
     );
     const { handle, audit } = harness(engine);
     await handle(req('start'));
     await handle(req('start', 'miner'));
     const alerts = audit.filter((line) => line.includes('alert'));
-    expect(alerts).toEqual(['body-helper alert running=40 threshold=40']);
+    expect(alerts).toEqual(['body-helper alert running=80 threshold=80']);
   });
 
   it('a failed create leaves no container, releases nothing and writes the alert and one failed line', async () => {
     const engine = fakeEngine(
-      Object.fromEntries(Array.from({ length: 49 }, (_, i) => [`p${i}`, true])),
+      Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`p${i}`, true])),
     );
     engine.failCreate = true;
     const { handle, audit } = harness(engine);
@@ -444,9 +444,9 @@ describe('global body cap', () => {
       error: 'docker call failed',
     });
     expect(engine.created).toEqual([]);
-    expect(await engine.countCounted()).toBe(49);
+    expect(await engine.countCounted()).toBe(80);
     expect(audit).toEqual([
-      'body-helper alert running=49 threshold=40',
+      'body-helper alert running=80 threshold=80',
       'body-helper verb=start name=ranger outcome=failed',
     ]);
   });
@@ -489,8 +489,8 @@ describe('a container of the name the helper did not create (A2)', () => {
 });
 
 describe('global cap config', () => {
-  it('defaults to 50 when unset and accepts a positive whole number', () => {
-    expect(globalBodyCapFromEnv({})).toBe(50);
+  it('defaults to 100 when unset and accepts a positive whole number', () => {
+    expect(globalBodyCapFromEnv({})).toBe(100);
     expect(globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: '12' })).toBe(12);
   });
 
