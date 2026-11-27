@@ -273,3 +273,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0446](0446-an-entity-is-in-sight-when-any-part-is.md) | An entity is in sight when the line to its feet, middle or eyes is clear; a toss needs the middle or eyes line | Proposed |
 | [0447](0447-body-cap-50.md) | Running-Body cap raised from 40 to 50 in one step; alert at 40; amends 0261 items 3d and 3e | Accepted (the owner's instruction, 2026-11-27) |
 | [0448](0448-body-cap-100.md) | Running-Body cap raised from 50 to 100 in one step; alert at 80; amends 0261 items 3d and 3e and 0447 items 1 and 2 | Accepted (the owner's instruction, 2026-11-27) |
+| [0450](0450-observation-sentences-name-a-known-actor.md) | Observation sentences may name an actor the agent could legitimately perceive (seen, spoke in chat, signed a sign); otherwise "Someone"; amends 0391 item 2 | Accepted for the rule; sentences Proposed |
