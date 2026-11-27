@@ -1,6 +1,6 @@
 # Sheet campaign on NeoForge: the delta
 
-> **Operator revision pending (2026-11-18):** NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.
+> **Decision 0390 is Accepted (operator ruling, 2026-11-27, see 0289) and supersedes 0329.** The NeoForge twins stay frozen until their cards are re-dispatched; nothing is activated (held-live stands).
 
 Status: planning note, docs only, 2026-11-18, against `origin/main` = `a8063b0a`; revised the same day for the operator rulings 0321, 0322 and NF-1 to NF-6 (decision 0329, Proposed). The owner chose "delta packets": the existing sheet cards stay as written for the Paper shard, and every card whose world side is Paper-specific gets a NeoForge twin card, blocked on its NeoForge prerequisite. This note says which cards need a twin and why; the twins themselves are in [../harness/work-packets-sheet-neoforge.md](../harness/work-packets-sheet-neoforge.md); proximity chat on NeoForge is planned in [neoforge-chat-plan.md](neoforge-chat-plan.md). It edits no accepted decision and no code.
 
