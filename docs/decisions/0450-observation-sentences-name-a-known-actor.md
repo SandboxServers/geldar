@@ -1,6 +1,6 @@
 # 0450. Observation sentences may name an actor the agent could legitimately perceive
 
-- Status: Accepted for the rule (operator ruling, 2026-11-27, given in the sheet coordinator session). The exact sentences below are Proposed until the owner approves them. Nothing is activated.
+- Status: Accepted for the rule (operator ruling, 2026-11-27, given in the sheet coordinator session). The three sentences in item 7 are Accepted (owner approval 2026-11-27, recorded in the 0289 follow-up). The gift_received sentence stays Proposed. Nothing is activated.
 - Date: 2026-11-27
 - Spec: OD-E (observation wording). `docs/spec.md` is not touched.
 - Amends: 0391 item 2, where it says "Naming a visible actor in the agent's text is the intended next version, not this one. It needs its own record". This is that record.
@@ -20,11 +20,11 @@
    - A contract change in a serial slot: an optional field recording the basis of an actor (proposed name `basis`, one of `seen`, `spoke`, `signed`), and chat and sign producers. It must take the next free contract regeneration slot after those in flight; ask the slot holder first. Whether the field is needed for the `seen` case alone is open: the shipped evidence already implies `seen`.
    - A presenter change: `observationSentence` in `contract/src/observation.ts` gains an optional `actor` input and builds the named sentence only when the actor is present and passes the tests in items 2 and 3; `threshold/mcp/src/events/handlers/observation.ts` passes `p.actor?.name` through `visibleActorName` into it; `present-handlers/observation.ts` already carries the name as a line field. The fight_seen and container_taken presenter rows (AN-50b finding 3) remain a separate card.
    - Leakage tests: the sentence with an actor passes `markedWords` for each kind; a marker-named actor (for example `Observer1`, `Streamer`) gives the "Someone" form; no sentence contains `ag_`, a UUID or digits beyond the count; an actor absent gives the exact current sentence; the existing marker-word scan of agent text still passes. Each test must fail when the guard it covers is removed.
-7. **Proposed sentences (OWNER APPROVAL REQUIRED, not approved, not selectable).**
-   - property_broken: `<Name> broke your <block>.`, falling back to the approved `Someone broke your <block>.`
-   - container_taken: `<Name> took <count> <item> from your container.`, falling back to `Someone took <count> <item> from your container.`
-   - fight_seen: `<Name> fought <a|an> <mob> nearby.`, falling back to `Someone fought <a|an> <mob> nearby.`
-   - gift_received keeps `You received <count> <item>.` (its giver is not named; whether to add one, for example `<Name> gave you <count> <item>.`, is also Proposed).
+7. **Sentences.** Accepted by the owner on 2026-11-27 (recorded in the 0289 follow-up). Name used only when the agent could legitimately know the actor (in view, chat, sign).
+   - property_broken: `<Name> broke your <block>.` / `Someone broke your <block>.` (Accepted)
+   - container_taken: `<Name> took <count> <item> from your container.` / `Someone took <count> <item> from your container.` (Accepted)
+   - fight_seen: `<Name> fought a <mob> nearby.` / `Someone fought a <mob> nearby.` (Accepted)
+   - gift_received keeps `You received <count> <item>.` (its giver is not named; whether to add one, for example `<Name> gave you <count> <item>.`, is still Proposed and not approved, not selectable).
 
 ## Why
 
@@ -33,6 +33,6 @@ An agent that can see, hear or read who did something would know it as a person 
 ## Consequences
 
 - Nothing is activated. The `observations` option stays absent in production, and the held-live ruling and D-CS-06 stand. Approving the rule does not select or publish any observation.
-- 0391 item 2 stands for the approved sentences as written (actor-free) until the owner approves the Proposed ones and a packet changes the code.
+- Accepting the sentences changes no code. The sentences in code stay actor-free until the packet in item 6 merges; 0391 item 2 stands until then.
 - 0343 item 4 ("the sentence never reads an actor") is amended only when that packet merges.
 - The number was free on `origin/main`, in open PRs and in remote branch names on 2026-11-27.
