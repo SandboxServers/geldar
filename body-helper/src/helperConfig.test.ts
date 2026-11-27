@@ -37,7 +37,7 @@ describe('helper config', () => {
     expect(config.shard).toBe('colo');
     expect(config.pg.port).toBe(5432);
     expect(config.wiring.uid).toBe('1000');
-    expect(config.cap).toBe(50);
+    expect(config.cap).toBe(100);
     expect(config.sweepMinutes).toBe(10);
     expect(config.requestDeadlineMs).toBe(120_000);
     expect(config.natsPassword).toBe(SECRET_TEXT);
