@@ -117,6 +117,9 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | Done (#800) |
 | AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | Done (#810; captures #823, anvil and enchanting-table re-run #826) |
 | AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |
+| AN-45c | actor basis on ObservedActor (`seen`, `spoke`, `signed`); named sentence only when present (0450 item 6) | sheet W6-W8 | PR #955 merged; AN-46; serial contract slot; `phase1/sheet-presenter-rows` | 30-35k | BlockedDependency (#955; colo-images batch window; inert, held-live) |
+| AN-51c | `agents[].pos` for perceived agents, never ids (0391 item 4; 0451 if a record is needed) | sheet W6-W8 | AN-45c (next contract slot); AN-51b | 30-40k | BlockedDependency (AN-45c; owner wording; inert, held-live) |
+| GX-ROSTER | operator-only `players-cli` verb exports `roster.json` as flat name-to-life JSON, max 16 KiB, never shown to the model (0289) | sheet W6-W8 | tools/players-cli (colo-images) | 20-25k | BlockedDependency (colo-images batch window) |
 | AN-50a | evidence registration: sink `case` arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, `combat_fact` awards, inert) |
 | AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Done (#832, merge `f03ab6e1`; last link of the chain; take and combat subjects subscribed, `fight_seen` and `container_taken` map but present no line; live items pending operator approval) |
 | S9-00a | `turn_records` joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
