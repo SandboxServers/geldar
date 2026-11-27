@@ -22,6 +22,7 @@ reflexes:                        # one flag per spec 5.2 reflex; enabled: false 
   fight_or_flee: true
   blocked_path: true
   panic_burrow: true
+  dark_shelter: false            # off 2026-11-27 (owner): the body keeps working in the dark; retreat/fight_or_flee/panic_burrow still protect it
 chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
 memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
 attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
