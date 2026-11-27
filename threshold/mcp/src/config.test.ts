@@ -58,6 +58,16 @@ describe('loadMcpConfig', () => {
     expect(config.http.maxConnections).toBe(9);
   });
 
+  it('sizes the caps in shards/colo-mind.yaml for 100 players behind one address', () => {
+    const doc = parse(readFileSync(join(repoRoot(), 'shards', 'colo-mind.yaml'), 'utf8')) as Record<
+      string,
+      any
+    >;
+    const config = parseMcpConfig(doc, { env: { ...ENV, GELDAR_SHARD: 'colo' } });
+    expect(config.http.maxConnectionsPerAddress).toBe(512);
+    expect(config.http.maxConnections).toBe(1024);
+  });
+
   it('names the missing key when a sovereign key is absent', () => {
     const doc = shardDoc();
     delete doc.sovereign.mcp.wait_cap_seconds;

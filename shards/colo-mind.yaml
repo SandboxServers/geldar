@@ -57,6 +57,10 @@ sovereign:
   mcp:
     max_body_bytes: 65536
     port: 8788
+    # Open requests per address and in total. Each Mind holds a `wait` (up to 240 s) plus GET streams; ~94 Minds
+    # share one address and each POST takes an address slot and an owner slot (the owner slot uses this number too).
+    max_connections_per_address: 512
+    max_connections: 1024
     wait_cap_seconds: 240
     keepalive_seconds: 25
     max_result_bytes: 16384
