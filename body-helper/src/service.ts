@@ -16,7 +16,7 @@ import { LIFE_ID_PATTERN, type RosterLifePort } from './roster.ts';
 import { type BodyTemplateInput, DEFAULT_NETWORK, DEFAULT_STACK } from './template.ts';
 
 /** The count at which the helper writes one alert line (GLOBAL-CAP). */
-export const CAP_ALERT_AT = 30;
+export const CAP_ALERT_AT = 40;
 export const CAP_REFUSAL = 'global body cap reached';
 export const ALREADY_RUNNING = 'already running';
 export const NAME_TAKEN = 'name taken by a container the helper did not create';

@@ -1,7 +1,7 @@
 // The global cap on running Bodies (GLOBAL-CAP, decision 0261). It is read from one place only: the
 // GELDAR_GLOBAL_BODY_CAP env name. A caller cannot pass a cap, and the helper never raises it.
 
-export const DEFAULT_GLOBAL_BODY_CAP = 40;
+export const DEFAULT_GLOBAL_BODY_CAP = 50;
 export const CAP_ENV = 'GELDAR_GLOBAL_BODY_CAP';
 
 /**

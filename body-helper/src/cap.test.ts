@@ -108,12 +108,12 @@ describe('global body cap (GLOBAL-CAP)', () => {
     expect(audit.some((line) => line.includes('outcome=capacity'))).toBe(true);
   });
 
-  it('writes one alert line when the count first reaches 30, not on the next starts', async () => {
-    const { handle, audit } = helperWith(bodies(30));
+  it('writes one alert line when the count first reaches 40, not on the next starts', async () => {
+    const { handle, audit } = helperWith(bodies(40), 50);
     await handle({ verb: 'start', name: 'Newcomer1', owner: 'o' });
     await handle({ verb: 'start', name: 'Newcomer2', owner: 'o' });
     const alerts = audit.filter((line) => line.startsWith('body-helper alert'));
-    expect(alerts).toEqual(['body-helper alert running=30 threshold=30']);
+    expect(alerts).toEqual(['body-helper alert running=40 threshold=40']);
   });
 
   it('a Docker error after the count check releases nothing: the failed start is removed and no slot is kept', async () => {
