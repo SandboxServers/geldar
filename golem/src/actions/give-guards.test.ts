@@ -67,3 +67,64 @@ describe('give: each listener is guarded', () => {
     ).toEqual([]);
   });
 });
+
+describe('give: a bystander next to the recipient or the toss line (crowd guard)', () => {
+  it('refuses when another player stands within 2 blocks of the recipient, and keeps the items', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_mara_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.entities[3] = { type: 'player', username: 'ag_kit_01', position: new Vec3(1.5, 64, 2.5) };
+    expect(await run('ag_mara_01')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'someone else stands within 2 blocks of ag_mara_01; the items stay with you',
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('refuses when another player stands beside the toss line, and keeps the items', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_mara_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.entities[3] = {
+      type: 'player',
+      username: 'ag_kit_01',
+      position: new Vec3(-0.3, 64, 0.6),
+    };
+    expect(await run('ag_mara_01')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'someone else stands beside the toss line to ag_mara_01; the items stay with you',
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('tosses when the nearest other player stands 5 blocks from the recipient', async () => {
+    const { world, run, toss } = setup(5, { by: 'ag_mara_01' });
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_mara_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.entities[3] = { type: 'player', username: 'ag_kit_01', position: new Vec3(5.5, 64, 2.5) };
+    expect(await run('ag_mara_01')).toMatchObject({ status: 'completed' });
+    expect(toss).toHaveBeenCalledTimes(1);
+  });
+
+  it('never counts the recipient as a bystander of their own toss', async () => {
+    const { world, run, toss } = setup(5, { by: 'ag_mara_01' });
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_mara_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    expect(await run('ag_mara_01')).toMatchObject({ status: 'completed' });
+    expect(toss).toHaveBeenCalledTimes(1);
+  });
+});

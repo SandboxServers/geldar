@@ -1,7 +1,12 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canTossTo } from '../perception/body-sight.ts';
-import { findVisibleAgent, isUsernameVisible } from '../perception/visible-agent.ts';
+import {
+  findVisibleAgent,
+  isUsernameVisible,
+  otherPlayerPositions,
+} from '../perception/visible-agent.ts';
+import { CROWD_RADIUS, crowdSpot } from './give-crowd.ts';
 import { logNotInSight } from './give-not-in-sight.ts';
 import {
   allPicked,
@@ -346,6 +351,21 @@ async function tossTo(
   // Glass lets the recipient be seen, but a toss stops at it: any block shape in the line blocks.
   if (!canTossTo(bot, target.position, target.height)) {
     return failed('blocked', 'something is in the way of the toss');
+  }
+  // Another player next to the recipient or the line catches the items before the recipient does.
+  // The refusal names no one, and the items were not thrown, so they stay with the giver.
+  const crowd = crowdSpot(bot.entity.position, target.position, otherPlayerPositions(bot, pinned));
+  if (crowd === 'recipient') {
+    return failed(
+      'not_possible',
+      `someone else stands within ${CROWD_RADIUS} blocks of ${action.to}; the items stay with you`,
+    );
+  }
+  if (crowd === 'line') {
+    return failed(
+      'not_possible',
+      `someone else stands beside the toss line to ${action.to}; the items stay with you`,
+    );
   }
 
   // The pickup watch counts the recipient by the username resolved, which a loose name differs from.

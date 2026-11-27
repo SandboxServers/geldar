@@ -56,6 +56,17 @@ function listedDisplayName(bot: Bot, username: string | undefined): string | nul
 }
 
 /**
+ * Where each loaded player other than the Body and `except` (a username) stands, seen or not. A
+ * toss's bystanders are counted whether the agent can see them or not, because they catch the items
+ * either way; no name is said from this list.
+ */
+export function otherPlayerPositions(bot: Bot, except: string): Vec3[] {
+  return otherPlayers(bot)
+    .filter((entity) => entity.username !== except)
+    .map((entity) => entity.position);
+}
+
+/**
  * The visible view of one loaded player: within `ENTITY_RANGE` and with some part of the body in
  * sight (`canSeeBody`, the same rule `observeEntities` uses). Null when it is not visible.
  */
@@ -72,13 +83,22 @@ function handleOf(username: string): string {
   return username.replace(/^ag_/, '');
 }
 
+/** The handle without its `_NN` number: `ripley` for `ag_ripley_01`. */
+function shortNameOf(username: string): string {
+  return handleOf(username).replace(/_\d+$/, '');
+}
+
 /**
- * Whether `name` is a loose spelling of this player: their handle without the `ag_` prefix, or their
- * in-world display name from the tab list, compared case-insensitively.
+ * Whether `name` is a loose spelling of this player: their handle without the `ag_` prefix, their
+ * handle without the `_NN` number too, or their in-world display name from the tab list, compared
+ * case-insensitively.
  */
 function namedLoosely(bot: Bot, entity: PlayerEntity, name: string): boolean {
   const wanted = name.toLowerCase();
-  if (entity.username && handleOf(entity.username).toLowerCase() === wanted) return true;
+  if (entity.username) {
+    if (handleOf(entity.username).toLowerCase() === wanted) return true;
+    if (shortNameOf(entity.username).toLowerCase() === wanted) return true;
+  }
   const shown = listedDisplayName(bot, entity.username);
   return shown !== null && shown.toLowerCase() === wanted;
 }
