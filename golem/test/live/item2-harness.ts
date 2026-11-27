@@ -108,3 +108,16 @@ export function checkXp(before: XpReading, after: XpReading): string[] {
   if (added.length !== 1) problems.push(`${added.length} new evidence keys, expected 1`);
   return problems;
 }
+
+/** The one block the observer mines for the XP step: `stone` collects as a mining item (eventsink matrix). */
+export const MINE_BLOCK = 'stone';
+
+/**
+ * Problems with the observer's mining step. The step is `life-cli.ts mine-once` (one scripted plan, one
+ * `mine` action); its exit code is 0 only when the plan was accepted and its plan_result arrived.
+ */
+export function checkMine(exitCode: number): string[] {
+  return exitCode === 0
+    ? []
+    : [`mine-once exited ${exitCode}: the plan was refused or no plan_result arrived`];
+}

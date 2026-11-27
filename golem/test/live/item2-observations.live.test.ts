@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { type AdamBodyEnv, startAdamBody } from '../../src/adam/adam-body.ts';
 import { loadAdamConfig } from '../../src/adam/adam-config.ts';
 import { managerAcquire } from '../../src/adam/main.ts';
+import { main as mineOnce } from '../../src/bench/sheet/life-cli.ts';
 import { jetStreamPublisher } from '../../src/body/records-nats.ts';
 import { openRestartKv } from '../../src/body/restart.ts';
 import { loadStackConfig } from '../../src/config.ts';
@@ -21,9 +22,11 @@ import { natsRequestServer } from '../../src/mind-link/server.ts';
 import { registryFromConfig } from '../../src/registry.ts';
 import { withChatterBot } from './chatter-bot.ts';
 import {
+  checkMine,
   checkRow,
   checkXp,
   item2Refusal,
+  MINE_BLOCK,
   ROWS,
   type RowName,
   type SeenObservation,
@@ -141,8 +144,16 @@ describe.skipIf(refusal === 'skipped')('item-2 observations on a throwaway shard
             }
           },
         );
+        // The producer step: the observer Body mines one block through the sheet driver's `mine-once`
+        // (one scripted plan, no model), so the sink has an award to measure.
+        const mined = await mineOnce(['mine-once', config.lifeId, MINE_BLOCK, '1'], {
+          SHEET_SHARD: target.shard,
+          SHEET_PROJECT: target.project,
+          SHEET_NATS_URL: target.natsUrl,
+        });
+        expect(checkMine(mined)).toEqual([]);
+        await new Promise((r) => setTimeout(r, SETTLE_MS));
         const after = await readXp(pool, config.lifeId, 'mining');
-        // The observer's own mining award is the producer-to-sink path; the actor's rows are checked above.
         expect(checkXp(before, after)).toEqual([]);
         await body.stop();
       } finally {

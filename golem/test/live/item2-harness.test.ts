@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { checkRow, checkXp, item2Refusal, type SeenObservation } from './item2-harness.ts';
+import {
+  checkMine,
+  checkRow,
+  checkXp,
+  item2Refusal,
+  type SeenObservation,
+} from './item2-harness.ts';
 
 const GOOD = {
   shard: 'scratch-item2',
@@ -86,5 +92,13 @@ describe('checkXp', () => {
   it('fails on no award and on a double award', () => {
     expect(checkXp({ xp: 2, evidence: ['a'] }, { xp: 2, evidence: ['a'] })).toHaveLength(2);
     expect(checkXp({ xp: 2, evidence: [] }, { xp: 4, evidence: ['a', 'b'] })).toHaveLength(2);
+  });
+});
+
+describe('checkMine', () => {
+  it('passes only an exit code of 0', () => {
+    expect(checkMine(0)).toEqual([]);
+    expect(checkMine(1)[0]).toContain('exited 1');
+    expect(checkMine(2)).toHaveLength(1);
   });
 });
