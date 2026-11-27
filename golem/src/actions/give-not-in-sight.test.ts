@@ -33,6 +33,8 @@ describe('the operator diag line for a recipient not in sight', () => {
       entity: null,
       dist: null,
       los_block: null,
+      los_block_pos: null,
+      rays: null,
       loaded_players: [{ username: 'Pike', dist: Math.round(self.distanceTo(pike) * 100) / 100 }],
     });
     vi.restoreAllMocks();
@@ -79,8 +81,46 @@ describe('the operator diag line for a recipient not in sight', () => {
       check: 'los_blocked',
       entity: { x: 0.5, y: 64, z: 2.5, height: 1 },
       los_block: 'stone',
+      los_block_pos: { x: 0, y: 65, z: 1 },
+      rays: { feet: 'stone', middle: 'stone', eyes: 'stone' },
     });
     vi.restoreAllMocks();
+  });
+
+  it('a recipient whose feet show under a block is in sight: the toss is blocked, not the name (0446)', async () => {
+    const { world, run, toss } = setup();
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 3.5),
+      height: 1.8,
+    };
+    // One block at head height between them: the eyes and middle lines stop at it, the feet line does not.
+    world.set('stone', 0, 65, 2);
+    const out = await run('Pike');
+    expect(out).toMatchObject({ status: 'failed', message: 'something is in the way of the toss' });
+    expect(toss).not.toHaveBeenCalled();
+    expect(notInSightLines(log.mock.calls)).toHaveLength(0);
+    vi.restoreAllMocks();
+  });
+
+  it('the diag names the blocker of each line for a recipient behind a two-high wall', () => {
+    const { world } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 5.5),
+      height: 1.8,
+    };
+    world.set('oak_planks', 0, 64, 4);
+    world.set('oak_planks', 0, 65, 4);
+    const bot = world.bot as unknown as Parameters<typeof notInSightFacts>[0];
+    expect(notInSightFacts(bot, 'Pike')).toMatchObject({
+      check: 'los_blocked',
+      los_block: 'oak_planks',
+      rays: { feet: 'oak_planks', middle: 'oak_planks', eyes: 'oak_planks' },
+    });
   });
 
   it('lists at most 12 loaded players, the nearest first', async () => {

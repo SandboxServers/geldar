@@ -36,7 +36,9 @@ const asBot = (world: FakeWorld) => world.bot as unknown as Bot;
 function scene(players: Record<string, Vec3>, mob: Vec3 | null = MOB): FakeWorld {
   const world = new FakeWorld();
   world.me.position = BODY.clone();
+  // Two high, so no part of a body behind it is in sight (decision 0446).
   world.set('stone', 102, 64, 100);
+  world.set('stone', 102, 65, 100);
   let id = 1;
   for (const [username, position] of Object.entries(players)) {
     world.entities[id++] = { type: 'player', username, position };

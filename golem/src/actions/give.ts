@@ -1,6 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
-import { canSeePoint } from '../perception/notable-blocks.ts';
+import { canTossTo } from '../perception/body-sight.ts';
 import { findVisibleAgent, isUsernameVisible } from '../perception/visible-agent.ts';
 import { logNotInSight } from './give-not-in-sight.ts';
 import {
@@ -344,8 +344,7 @@ async function tossTo(
     return failed('not_possible', 'too far up to toss to');
   }
   // Glass lets the recipient be seen, but a toss stops at it: any block shape in the line blocks.
-  const middle = target.position.offset(0, target.height / 2, 0);
-  if (!canSeePoint(bot, middle, { solidOnly: true })) {
+  if (!canTossTo(bot, target.position, target.height)) {
     return failed('blocked', 'something is in the way of the toss');
   }
 

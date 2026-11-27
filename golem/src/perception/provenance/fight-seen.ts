@@ -14,7 +14,7 @@ import {
 } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
-import { canSeePoint } from '../notable-blocks.ts';
+import { canSeeBody } from '../body-sight.ts';
 import { observedActor } from './visible-actor.ts';
 
 /** The combat member of the Provenance union: `engaged` and `killed` (a combat provenance from the plugin). */
@@ -99,8 +99,8 @@ function fighterOf(username: string, ctx: FightContext): ObservedActor | null {
 }
 
 /**
- * Whether a mob of the target type is within reach of the Body and in its sight: the same eyes-to-middle
- * line `visibleView` uses for players, from `canSeePoint`. Players are not mobs. A throwing read is no mob.
+ * Whether a mob of the target type is within reach of the Body and in its sight: the same rule
+ * `visibleView` uses for players, `canSeeBody`. Players are not mobs. A throwing read is no mob.
  */
 function mobInSight(bot: Bot, target: string): boolean {
   try {
@@ -111,7 +111,7 @@ function mobInSight(bot: Bot, target: string): boolean {
         entity.type !== 'player' &&
         entity.name === target &&
         here.distanceTo(entity.position) <= REACH &&
-        canSeePoint(bot, entity.position.offset(0, (entity.height ?? 1) / 2, 0)),
+        canSeeBody(bot, entity.position, entity.height ?? 1),
     );
   } catch {
     return false;

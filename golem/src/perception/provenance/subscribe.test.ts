@@ -466,6 +466,8 @@ describe('the leakage gate at the subscription: what a published observation car
 const CELL = new Vec3(1313, 200, 800);
 const WALL = new Vec3(1311, 200, 800);
 const SIDE_WALL = new Vec3(1310, 201, 803);
+/** Below `SIDE_WALL`, so no part of a body behind the two is in sight (decision 0446). */
+const SIDE_WALL_LOW = new Vec3(1310, 200, 803);
 const VISIBLE_BREAKER = { username: OTHER, position: new Vec3(1306, 200, 800) };
 const BEHIND_WALL_BREAKER = { username: OTHER, position: new Vec3(1310, 200, 806) };
 
@@ -567,7 +569,9 @@ describe('startBodyObservations (AN-28b wiring)', () => {
   });
 
   it('a breaker the Body cannot see is not named: the cell is in sight, the observation has no actor', async () => {
-    const net = bodyNet(bodyBot({ players: [BEHIND_WALL_BREAKER], solids: [CELL, SIDE_WALL] }));
+    const net = bodyNet(
+      bodyBot({ players: [BEHIND_WALL_BREAKER], solids: [CELL, SIDE_WALL, SIDE_WALL_LOW] }),
+    );
     net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
     await flush();
     expect(net.published).toHaveLength(1);

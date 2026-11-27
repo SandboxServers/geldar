@@ -5,7 +5,7 @@ import { isOwnPlacement } from '../actions/own-placements.ts';
 import { ownerRecordAt } from '../actions/protected-blocks.ts';
 import { isNightOrStorm } from '../actions/sleep.ts';
 import { planMoves } from '../actions/unstick-plan.ts';
-import { canSeePoint } from '../perception/notable-blocks.ts';
+import { canSeeBody } from '../perception/body-sight.ts';
 import { worldAge } from '../world-clock.ts';
 import { ownAir } from './air.ts';
 import { lightAtHead } from './light.ts';
@@ -347,8 +347,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         const distance = entity.position.distanceTo(here);
         if (distance > radius) continue;
         // Reflexes act only on what the Body can see (decision 0154, ruling 6).
-        const body = entity.position.offset(0, (entity.height ?? 1) / 2, 0);
-        if (!canSeePoint(bot, body)) continue;
+        if (!canSeeBody(bot, entity.position, entity.height ?? 1)) continue;
         const { x, y, z } = entity.position;
         const meta = (entity as unknown as { metadata?: unknown[] }).metadata;
         const hissing = entity.name === 'creeper' && meta?.[CREEPER_IGNITED_SLOT] === true;
@@ -379,8 +378,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         if (entity === bot.entity || entity.name !== 'arrow') continue;
         const distance = entity.position.distanceTo(here);
         if (distance > radius) continue;
-        const body = entity.position.offset(0, (entity.height ?? 0.5) / 2, 0);
-        if (!canSeePoint(bot, body)) continue;
+        if (!canSeeBody(bot, entity.position, entity.height ?? 0.5)) continue;
         const v = entity.velocity ?? new Vec3(0, 0, 0);
         const toBody = here.minus(entity.position);
         found.push({

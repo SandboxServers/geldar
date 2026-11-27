@@ -4,8 +4,9 @@
 
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { canSeeBody } from '../perception/body-sight.ts';
 import { ENTITY_RANGE, MAX_ENTITIES } from '../perception/entities.ts';
-import { canSeePoint, eyePosition } from '../perception/notable-blocks.ts';
+import { eyePosition } from '../perception/notable-blocks.ts';
 import type { ViewportEntity } from '../viewport/index.ts';
 import { type BlockSnapshot, copyBlockBox } from './snapshot.ts';
 
@@ -37,7 +38,7 @@ function blockName(bot: Bot, x: number, y: number, z: number): string | null {
   return block === null ? null : block.name;
 }
 
-/** The entities the Body can see: within the perception range and with a clear line to the body centre. */
+/** The entities the Body can see: within the perception range and with some part of the body in sight. */
 export function entitiesInSight(bot: Bot): ViewportEntity[] {
   const me = bot.entity as { position: Vec3 } | undefined;
   if (me === undefined) return [];
@@ -50,7 +51,7 @@ export function entitiesInSight(bot: Bot): ViewportEntity[] {
     if (distance > ENTITY_RANGE) continue;
     const height = entity.height ?? DEFAULT_HEIGHT;
     const width = entity.width ?? DEFAULT_WIDTH;
-    if (!canSeePoint(bot, position.offset(0, height / 2, 0))) continue;
+    if (!canSeeBody(bot, position, height)) continue;
     sighted.push({
       entity: { type: entity.type, x: position.x, y: position.y, z: position.z, width, height },
       distance,
