@@ -110,9 +110,15 @@ describe('prompts/body-api/v13.json against the Body', () => {
       );
       for (const [key, text] of Object.entries(written.arguments)) {
         const spec = shapes[key];
+        if (spec === undefined) {
+          throw new Error(`${entry.program}.${key} has no PROGRAM_ARGS shape`);
+        }
         if (spec.kind === 'bool') {
           expect(text, `${entry.program}.${key}`).toBe('optional, true or false');
           continue;
+        }
+        if (spec.kind !== 'int' && spec.kind !== 'route') {
+          throw new Error(`${entry.program}.${key} is ${spec.kind}, not a bounded number`);
         }
         const numbers = /(\d+) to (\d+)/.exec(text);
         expect(numbers, `${entry.program}.${key}`).not.toBeNull();
