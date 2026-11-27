@@ -134,6 +134,56 @@ sovereign:
     - { player_id: ag-ripley-01, life_id: ag_ripley_01, name: Ripley }
     - { player_id: ag-swanson-01, life_id: ag_swanson_01, name: Swanson }
     - { player_id: ag-reynolds-01, life_id: ag_reynolds_01, name: MalReynolds }
+    - { player_id: ag-sisko-01, life_id: ag_sisko_01, name: Sisko }
+    - { player_id: ag-janeway-01, life_id: ag_janeway_01, name: Janeway }
+    - { player_id: ag-odo-01, life_id: ag_odo_01, name: Odo }
+    - { player_id: ag-quark-01, life_id: ag_quark_01, name: Quark }
+    - { player_id: ag-seven-01, life_id: ag_seven_01, name: Seven }
+    - { player_id: ag-uhura-01, life_id: ag_uhura_01, name: Uhura }
+    - { player_id: ag-han-01, life_id: ag_han_01, name: Han }
+    - { player_id: ag-leia-01, life_id: ag_leia_01, name: Leia }
+    - { player_id: ag-chewie-01, life_id: ag_chewie_01, name: Chewie }
+    - { player_id: ag-obiwan-01, life_id: ag_obiwan_01, name: ObiWan }
+    - { player_id: ag-yoda-01, life_id: ag_yoda_01, name: Yoda }
+    - { player_id: ag-cleopatra-01, life_id: ag_cleopatra_01, name: Cleopatra }
+    - { player_id: ag-hatshep-01, life_id: ag_hatshep_01, name: Hatshepsut }
+    - { player_id: ag-leif-01, life_id: ag_leif_01, name: Leif }
+    - { player_id: ag-magellan-01, life_id: ag_magellan_01, name: Magellan }
+    - { player_id: ag-marcopolo-01, life_id: ag_marcopolo_01, name: MarcoPolo }
+    - { player_id: ag-florence-01, life_id: ag_florence_01, name: Florence }
+    - { player_id: ag-tubman-01, life_id: ag_tubman_01, name: Tubman }
+    - { player_id: ag-galileo-01, life_id: ag_galileo_01, name: Galileo }
+    - { player_id: ag-tesla-01, life_id: ag_tesla_01, name: Tesla }
+    - { player_id: ag-archimede-01, life_id: ag_archimede_01, name: Archimedes }
+    - { player_id: ag-hypatia-01, life_id: ag_hypatia_01, name: Hypatia }
+    - { player_id: ag-anning-01, life_id: ag_anning_01, name: Anning }
+    - { player_id: ag-orville-01, life_id: ag_orville_01, name: Orville }
+    - { player_id: ag-boudicca-01, life_id: ag_boudicca_01, name: Boudicca }
+    - { player_id: ag-frodo-01, life_id: ag_frodo_01, name: Frodo }
+    - { player_id: ag-gandalf-01, life_id: ag_gandalf_01, name: Gandalf }
+    - { player_id: ag-legolas-01, life_id: ag_legolas_01, name: Legolas }
+    - { player_id: ag-eowyn-01, life_id: ag_eowyn_01, name: Eowyn }
+    - { player_id: ag-katniss-01, life_id: ag_katniss_01, name: Katniss }
+    - { player_id: ag-lizzie-01, life_id: ag_lizzie_01, name: Lizzie }
+    - { player_id: ag-janeeyre-01, life_id: ag_janeeyre_01, name: JaneEyre }
+    - { player_id: ag-huck-01, life_id: ag_huck_01, name: Huck }
+    - { player_id: ag-nemo-01, life_id: ag_nemo_01, name: Nemo }
+    - { player_id: ag-fogg-01, life_id: ag_fogg_01, name: Fogg }
+    - { player_id: ag-anne-01, life_id: ag_anne_01, name: Anne }
+    - { player_id: ag-atticus-01, life_id: ag_atticus_01, name: Atticus }
+    - { player_id: ag-knope-01, life_id: ag_knope_01, name: Knope }
+    - { player_id: ag-lasso-01, life_id: ag_lasso_01, name: Lasso }
+    - { player_id: ag-sparrow-01, life_id: ag_sparrow_01, name: Sparrow }
+    - { player_id: ag-marty-01, life_id: ag_marty_01, name: Marty }
+    - { player_id: ag-docbrown-01, life_id: ag_docbrown_01, name: DocBrown }
+    - { player_id: ag-lara-01, life_id: ag_lara_01, name: Lara }
+    - { player_id: ag-furiosa-01, life_id: ag_furiosa_01, name: Furiosa }
+    - { player_id: ag-sarah-01, life_id: ag_sarah_01, name: Sarah }
+    - { player_id: ag-balboa-01, life_id: ag_balboa_01, name: Balboa }
+    - { player_id: ag-forrest-01, life_id: ag_forrest_01, name: Forrest }
+    - { player_id: ag-andy-01, life_id: ag_andy_01, name: Andy }
+    - { player_id: ag-sattler-01, life_id: ag_sattler_01, name: Sattler }
+    - { player_id: ag-mulan-01, life_id: ag_mulan_01, name: Mulan }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
