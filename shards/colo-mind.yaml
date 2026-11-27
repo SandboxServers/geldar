@@ -103,6 +103,37 @@ sovereign:
     - { player_id: ag-chapman-01, life_id: ag_chapman_01, name: Chapman }
     - { player_id: ag-macdonald-01, life_id: ag_macdonald_01, name: MacDonald }
     - { player_id: ag-leonardo-01, life_id: ag_leonardo_01, name: Leonardo }
+    - { player_id: ag-kirk-01, life_id: ag_kirk_01, name: Kirk }
+    - { player_id: ag-spock-01, life_id: ag_spock_01, name: Spock }
+    - { player_id: ag-mccoy-01, life_id: ag_mccoy_01, name: McCoy }
+    - { player_id: ag-scotty-01, life_id: ag_scotty_01, name: Scotty }
+    - { player_id: ag-kira-01, life_id: ag_kira_01, name: Kira }
+    - { player_id: ag-zeoblue-01, life_id: ag_zeoblue_01, name: BlueZeoRanger }
+    - { player_id: ag-zeogreen-01, life_id: ag_zeogreen_01, name: GreenZeoRanger }
+    - { player_id: ag-zeopink-01, life_id: ag_zeopink_01, name: PinkZeoRanger }
+    - { player_id: ag-zeoyellow-01, life_id: ag_zeoyellow_01, name: YellowZeoRanger }
+    - { player_id: ag-sacagawea-01, life_id: ag_sacagawea_01, name: Sacagawea }
+    - { player_id: ag-earhart-01, life_id: ag_earhart_01, name: Amelia }
+    - { player_id: ag-shackle-01, life_id: ag_shackle_01, name: Shackleton }
+    - { player_id: ag-curie-01, life_id: ag_curie_01, name: Curie }
+    - { player_id: ag-lovelace-01, life_id: ag_lovelace_01, name: Lovelace }
+    - { player_id: ag-brunel-01, life_id: ag_brunel_01, name: Brunel }
+    - { player_id: ag-battuta-01, life_id: ag_battuta_01, name: IbnBattuta }
+    - { player_id: ag-zhenghe-01, life_id: ag_zhenghe_01, name: ZhengHe }
+    - { player_id: ag-samwise-01, life_id: ag_samwise_01, name: Samwise }
+    - { player_id: ag-gimli-01, life_id: ag_gimli_01, name: Gimli }
+    - { player_id: ag-aragorn-01, life_id: ag_aragorn_01, name: Aragorn }
+    - { player_id: ag-bilbo-01, life_id: ag_bilbo_01, name: Bilbo }
+    - { player_id: ag-crusoe-01, life_id: ag_crusoe_01, name: Crusoe }
+    - { player_id: ag-holmes-01, life_id: ag_holmes_01, name: Holmes }
+    - { player_id: ag-watson-01, life_id: ag_watson_01, name: Watson }
+    - { player_id: ag-hermione-01, life_id: ag_hermione_01, name: Hermione }
+    - { player_id: ag-watney-01, life_id: ag_watney_01, name: Watney }
+    - { player_id: ag-macgyver-01, life_id: ag_macgyver_01, name: MacGyver }
+    - { player_id: ag-indy-01, life_id: ag_indy_01, name: IndianaJones }
+    - { player_id: ag-ripley-01, life_id: ag_ripley_01, name: Ripley }
+    - { player_id: ag-swanson-01, life_id: ag_swanson_01, name: Swanson }
+    - { player_id: ag-reynolds-01, life_id: ag_reynolds_01, name: MalReynolds }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
