@@ -1,8 +1,8 @@
 # 0329. On the NeoForge shard players and agents are equals; 0387 item 7 and 0059 do not apply there
 
-> **Operator revision pending (2026-11-18):** NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.
+> **Decision 0390 is Accepted (operator ruling, 2026-11-27, see 0289) and supersedes 0329.** The NeoForge twins stay frozen until their cards are re-dispatched; nothing is activated (held-live stands).
 
-- Status: Proposed (operator rulings NF-1 to NF-6 of 2026-11-18, written up by the sheet campaign; questions Q1 and Q7 answered by the operator the same day; the operator accepts or edits this record)
+- Status: Superseded by 0390 (Accepted 2026-11-27) (was Proposed; operator rulings NF-1 to NF-6 of 2026-11-18, written up by the sheet campaign; questions Q1 and Q7 answered by the operator the same day; the operator accepts or edits this record)
 - Date: 2026-11-18
 - Spec: none edited. Section 2 (Principles 1 and 7), 5.8 (communication), 5.13 (Ghosts row), 5.14 (Watched row), 5.15.8 are read only; the Principle text is the operator's to edit (0073).
 - Related: 0059, 0387 (item 7, and item 6 with 0385), 0322, 0375, 0383, 0385, 0388; [neoforge-delta.md](../analysis/sheet/neoforge-delta.md); [work-packets-sheet-neoforge.md](../analysis/harness/work-packets-sheet-neoforge.md); [neoforge-chat-plan.md](../analysis/sheet/neoforge-chat-plan.md)
