@@ -26,7 +26,7 @@ export interface SimEvent extends WakeEvent {
   /** For death and damage: the fixed cause phrase (one of the mapper's templates, never world text). */
   cause?: string;
   /** For observation: the observation kind (AN-24). Absent for any other kind. */
-  observationKind?: 'gift_received' | 'property_broken';
+  observationKind?: 'gift_received' | 'property_broken' | 'fight_seen' | 'container_taken';
   /** For observation and damage: the visible actor's name, already checked against the name pattern. */
   actor?: string;
   /** For observation: the gift's item name, without namespace. */

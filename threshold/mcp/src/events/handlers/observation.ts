@@ -31,6 +31,7 @@ interface ObservationFields {
   item?: unknown;
   count?: unknown;
   block?: unknown;
+  target?: unknown;
 }
 
 /**
@@ -39,7 +40,13 @@ interface ObservationFields {
  */
 export const observationHandler = defineMindHandler('observation', (event, base) => {
   const p: ObservationFields = event.payload;
-  const kind = p.kind === 'gift_received' || p.kind === 'property_broken' ? p.kind : undefined;
+  const kind =
+    p.kind === 'gift_received' ||
+    p.kind === 'property_broken' ||
+    p.kind === 'fight_seen' ||
+    p.kind === 'container_taken'
+      ? p.kind
+      : undefined;
   const actor = visibleActorName(p.actor?.name);
   const item = visibleField(p.item);
   const count = typeof p.count === 'number' ? p.count : undefined;
@@ -48,7 +55,13 @@ export const observationHandler = defineMindHandler('observation', (event, base)
     {
       ...base,
       kind: 'observation',
-      text: observationSentence({ kind: p.kind, item: p.item, count: p.count, block: p.block }),
+      text: observationSentence({
+        kind: p.kind,
+        item: p.item,
+        count: p.count,
+        block: p.block,
+        target: p.target,
+      }),
       ...(kind !== undefined ? { observationKind: kind } : {}),
       ...(actor !== undefined ? { actor } : {}),
       ...(item !== undefined ? { item } : {}),

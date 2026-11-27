@@ -64,7 +64,12 @@ function leaksOf(out: unknown[]): string[] {
 const observationsOf = (out: unknown[]): unknown[] =>
   out.filter((e) => {
     const type = (e as { type?: unknown }).type;
-    return type === 'gift_received' || type === 'property_broken';
+    return (
+      type === 'gift_received' ||
+      type === 'property_broken' ||
+      type === 'fight_seen' ||
+      type === 'container_taken'
+    );
   });
 
 /** A break of an owned block, in sight: the breaker is named (`observedActor`). From break-real.json. */
@@ -213,18 +218,20 @@ const TAKE_HIDDEN = mind(
 );
 
 describe('the leakage gate: fight_seen and container_taken (AN-50b)', () => {
-  // Both kinds are mapped but present no line: the observation handler sets no observationKind for them,
-  // and the presenter returns nothing for an observation without one (handlers/observation.test.ts).
-  it('a visible fighter and a visible taker present no line: mapped, not presented', () => {
+  // Both kinds present one actor-free line (decision 0391): no taker or fighter name, life id or key.
+  it('a visible fighter and a visible taker present a line with no name', () => {
     const { sim, out } = presented([FIGHT_VISIBLE, TAKE_VISIBLE]);
     expect(sim).toHaveLength(2);
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(2);
+    expect(JSON.stringify(out)).not.toContain('Zack');
+    expect(leaksOf(out)).toEqual([]);
   });
 
-  it('a hidden fighter and a hidden taker present no line either', () => {
+  it('a hidden fighter and a hidden taker present the same lines', () => {
     const { sim, out } = presented([FIGHT_HIDDEN, TAKE_HIDDEN]);
     expect(sim).toHaveLength(2);
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(2);
+    expect(leaksOf(out)).toEqual([]);
   });
 
   it('the mapped visible fight and take carry the visible name, and no life id, key or coordinate', () => {
