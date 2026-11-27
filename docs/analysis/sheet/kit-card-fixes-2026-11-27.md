@@ -279,3 +279,13 @@ What remains is the kit card in section 8, plus two items that are not kit cards
 - Whether the state directory is unreadable to the agent (HC-26c).
 - Who writes `roster.json`, and from what source.
 - Whether 0391 item 4 approves the agent-visible wording of a position field.
+
+## 10. Roster delivery and its producer (added 2026-11-27, after the scriptorium orchestrator's check of HC-26a/b)
+
+Status: proposal; no decision record. Everything here ships inactive.
+
+- **Shape (accepted by the kit side).** `roster.json` is one flat JSON object `name: lifeId`, at most 16 KiB, as section 8 says. The model child never sees the path or any id.
+- **Delivery (kit card change, kit side).** HC-26a/b gain a second stored file next to `sheet.json`: a host command like `sheet-set` stores `roster.json` in `player_dir`; HC-26b copies it with the same root helper (`--network none`, CHOWN and FOWNER only, a check first, then `mv` into `/vol/instinct`), owner 1001, mode 0600. Absent file means no roster. Owner of the change: the scriptorium orchestrator.
+- **Reader (kit card change).** `readRoster` in HC-46b, called only by the HC-30a adapter (section 8).
+- **Producer (geldar side, NEW card GX-ROSTER, not yet dispatched).** An operator-side export of name to life id from the registry (the agents table: displayed name to agent_id), written as one `roster.json` per player directory by an operator command. Operator-only: no agent can run it, and nothing here lets a human act in the world (Principle 1). Open points, all unverified: which tool holds it (a `tools/players-cli` verb is the likely home, and that path is a colo-images path, so the owner is warned before any merge), how aliases and display names map, and how often it refreshes when an agent joins or dies. No contract change is expected. Wording: none, since the file is never read by an agent.
+- **Order.** The kit reader and delivery can merge inactive first. GX-ROSTER is written after the owner or Kiraifayi accepts the host-export design.
