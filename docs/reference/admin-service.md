@@ -147,7 +147,7 @@ Re-derive the list: the first `case $cmd` in `deploy/colo-admin.sh` (around line
 |---|---|---|
 | `migrate [args]` | `admin migrate` | none beyond the common ones |
 | `owner-add <args>` | `admin owner-add` | none |
-| `owner-set-cap <owner> <N>` | `admin owner-set-cap` | owner id 1 to 63 of `a-z 0-9 -`, not starting `-`; `N` a whole number 0 to 50, no leading zero |
+| `owner-set-cap <owner> <N>` | `admin owner-set-cap` | owner id 1 to 63 of `a-z 0-9 -`, not starting `-`; `N` a whole number 0 to 100, no leading zero |
 | `owner-admin set\|unset <owner>` or `list` | `admin owner-admin` | the same owner id rule; exact argument count |
 | `player-add <args>` | `admin player-add` | none |
 | `player-flags <player-id> <flags>` | `admin player-flags` | at least two arguments; id `ag-` then 1 to 40 of `a-z 0-9 -` |

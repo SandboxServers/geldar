@@ -87,7 +87,7 @@ operator writes from the release env. Names, as read by `body-helper/src/helperC
 `GELDAR_MC_HOST`, `GELDAR_MC_PORT`, `GELDAR_BODY_NATS_SECRET_HOST_PATH`,
 `GELDAR_BODY_SHARD_HOST_PATH`, `GELDAR_BODY_NANO_CPUS`, `GELDAR_BODY_MEMORY_BYTES`,
 `GELDAR_BODY_PIDS_LIMIT`, `GELDAR_SWEEP_MINUTES`, `GELDAR_BODY_HELPER_DEADLINE_MS`,
-`GELDAR_GLOBAL_BODY_CAP` (default 40; the owner sets it, the helper never raises it).
+`GELDAR_GLOBAL_BODY_CAP` (default 50; the owner sets it, the helper never raises it).
 
 Managed Body inputs (BH-3), all optional and off by default. Names only; the values go in the root-only config, never here:
 `GELDAR_MANAGED_BODIES` (default off; the managed flag, which stays off until the node operator flips it after the live check),
@@ -236,6 +236,6 @@ then check the conf by the step 3 diff. Never a restart of NATS, never a network
   the C7-03c3 supervisor change is merged.
 - The live Body check (C7-03b4-live) is run by the orchestrator, after C7-03b2 is deployed. It starts
   one test body for a test player that is set up first. Do not start a Body for it by hand.
-- The owner sets `GELDAR_GLOBAL_BODY_CAP` (default 40) in `/etc/geldar/body-helper.env`. The helper
+- The owner sets `GELDAR_GLOBAL_BODY_CAP` (default 50) in `/etc/geldar/body-helper.env`. The helper
   refuses starts at the cap. The cap is not raised by any caller.
 - Keep the decision record and the worknote C7-03c2 in step with what was done on the node.

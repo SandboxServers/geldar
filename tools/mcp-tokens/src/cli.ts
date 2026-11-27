@@ -71,7 +71,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
 
   init [--force --i-understand]         create the pepper and the Postgres password files
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
-  owner set-cap <id> <N>                change an owner's cap (at most 50)
+  owner set-cap <id> <N>                change an owner's cap (at most 100)
   owner admin set|unset <id>            set or clear the admin flag (one audit row); owner admin list
   identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
   identity ban --provider microsoft|github|discord --user-id <id> [--pepper-file <f>]

@@ -193,7 +193,7 @@ Re-derive the subcommand list with `git grep -n 'migrate | owner-add' -- deploy/
 |---|---|---|
 | `migrate` | `[--set-role-password <role> --password-file <path in container>]` | Runs the SQL migrations, or sets one role's login password |
 | `owner-add` | passed through | Adds an owner |
-| `owner-set-cap` | `<owner id> <N>` | N 0 to 50 (decision [0052](../decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md)) |
+| `owner-set-cap` | `<owner id> <N>` | N 0 to 100 (decisions 0052 and 0447; was 50 before 0447) [0052](../decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md)) |
 | `owner-admin` | `set\|unset <owner id>` or `list` | The owner admin flag |
 | `player-add` | passed through | Refused for a name not on the roster |
 | `roster-add` | `<name> --owner <owner>` | Minecraft name, 1 to 16 characters (decision [0108](../decisions/0108-mcp-roster-source-of-truth.md)) |
