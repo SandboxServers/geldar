@@ -76,14 +76,15 @@ function roleAllows(shard: string): Record<Role, Allow> {
       ],
       // Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino subjects.
       // Provenance (AN-28c): the body hears provenance and cannot forge it.
-      pubDeny: [`geldar.${s}.kino.>`, `geldar.${s}.provenance.>`],
+      // Sheet life (GX-NATS): the body cannot publish the life subtree; eventsink is its only publisher.
+      pubDeny: [`geldar.${s}.kino.>`, `geldar.${s}.provenance.>`, `geldar.${s}.life.>`],
       sub: [`geldar.${s}.body.>`, `geldar.${s}.provenance.>`, '_INBOX.>'],
     },
     mind: {
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
       sub: ['_INBOX.>'],
     },
-    eventsink: { pub: [`geldar.${s}.dlq`, ...JS], sub: ['_INBOX.>'] },
+    eventsink: { pub: [`geldar.${s}.dlq`, `geldar.${s}.life.*.sheet`, ...JS], sub: ['_INBOX.>'] },
     mcp: {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
@@ -92,7 +93,8 @@ function roleAllows(shard: string): Record<Role, Allow> {
     // Kino: the plugin publishes the feeds and reads the control subject, and cannot publish control.
     paper: {
       pub: [`geldar.${s}.>`, ...JS],
-      pubDeny: [`geldar.${s}.kino.control`],
+      // Sheet life (GX-NATS): paper is denied the life subtree; eventsink is the only publisher.
+      pubDeny: [`geldar.${s}.kino.control`, `geldar.${s}.life.>`],
       sub: [`geldar.${s}.kino.control`, '_INBOX.>'],
     },
     // Kino: Glass reads every feed and publishes control, and nothing else.
@@ -413,7 +415,12 @@ describe('the generated subject table', () => {
   it('no bare wildcard subject: no token of any allow list is a single-token "*"', () => {
     const bare = SHARDS.flatMap((shard) =>
       Object.values(roleAllows(shard)).flatMap((a) => [...a.pub, ...a.sub]),
-    ).filter((s) => s.split('.').includes('*') && s !== kinoFeed(s.split('.')[1] ?? ''));
+    ).filter(
+      (s) =>
+        s.split('.').includes('*') &&
+        s !== kinoFeed(s.split('.')[1] ?? '') &&
+        s !== `geldar.${s.split('.')[1]}.life.*.sheet`,
+    );
     expect(bare).toEqual([]);
   });
 
@@ -435,8 +442,11 @@ describe('the generated subject table', () => {
 
   it('the rendered config quotes no subject with a bare "*" token', () => {
     const text = renderConfig(makeUsers());
-    const withoutKinoFeeds = text.replace(/"geldar\.[a-z]+\.kino\.\*\.feed"/g, '');
+    const withoutKinoFeeds = text
+      .replace(/"geldar\.[a-z]+\.kino\.\*\.feed"/g, '')
+      .replace(/"geldar\.[a-z]+\.life\.\*\.sheet"/g, '');
     expect(text).toContain('.kino.*.feed');
+    expect(text).toContain('.life.*.sheet');
     expect(withoutKinoFeeds).not.toMatch(/"(?:[^"\s]*\.)?\*(?:\.[^"\s]*)?"/);
   });
 });
