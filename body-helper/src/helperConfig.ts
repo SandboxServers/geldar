@@ -146,7 +146,21 @@ function managedConfig(env: Env) {
   const rconSecretHostPath = optionalHostPath(env, 'GELDAR_RCON_SECRET_HOST_PATH');
   if (enabled && rconSecretHostPath === undefined)
     throw new Error('GELDAR_MANAGED_BODIES is 1 but GELDAR_RCON_SECRET_HOST_PATH is unset');
-  return { enabled, db: managedDb(env, enabled), rconSecretHostPath };
+  return {
+    enabled,
+    db: managedDb(env, enabled),
+    rconSecretHostPath,
+    observations: observationsOf(env),
+  };
+}
+
+/**
+ * AN-50d: GELDAR_OBSERVATIONS '1' or 'on' is forwarded to each managed Body (the golem parse turns it on there). Any other
+ * value, unset or empty included, is not forwarded, so the Body's env has no key for it.
+ */
+function observationsOf(env: Env): string | undefined {
+  const raw = env.GELDAR_OBSERVATIONS;
+  return raw === '1' || raw === 'on' ? raw : undefined;
 }
 
 /** Reads the whole config. Throws on the first missing or invalid value; never includes a secret in a message. */

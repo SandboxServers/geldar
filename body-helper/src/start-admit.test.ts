@@ -123,6 +123,18 @@ describe('start runs the admit one-shot first', () => {
     expect(text).not.toContain('docker.sock');
     expect(text).not.toContain(SENTINEL.toLowerCase());
   });
+
+  it('forwards managed.observations to the Body Env, and adds no GELDAR_OBSERVATIONS key when unset (AN-50d)', async () => {
+    const on = setup({ managed: { ...MANAGED, observations: '1' } });
+    const onConfigs = captureCreates(on.engine);
+    await on.handle(start());
+    expect((onConfigs[0] as { Env: string[] }).Env).toContain('GELDAR_OBSERVATIONS=1');
+
+    const off = setup();
+    const offConfigs = captureCreates(off.engine);
+    await off.handle(start());
+    expect(JSON.stringify(offConfigs[0])).not.toContain('GELDAR_OBSERVATIONS');
+  });
 });
 
 describe('a failed admit leaves no Body and restores the counters', () => {

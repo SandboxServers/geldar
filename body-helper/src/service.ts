@@ -76,6 +76,8 @@ export interface ManagedSettings {
   db?: ManagedDbWiring | undefined;
   /** A Docker host path to the root-only RCON password file the admit one-shot binds. */
   rconSecretHostPath?: string | undefined;
+  /** AN-50d: GELDAR_OBSERVATIONS '1' or 'on' from the helper's env, forwarded to each managed Body; unset when off. */
+  observations?: string | undefined;
 }
 
 export type TemplateSettings = Omit<BodyTemplateInput, 'name' | 'owner' | 'loginName'> & {
@@ -428,6 +430,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       loginName,
       lifeId: plan.lifeId,
       db: plan.db,
+      observations: deps.template.managed?.observations,
     });
     pendingStarts++;
     try {
