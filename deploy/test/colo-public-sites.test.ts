@@ -222,7 +222,10 @@ describe('colo-public.sh install <site...>', () => {
     const r = rig();
     expect(r.run(['install', 'nf-mcp']).status).toBe(0);
     expect(readdirSync(r.geldar).sort()).toEqual(['nf-mcp.caddy', 'store']);
-    expect(readdirSync(join(r.geldar, 'store')).sort()).toEqual(['nf-mcp-off.caddy', 'nf-mcp.caddy']);
+    expect(readdirSync(join(r.geldar, 'store')).sort()).toEqual([
+      'nf-mcp-off.caddy',
+      'nf-mcp.caddy',
+    ]);
     const live = readFileSync(join(r.geldar, 'nf-mcp.caddy'), 'utf8');
     expect(live).toContain('mcp.neoforge.geldar.example.invalid {');
     expect(live).toContain('reverse_proxy 127.0.0.1:46788');
