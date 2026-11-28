@@ -4,7 +4,7 @@ import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.
 import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { checkSovereignIdentity } from '@geldar/repo-checks/src/identity-mode.ts';
-import { startTelemetry as startSpanTelemetry } from '@geldar/telemetry';
+import { emitLogRecord, startTelemetry as startSpanTelemetry } from '@geldar/telemetry';
 import type { Client, ClientConfig, Pool } from 'pg';
 import { parse } from 'yaml';
 import { NatsBodyGateway } from './body-gateway.ts';
@@ -293,7 +293,13 @@ export function lazyLifeRegistry(agents: PgAgentStore, clock: Clock) {
  * front door's listen. A failure closes what was opened, in reverse, and rethrows.
  */
 export async function startMcp(config: McpConfig, ports: McpPorts): Promise<RunningMcp> {
-  const log = (line: Record<string, unknown>) => ports.log(safeLogLine(line));
+  // Every line goes to the stderr sink as before; once the span SDK is on, it also ships as one OTLP log record.
+  let shipRecords = false;
+  const sink = (line: Record<string, string | number>) => {
+    ports.log(line);
+    if (shipRecords) emitLogRecord(line);
+  };
+  const log = (line: Record<string, unknown>) => sink(safeLogLine(line));
   const now = () => ports.clock.nowMs();
   const closers: Array<() => Promise<void>> = [];
   const metrics = new MetricRegistry();
@@ -318,6 +324,8 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       ...(ports.spanExporters ? { exporters: ports.spanExporters } : {}),
     });
     closers.push(() => spans.shutdown());
+    // Off with no telemetry URL: no record is built and no logs API call is made.
+    shipRecords = spans.enabled;
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const instinctKey = await instinctKeyOf(config.instinctKeyFile, (file) =>
@@ -455,7 +463,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       ),
       createSession: (playerId, signal, connection) =>
         createWorldSession(sessionDeps, playerId, signal, connection),
-      log: (line) => ports.log(line),
+      log: (line) => sink(line),
       onRefusal: tracer ? authRefusalRecorder(tracer) : undefined,
       now,
     });
