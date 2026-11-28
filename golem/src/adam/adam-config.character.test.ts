@@ -86,29 +86,34 @@ describe('character on the Adam config', () => {
 });
 
 describe('the real shard files through both loaders', () => {
-  const FILES = ['phase0.yaml', 'colo-mind.yaml'];
-
   async function shardFile(name: string): Promise<Record<string, unknown>> {
     const text = await readFile(join(repoRoot(), 'shards', name), 'utf8');
     return parse(text) as Record<string, unknown>;
   }
 
-  it.each(FILES)('%s has no character block, so Adam is off with no sheet', async (name) => {
+  // phase0 keeps no character block (mode off, no sheet); the Colo is in sheet mode (CHAR-BLOCK), so its
+  // Adam takes the standard sheet when the database has none. Off means no sheet at all.
+  it.each([
+    ['phase0.yaml', 'off'],
+    ['colo-mind.yaml', 'sheet'],
+  ])('%s is character mode %s; Adam has a sheet only in sheet mode', async (name, mode) => {
     const doc = await shardFile(name);
-    expect(doc.character).toBeUndefined();
     const character = parseAdamConfig(doc, collector().log).character;
-    expect(character?.config.mode).toBe('off');
-    expect(character?.sheet).toBeNull();
+    expect(character?.config.mode).toBe(mode);
+    expect(character?.sheet === null).toBe(mode === 'off');
   });
 
-  it.each(FILES)('%s gives every listed player a character off with no sheet', async (name) => {
+  it.each([
+    ['phase0.yaml', 'off'],
+    ['colo-mind.yaml', 'sheet'],
+  ])('%s gives every listed player character mode %s', async (name, mode) => {
     const doc = await shardFile(name);
     const players = (doc.sovereign as { players: { player_id: string }[] }).players;
     expect(players.length).toBeGreaterThan(0);
     for (const player of players) {
       const character = parsePlayerConfig(doc, player.player_id, collector().log).character;
-      expect(character?.config.mode).toBe('off');
-      expect(character?.sheet).toBeNull();
+      expect(character?.config.mode).toBe(mode);
+      expect(character?.sheet === null).toBe(mode === 'off');
     }
   });
 });
