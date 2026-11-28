@@ -151,7 +151,9 @@ describe('observation events on the player log', () => {
   });
 
   it('a damage with a visible actor names the actor and keeps the fixed sentence', () => {
-    expect(presented(event('damage', { amount: 2, cause: 'ENTITY_ATTACK', actor: ZACK }))).toEqual([
+    expect(
+      presented(event('damage', { amount: 2, cause: 'ENTITY_ATTACK', actor: ZACK_SEEN })),
+    ).toEqual([
       { seq: 3, tick: 100, type: 'damage', text: 'Something hit you.', actor: { name: 'Zack' } },
     ]);
   });
@@ -247,7 +249,7 @@ describe('observation events on the player log', () => {
     const lines = [
       ...presented(event('observation', GIFT)),
       ...presented(event('observation', BREAK)),
-      ...presented(event('damage', { amount: 2, cause: 'ENTITY_ATTACK', actor: ZACK })),
+      ...presented(event('damage', { amount: 2, cause: 'ENTITY_ATTACK', actor: ZACK_SEEN })),
     ];
     const json = JSON.stringify(lines);
     expect(json).not.toMatch(/ag_/);
