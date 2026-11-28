@@ -138,16 +138,24 @@ describe('the log record wiring in startMcp', () => {
     expect(toolCalls).toHaveLength(1);
     // The fake pool has no player row, so the look call's outcome is unknown_player: a WARN.
     expect(toolCalls[0]?.severityText).toBe('WARN');
-    // The SDK's log allow-list keeps event and outcome only here: tool and duration_ms are not on it.
-    expect(toolCalls[0]?.attributes).toEqual({ event: 'tool_call', outcome: 'unknown_player' });
+    // The MCP passes tool, status and duration_ms as extraKeys: closed values, so they ship with event and outcome.
+    expect(toolCalls[0]?.attributes).toEqual({
+      event: 'tool_call',
+      outcome: 'unknown_player',
+      tool: 'look',
+      duration_ms: expect.any(Number),
+    });
     expect(toolCalls[0]?.attributes).not.toHaveProperty('player_id');
 
     const refusals = records.filter((record) => record.body === 'rate_limited');
     expect(refusals).toHaveLength(1);
     expect(refusals[0]?.severityText).toBe('WARN');
-    // The status is not on the SDK's log allow-list, so the shipped record keeps event and reason only.
-    // Its WARN comes from the 429 before the allow-list runs.
-    expect(refusals[0]?.attributes).toEqual({ event: 'rate_limited', reason: 'rate_limited' });
+    expect(refusals[0]?.attributes).toEqual({
+      event: 'rate_limited',
+      status: 429,
+      reason: 'rate_limited',
+    });
+    expect(refusals[0]?.attributes).not.toHaveProperty('player_id');
     expect(JSON.stringify(records)).not.toContain(TOKEN);
   });
 

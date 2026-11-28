@@ -321,6 +321,8 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       version: process.env.GELDAR_VERSION ?? 'dev',
       endpoint: ports.telemetry?.url,
       shard: config.shard,
+      // Closed values only: a tool name from MCP_TOOL_NAMES, an integer duration, an HTTP status code.
+      extraKeys: ['tool', 'status', 'duration_ms'],
       ...(ports.spanExporters ? { exporters: ports.spanExporters } : {}),
     });
     closers.push(() => spans.shutdown());

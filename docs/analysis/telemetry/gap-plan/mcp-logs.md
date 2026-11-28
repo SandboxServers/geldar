@@ -11,8 +11,8 @@ Status: packet A (refusal spans) and packet B (log records) are in the branch `t
 
 - Service: `geldar-mcp`.
 - Refusal spans: span name `mcp.auth_refused`, group or filter by attribute `outcome`; the status is `http.response.status_code`.
-- Log records: filter by body (the line's `event`, such as `tool_call`, `rate_limited`, `listening`), then by attributes `event`, `outcome`, `reason`.
-- Caveat: the SDK's log allow-list (`telemetry/src/sdk-processors.ts`, `telemetry/src/attributes.ts`) drops any attribute not on it. Today `status`, `tool` and `duration_ms` are not on the list, so they do not reach SigNoz: a `tool_call` record carries `event` and `outcome`, a 429 refusal record carries `event` and `reason`. The severity is still set from the data. Adding them needs `extraKeys` for the service, a decision for the telemetry owner.
+- Log records: filter by body (the line's `event`, such as `tool_call`, `rate_limited`, `listening`), then by attributes `event`, `outcome`, `reason`, `tool`, `status`, `duration_ms`.
+- A `tool_call` record carries `event`, `outcome`, `tool` and `duration_ms`; a 429 refusal record carries `event`, `status`, `reason`. `tool`, `status` and `duration_ms` are closed values (a tool name from `MCP_TOOL_NAMES`, an integer duration, an HTTP status code), passed to the SDK as `extraKeys` by the MCP service only (`threshold/mcp/src/main.ts`). The SDK's log allow-list (`telemetry/src/sdk-processors.ts`, `telemetry/src/attributes.ts`) keeps them for that process; the credential deny rule still drops forbidden names. Player ids and tokens never ship.
 
 ## Volume
 
