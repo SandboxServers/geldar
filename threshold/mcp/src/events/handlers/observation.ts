@@ -27,7 +27,7 @@ function visibleField(value: unknown): string | undefined {
 /** The observation fields the player line reads; the contract has already checked the payload. */
 interface ObservationFields {
   kind?: unknown;
-  actor?: { name?: unknown };
+  actor?: { name?: unknown; basis?: unknown };
   item?: unknown;
   count?: unknown;
   block?: unknown;
@@ -61,6 +61,7 @@ export const observationHandler = defineMindHandler('observation', (event, base)
         count: p.count,
         block: p.block,
         target: p.target,
+        actor: p.actor,
       }),
       ...(kind !== undefined ? { observationKind: kind } : {}),
       ...(actor !== undefined ? { actor } : {}),

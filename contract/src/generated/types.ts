@@ -782,6 +782,10 @@ export interface ObservedActor {
    * Permanent identity of one life, such as ag_kestrel_01.
    */
   life: string;
+  /**
+   * How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.
+   */
+  basis?: "seen" | "spoke" | "signed";
 }
 
 export interface IntentEventPayload {
@@ -6049,6 +6053,10 @@ export interface ObservedActor1 {
    * Permanent identity of one life, such as ag_kestrel_01.
    */
   life: string;
+  /**
+   * How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.
+   */
+  basis?: "seen" | "spoke" | "signed";
 }
 
 export interface FightSeen {
@@ -6064,6 +6072,10 @@ export interface ObservedActor2 {
    * Permanent identity of one life, such as ag_kestrel_01.
    */
   life: string;
+  /**
+   * How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.
+   */
+  basis?: "seen" | "spoke" | "signed";
 }
 
 export interface ContainerTaken {
@@ -6083,6 +6095,10 @@ export interface ObservedActor3 {
    * Permanent identity of one life, such as ag_kestrel_01.
    */
   life: string;
+  /**
+   * How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.
+   */
+  basis?: "seen" | "spoke" | "signed";
 }
 
 export interface PlanAck {

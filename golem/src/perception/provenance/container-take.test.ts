@@ -70,7 +70,7 @@ describe('observeTake', () => {
     visiblePlayer(world, 'ag_chapman_01');
     expect(observeTake(take(self), ctxFor(bot, self))).toEqual({
       kind: 'container_taken',
-      actor: { name: 'ag_chapman_01', life: expect.any(String) },
+      actor: { name: 'ag_chapman_01', life: expect.any(String), basis: 'seen' },
       item: 'iron_ingot',
       count: 3,
       key: 'take:90:0:64:2:ag_chapman_01:iron_ingot',

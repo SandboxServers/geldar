@@ -74,10 +74,31 @@ describe('observation events on the player log', () => {
         seq: 3,
         tick: 100,
         type: 'property_broken',
-        text: 'Someone broke one of your blocks (chest).',
+        text: 'Someone broke your chest.',
         block: 'chest',
       },
     ]);
+  });
+
+  it('names a visible actor with basis, and says Someone without basis or for a marked name', () => {
+    const seen = { name: 'Zack', life: 'ag_zack_01', basis: 'seen' };
+    expect(presented(event('observation', { ...BREAK, actor: seen }))).toEqual([
+      {
+        seq: 3,
+        tick: 100,
+        type: 'property_broken',
+        text: 'Zack broke your chest.',
+        actor: { name: 'Zack' },
+        block: 'chest',
+      },
+    ]);
+    expect(presented(event('observation', { ...BREAK, actor: ZACK }))[0]?.text).toBe(
+      'Someone broke your chest.',
+    );
+    const marked = { name: 'Watcher', life: 'ag_zack_01', basis: 'seen' };
+    expect(presented(event('observation', { ...BREAK, actor: marked }))[0]?.text).toBe(
+      'Someone broke your chest.',
+    );
   });
 
   it('a name failing the pattern or holding a marked word is dropped and the event kept', () => {

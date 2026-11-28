@@ -24,5 +24,5 @@ export function observedActor(
 ): ObservedActor | null {
   if (username === undefined || username === bot.username || !USERNAME.test(username)) return null;
   if (!isUsernameVisible(bot, username)) return null;
-  return { name: username, life: lifeIdOf(username) };
+  return { name: username, life: lifeIdOf(username), basis: 'seen' };
 }
