@@ -92,10 +92,17 @@ afterEach(() => {
 
 // The fixture tree: the script, the rangers lib, the real overlay, the secrets (the four ranger files and nats-auth.conf with both
 // rangers users), the shard file and the stubs. opts.shard false omits shards/nf-mind.yaml.
-function makeRepo(opts: { shard?: boolean } = {}): string {
+function makeRepo(opts: { shard?: boolean; golemConfig?: string } = {}): string {
   const repo = mkdtempSync(join(tmpdir(), 'nf-rangers-'));
   made.push(repo);
-  for (const dir of ['deploy', 'compose/secrets-nf', 'compose/neoforge', 'shards', 'stubs']) {
+  for (const dir of [
+    'deploy',
+    'compose/secrets-nf',
+    'compose/neoforge',
+    'shards',
+    'stubs',
+    'golem/src',
+  ]) {
     mkdirSync(join(repo, dir), { recursive: true });
   }
   copyFileSync(
@@ -118,6 +125,11 @@ function makeRepo(opts: { shard?: boolean } = {}): string {
   }
   writeFileSync(join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
   if (opts.shard ?? true) writeFileSync(join(repo, 'shards', 'nf-mind.yaml'), 'rangers: fixture\n');
+  // The P1 prerequisite the rangers check reads: golem/src/config.ts must carry the string neoforge.
+  writeFileSync(
+    join(repo, 'golem', 'src', 'config.ts'),
+    opts.golemConfig ?? "export const runtime = 'neoforge';\n",
+  );
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
   for (const [name, body] of Object.entries(STUB_SCRIPTS)) {
     const path = join(repo, 'stubs', name);
@@ -240,6 +252,47 @@ describe('nf-deploy.sh rangers lane (NF_RANGERS)', () => {
     const res = run(repo);
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/shards\/nf-mind\.yaml is missing/);
+  });
+
+  it('a golem/src/config.ts without the string neoforge is refused (P1 prerequisite)', () => {
+    const repo = makeRepo({ golemConfig: "export const runtime = 'paper';\n" });
+    const res = run(repo);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/golem\/src\/config\.ts .* does not contain 'neoforge'/);
+    expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
+  });
+
+  it('a missing golem/src/config.ts is refused (P1 prerequisite)', () => {
+    const repo = makeRepo();
+    rmSync(join(repo, 'golem', 'src', 'config.ts'));
+    const res = run(repo);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/golem\/src\/config\.ts .* does not contain 'neoforge'/);
+  });
+
+  it('a golem/src/config.ts with the string neoforge passes the check', () => {
+    const repo = makeRepo({ golemConfig: "export const runtime = 'neoforge';\n" });
+    const res = run(repo);
+    expect(res.status).toBe(0);
+    expect(res.stderr).not.toMatch(/does not contain 'neoforge'/);
+  });
+
+  it('probe refuses while a ranger exists, says rangers-down comes first, and runs no compose call', () => {
+    const repo = makeRepo();
+    const res = run(repo, { rows: `${LIVE_ROW}\nranger-red`, args: ['probe', '--local'] });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/the probe needs rangers-down first/);
+    expect(res.stderr).not.toMatch(/keeps them/);
+    expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
+  });
+
+  it('probe with NF_RANGERS=banana is refused by the switch, not silently run without the rangers list', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { NF_RANGERS: 'banana' }, args: ['probe', '--local'] });
+    expect(res.status).not.toBe(0);
+    // The refusal is the whole output: a subshell-only die would let the probe run on to a later refusal.
+    expect(res.stderr.trim()).toMatch(/^[^\n]*NF_RANGERS must be on or off[^\n]*$/);
+    expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
   });
 
   it('on adds the rangers overlay to the rendered file set', () => {

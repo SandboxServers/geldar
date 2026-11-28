@@ -244,6 +244,8 @@ check_listener() {
 }
 
 check_secrets() {
+  # Validated here, not in the substitution below: a die inside $(...) only exits the subshell.
+  check_rangers_switch
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   [ -d "$secdir" ] || die "secrets directory missing: $secdir (the per-shard NF secrets step writes it; see the runbook)"
   for f in $SECRET_FILES $(rangers_secret_files); do
@@ -586,7 +588,7 @@ cmd_probe() {
   check_no_colo_labels
   check_human_switch
   check_human_orphan
-  check_rangers_orphan
+  check_rangers_orphan probe
   check_secrets
   check_probe_up
   check_extra_mods_drop

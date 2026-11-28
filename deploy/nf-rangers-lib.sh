@@ -44,6 +44,10 @@ check_rangers_inputs() {
   [ "$RANGERS" = 1 ] || return 0
   [ -f "$RANGERS_FILE" ] || die "overlay $RANGERS_FILE is missing; refusing"
   [ -f "$RANGERS_SHARD" ] || die "shards/nf-mind.yaml is missing (the rangers' shard file); refusing"
+  # P1 prerequisite: the Bodies read the NeoForge config from golem/src/config.ts. Without it they crash-loop under restart: unless-stopped.
+  golem_config=$ROOT/golem/src/config.ts
+  [ -f "$golem_config" ] && grep -qF neoforge "$golem_config" ||
+    die "golem/src/config.ts under the repo root does not contain 'neoforge' (P1 prerequisite: the five Bodies would crash-loop under restart: unless-stopped); refusing"
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   for f in $RANGER_SECRETS; do
     [ -s "$secdir/$f" ] || die "$f is missing or empty in the NF secrets directory (NF_RANGERS=on needs it); refusing"
@@ -63,12 +67,16 @@ check_rangers_port() {
 # Off: plan, up, refresh-secrets and probe refuse while a ranger or geldar-mcp container exists in the project, before any compose
 # call. Their calls leave the overlay out, so they would recreate nothing but would leave the Bodies running with no overlay.
 # rangers-admin is a one-shot and is not counted. Rows are read by project and service label; a docker failure refuses.
+# $1 probe: the probe runs without the rangers overlay, so it refuses while any ranger exists, whatever NF_RANGERS is, and says so.
 check_rangers_orphan() {
-  if [ "$RANGERS" = 1 ]; then return 0; fi
+  if [ "${1-}" != probe ] && [ "$RANGERS" = 1 ]; then return 0; fi
   rows=$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" \
     --format '{{.Label "com.docker.compose.service"}}') ||
     die "cannot list the $PROJECT containers (rangers check); refusing"
   found=$(printf '%s\n' "$rows" | grep -cxE '(ranger-(yellow|green|blue|red|pink)|geldar-mcp)' || true)
+  if [ "$found" != 0 ] && [ "${1-}" = probe ]; then
+    die "a rangers container exists in $PROJECT; the probe needs rangers-down first (run: nf-deploy.sh rangers-down), whatever NF_RANGERS is; refusing"
+  fi
   if [ "$found" != 0 ]; then
     die "a rangers container exists in $PROJECT but NF_RANGERS is off or unset; refusing. Two ways out: rangers-down (removes them) or NF_RANGERS=on (keeps them)"
   fi
