@@ -1,7 +1,7 @@
 #!/bin/bash
 # Installs, switches and removes the Geldar public sites in the shared Caddy (decisions 0071, 0094; card C2-07).
-# Usage: colo-public.sh install [site...] | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp)
-# install with no site installs all of map glass mcp (all become live). install mcp names sites: only those get their live file and
+# Usage: colo-public.sh install [site...] | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp nf-mcp)
+# install with no site installs all of map glass mcp nf-mcp (all become live); nf-mcp then needs GELDAR_NF_MCP_UPSTREAM. install mcp names sites: only those get their live file and
 # rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
 # Caddy is a host-network container that serves other sites. It is validated here and, per GELDAR_PUBLIC_APPLY=reload|restart|none,
 # reloaded (default) or, with its admin API off (R39), restarted ONCE and only when GELDAR_PUBLIC_RESTART_OK=1; never recreated or started. Its Caddyfile gets one `import /config/geldar/*.caddy` line.
@@ -10,11 +10,11 @@
 # Environment (names only, no value is printed): GELDAR_CADDY_CONTAINER, GELDAR_CADDY_CONFIG_DIR, GELDAR_CADDY_FILE,
 # GELDAR_PUBLIC_ENV (install only), GELDAR_PUBLIC_APPLY (reload|restart|none), GELDAR_PUBLIC_RESTART_OK (1 = restart itself).
 # GELDAR_REGISTER_UPSTREAM may be unset: glass then answers 503 on /register* and /roster*. The env file holds KEY=VALUE lines: GELDAR_DOMAIN, GELDAR_MAP_UPSTREAM,
-# GELDAR_GLASS_UPSTREAM, GELDAR_REGISTER_UPSTREAM, GELDAR_MCP_UPSTREAM (each 127.0.0.1:<port>). DEPLOY_DRY_RUN=1 prints every state change only.
+# GELDAR_GLASS_UPSTREAM, GELDAR_REGISTER_UPSTREAM, GELDAR_MCP_UPSTREAM, GELDAR_NF_MCP_UPSTREAM (each 127.0.0.1:<port>). DEPLOY_DRY_RUN=1 prints every state change only.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 
-SITES="map glass mcp"
+SITES="map glass mcp nf-mcp"
 SRC=${GELDAR_PUBLIC_SRC:-$DEPLOY_DIR/caddy}
 IMPORT_LINE='import /config/geldar/*.caddy'
 CADDYFILE_IN_CONTAINER=/etc/caddy/Caddyfile
@@ -27,13 +27,13 @@ require_env() {
 }
 
 usage() {
-  die "usage: colo-public.sh install [map|glass|mcp ...] (no site = all three go live) | off <map|glass|mcp|all> | on <map|glass|mcp|all> | remove | status"
+  die "usage: colo-public.sh install [map|glass|mcp|nf-mcp ...] (no site = all four go live) | off <map|glass|mcp|nf-mcp|all> | on <map|glass|mcp|nf-mcp|all> | remove | status"
 }
 
 site_list() {
   case ${1:-} in
     all) echo "$SITES" ;;
-    map | glass | mcp) echo "$1" ;;
+    map | glass | mcp | nf-mcp) echo "$1" ;;
     *) usage ;;
   esac
 }
@@ -52,7 +52,8 @@ render_all() {
   mkdir -p "$WORK/render"
   for s in $INSTALL_SITES; do
     # Glass also serves the sign-in and roster paths, so its file carries the REGISTER upstream too (decision 0135, R42).
-    ups=$(printf '%s' "$s" | tr 'a-z' 'A-Z')
+    # nf-mcp maps to NF_MCP (GELDAR_NF_MCP_UPSTREAM): the hyphen is not legal in a variable name.
+    ups=$(printf '%s' "$s" | tr 'a-z-' 'A-Z_')
     [ "$s" = glass ] && ups="GLASS REGISTER MAP" # MAP: the Kino textures route /kino/tex/* proxies the map upstream
     sed_up=""
     reg_off=0
@@ -187,8 +188,8 @@ install_site_list() {
   if [ "$#" -eq 0 ]; then INSTALL_SITES=$SITES; return 0; fi
   for s in "$@"; do
     case $s in
-      map | glass | mcp) ;;
-      *) die "unknown site: $s (sites: map glass mcp)" ;;
+      map | glass | mcp | nf-mcp) ;;
+      *) die "unknown site: $s (sites: map glass mcp nf-mcp)" ;;
     esac
     case " $INSTALL_SITES " in *" $s "*) ;; *) INSTALL_SITES="$INSTALL_SITES $s" ;; esac
   done

@@ -65,6 +65,7 @@ const DEFAULT_ENV = [
   'GELDAR_GLASS_UPSTREAM=127.0.0.1:8101',
   'GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103',
   'GELDAR_MCP_UPSTREAM=127.0.0.1:8102',
+  'GELDAR_NF_MCP_UPSTREAM=127.0.0.1:46788',
 ].join('\n');
 
 function rig(envFile = DEFAULT_ENV): Rig {
@@ -141,6 +142,7 @@ describe('colo-public.sh install', () => {
       'glass.caddy',
       'map.caddy',
       'mcp.caddy',
+      'nf-mcp.caddy',
       'store',
     ]);
   });

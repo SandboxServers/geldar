@@ -65,6 +65,7 @@ const DEFAULT_ENV = [
   'GELDAR_GLASS_UPSTREAM=127.0.0.1:8101',
   'GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103',
   'GELDAR_MCP_UPSTREAM=127.0.0.1:8102',
+  'GELDAR_NF_MCP_UPSTREAM=127.0.0.1:46788',
 ].join('\n');
 
 function rig(envFile = DEFAULT_ENV): Rig {
@@ -198,13 +199,14 @@ describe('colo-public.sh install <site...>', () => {
     expect(f.calls().some((c) => c.includes('caddy reload'))).toBe(false);
   });
 
-  it('bare install still makes all three live, and the trusted-proxy refusal applies to a named install', () => {
+  it('bare install still makes all four live, and the trusted-proxy refusal applies to a named install', () => {
     const r = rig();
     expect(r.run(['install']).status).toBe(0);
     expect(readdirSync(r.geldar).sort()).toEqual([
       'glass.caddy',
       'map.caddy',
       'mcp.caddy',
+      'nf-mcp.caddy',
       'store',
     ]);
     const p = rig();
@@ -214,6 +216,39 @@ describe('colo-public.sh install <site...>', () => {
     });
     expect(res.status).not.toBe(0);
     expect(existsSync(p.geldar)).toBe(false);
+  });
+
+  it('install nf-mcp renders only nf-mcp.caddy and its off twin, and the other sites keep their state', () => {
+    const r = rig();
+    expect(r.run(['install', 'nf-mcp']).status).toBe(0);
+    expect(readdirSync(r.geldar).sort()).toEqual(['nf-mcp.caddy', 'store']);
+    expect(readdirSync(join(r.geldar, 'store')).sort()).toEqual(['nf-mcp-off.caddy', 'nf-mcp.caddy']);
+    const live = readFileSync(join(r.geldar, 'nf-mcp.caddy'), 'utf8');
+    expect(live).toContain('mcp.neoforge.geldar.example.invalid {');
+    expect(live).toContain('reverse_proxy 127.0.0.1:46788');
+    expect(live).not.toContain('{$');
+  });
+
+  it('install nf-mcp refuses without GELDAR_NF_MCP_UPSTREAM, and a bare install needs it too', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_NF_MCP_UPSTREAM=127.0.0.1:46788', ''));
+    const named = r.run(['install', 'nf-mcp']);
+    expect(named.status).not.toBe(0);
+    expect(named.out).toContain('GELDAR_NF_MCP_UPSTREAM is missing from the env file');
+    expect(existsSync(r.geldar)).toBe(false);
+    expect(r.run(['install']).status).not.toBe(0);
+    expect(r.run(['install', 'mcp']).status).toBe(0);
+  });
+
+  it('install nf-mcp refuses before any change when its kill-switch file is missing', () => {
+    const r = rig();
+    const src = join(r.root, 'src');
+    mkdirSync(src);
+    writeFileSync(join(src, 'nf-mcp.caddy'), readFileSync(join(DEPLOY, 'caddy', 'nf-mcp.caddy')));
+    const res = r.run(['install', 'nf-mcp'], { GELDAR_PUBLIC_SRC: src });
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('site file not found: nf-mcp-off.caddy');
+    expect(existsSync(r.geldar)).toBe(false);
+    expect(r.calls().some((c) => c.includes('caddy reload'))).toBe(false);
   });
 
   it('a named install needs only the named sites upstreams in the env file', () => {

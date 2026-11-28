@@ -231,9 +231,10 @@ describe('nf-mcp site (the NeoForge shard MCP front)', () => {
 });
 
 describe('register shares the Glass host (decision 0135, amendment R42)', () => {
-  it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp only', () => {
+  it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp nf-mcp only', () => {
     const script = readFileSync(resolve(repo, 'deploy/colo-public.sh'), 'utf8');
-    expect(script).toMatch(/^SITES="map glass mcp"$/m);
+    // Removing nf-mcp from the list fails this line: the nf-mcp site must be in SITES.
+    expect(script).toMatch(/^SITES="map glass mcp nf-mcp"$/m);
     // No separate register SITE: the SITES list above is exact, and no register site file is named or installed. The
     // GELDAR_REGISTER_UPSTREAM placeholder on the glass site is allowed. Would fail on e.g. SITES="map glass mcp register",
     // a `$s-register` variable, or an 'install register.caddy' line.
