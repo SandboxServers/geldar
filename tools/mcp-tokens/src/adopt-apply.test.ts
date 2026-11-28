@@ -390,6 +390,28 @@ describe('player adopt-sheets --apply (cli)', () => {
     expect(sql.writes()).toHaveLength(0);
   });
 
+  it('--dry-run alone prints the plan, runs only the planner SELECT, and writes nothing', async () => {
+    const { shard, sheetsFile } = await fixture();
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    const { env, connects } = envFor(sql);
+    const out = capture();
+    const code = await run(
+      ['player', 'adopt-sheets', '--shard', shard, '--sheets', sheetsFile, '--dry-run'],
+      out,
+      env,
+    );
+    expect(code).toBe(0);
+    expect(out.errs).toEqual([]);
+    expect(out.outs).toEqual([`${LIFE}: would-adopt`]);
+    expect(connects()).toBe(1);
+    expect(sql.calls.map((c) => c.text.split(' ')[0])).toEqual(['SELECT']);
+    expect(sql.calls[0]?.text.startsWith('SELECT agent_id, died_at, sheet_hash FROM agents')).toBe(
+      true,
+    );
+    expect(sql.writes()).toHaveLength(0);
+    expect(sql.live.get(LIFE)).toEqual({ sheet_hash: null, died_at: null });
+  });
+
   it('--apply applies the standard sheet and prints adopted', async () => {
     const { shard, sheetsFile } = await fixture();
     const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
