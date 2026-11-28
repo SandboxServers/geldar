@@ -47,14 +47,23 @@ describe('GELDAR_OBSERVATIONS reaches the Body env in the player host (AN-50d)',
   });
 });
 
+/** Source with block and line comments removed, so a commented-out expression cannot satisfy a match. */
+function codeOf(path: string): string {
+  const text = readFileSync(join(repoRoot(), path), 'utf8');
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
 describe('GELDAR_OBSERVATIONS is forwarded by the entry points and compose (AN-50d)', () => {
   it('the Adam Body and the player host read the variable through the parse', () => {
-    const adam = readFileSync(join(repoRoot(), 'golem/src/adam/main.ts'), 'utf8');
-    expect(adam).toContain('...observationsOption(process.env.GELDAR_OBSERVATIONS)');
-    const player = readFileSync(join(repoRoot(), 'golem/src/players/main.ts'), 'utf8');
-    expect(player).toContain('observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)');
-    const managed = readFileSync(join(repoRoot(), 'golem/src/players/managed-main.ts'), 'utf8');
-    expect(managed).toContain('observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)');
+    expect(codeOf('golem/src/adam/main.ts')).toContain(
+      '...observationsOption(process.env.GELDAR_OBSERVATIONS)',
+    );
+    expect(codeOf('golem/src/players/main.ts')).toContain(
+      'observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)',
+    );
+    expect(codeOf('golem/src/players/managed-main.ts')).toContain(
+      'observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)',
+    );
   });
 
   it('colo.yml passes the variable through empty to golem-body and players-host, and sets no value', () => {
