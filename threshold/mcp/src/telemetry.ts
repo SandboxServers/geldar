@@ -23,7 +23,7 @@ export const TOOL_RESULT_EVENT = 'tool_result';
 export const TOOL_ERROR_EVENT = 'tool_error';
 export const TOOL_RESPONSE_EVENT = 'tool_response';
 
-/** The span name for a request refused before a session exists (HTTP 401 or 503 at the front door). */
+/** The span name for a refusal the front door reports (any status, with its closed reason code). */
 export const AUTH_REFUSED_SPAN_NAME = 'mcp.auth_refused';
 /** OpenTelemetry's SpanStatusCode.ERROR, written out so this file needs no new dependency. */
 const SPAN_STATUS_ERROR = 2;
@@ -161,10 +161,9 @@ export function toolSpanRecorder(tracer: SpanTracer): (call: ToolCallSpan) => vo
 }
 
 /**
- * Returns the recorder for a request refused before a session exists: one mcp.auth_refused span with
- * the closed reason code. The HTTP status is set as `http.response.status_code`, a key on the telemetry
- * allow-list, so the span keeps the 401 or 503 (`auth_unavailable` is the only 503). Never the token, a
- * header, an address or a body.
+ * Returns the recorder for every refusal the front door reports: one mcp.auth_refused span with the
+ * closed reason code and the HTTP status as `http.response.status_code`, a key on the telemetry
+ * allow-list. The span's status is ERROR. Never the token, a header, an address or a body.
  */
 export function authRefusalRecorder(
   tracer: SpanTracer,

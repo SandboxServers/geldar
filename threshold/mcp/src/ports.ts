@@ -72,10 +72,35 @@ export const REFUSAL_REASONS = [
 
 export type RefusalReason = (typeof REFUSAL_REASONS)[number];
 
-/** The reasons a token store can explain for a digest it did not resolve. */
+/**
+ * The reasons a token store can explain for a digest it did not resolve. Only the token-lookup
+ * reasons and `internal`: the front-door reasons (gates, origin, session, body) never come from a store.
+ */
 export type MissReason = Exclude<
   RefusalReason,
-  'no_header' | 'malformed_scheme' | 'token_shape' | 'wrong_player' | 'address_blocked'
+  | 'no_header'
+  | 'malformed_scheme'
+  | 'token_shape'
+  | 'wrong_player'
+  | 'address_blocked'
+  | 'auth_unavailable'
+  | 'kill_switch'
+  | 'lookup_busy'
+  | 'origin_rejected'
+  | 'rate_limited'
+  | 'too_many_open_requests'
+  | 'client_gone'
+  | 'batch_not_allowed'
+  | 'unauthorized'
+  | 'missing_session'
+  | 'session_superseded'
+  | 'session_not_found'
+  | 'not_found'
+  | 'host_rejected'
+  | 'method_not_allowed'
+  | 'body_too_large'
+  | 'body_timeout'
+  | 'parse_error'
 >;
 
 /** Hashed per-player Bearer tokens (spec 5.15.3; the hash is HMAC with the pepper). */

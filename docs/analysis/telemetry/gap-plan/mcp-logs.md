@@ -16,8 +16,13 @@ Status: packet A (refusal spans) and packet B (log records) are in the branch `t
 
 ## Volume
 
+What ships (`isShippedRecord` in `telemetry/src/log-records.ts`):
+
 - `tool_call` lines: about 20 to 70 thousand per day, about 0.3 KB each, so roughly 6 to 25 MB per day.
-- Refusal lines are fewer; they are bounded by the rate limits.
+- Lines with `status` 400 or more, except the six pre-auth noise events (`not_found`, `host_rejected`, `method_not_allowed`, `body_too_large`, `body_timeout`, `parse_error`). Refusal lines are fewer than tool calls; they are bounded by the rate limits.
+- Lines with an `error`.
+
+Routine request lines (`session_request`, `initialize`, stream opens) and the six noise events do not ship; they stay on stderr. The six noise events are also not reported as spans: no `refused()` call in `threshold/mcp/src/http/front.ts` names one of them.
 
 ## Deploy consequence
 

@@ -2,8 +2,9 @@ import { FakeClock } from '@geldar/mcp-mock';
 import { isShippedRecord } from '@geldar/telemetry';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { logs } from '@opentelemetry/api';
 import type { Pool } from 'pg';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { repoRoot } from './config.ts';
 import { MemoryPresenceBucket } from './fakes/world.fakes.ts';
 import type { FrontDoorOptions } from './http/front.ts';
@@ -174,5 +175,18 @@ describe('the log record wiring in startMcp', () => {
     expect(off.stderr.map((line) => line.event)).toEqual(on.stderr.map((line) => line.event));
     expect(off.stderr).toEqual(on.stderr);
     expect(off.stderr.filter((line) => line.event === 'rate_limited')).toHaveLength(1);
+  });
+
+  it('makes no logs API call while the telemetry URL is unset', async () => {
+    const getLogger = vi.spyOn(logs, 'getLogger');
+    try {
+      await runWithLogs(undefined);
+      expect(getLogger).not.toHaveBeenCalled();
+      // The control: with the URL set the same run asks for a logger, so the spy does see the call.
+      await runWithLogs('http://127.0.0.1:4318');
+      expect(getLogger).toHaveBeenCalled();
+    } finally {
+      getLogger.mockRestore();
+    }
   });
 });

@@ -53,11 +53,13 @@ Re-derive the scanned schemas: `git grep -n "AGENT_SCHEMAS =" contract/test`.
 - **Connection class.** A second connection class exists besides the default one, turned on by `GELDAR_MCP_INSTINCT_KEY_FILE`; see `threshold/mcp/src/http/instinct-key.ts`. No decision or spec section names it ([conflict 12](#conflicts-recorded)).
 - **Mock.** A JSON tokens file maps player id to token; 401 for an unknown token, 403 for a known token on another player's URL (`threshold/mcp-mock/src/auth.ts` lines 74 to 82).
 
-### Token refusal reasons
+### Refusal reasons
 
-Logged only; the client always gets the same 401 body. Re-derive: `git grep -n -A 15 "REFUSAL_REASONS = \[" threshold/mcp/src/ports.ts`.
+Logged, and set as the `outcome` of the `mcp.auth_refused` span. The client never sees the reason: its response depends only on the status (the 401 body is the same for every token reason). Re-derive the full list: `git grep -n -A 40 "REFUSAL_REASONS = \[" threshold/mcp/src/ports.ts`.
 
-`no_header`, `malformed_scheme`, `token_shape`, `unknown_token`, `token_revoked`, `token_expired`, `player_not_active`, `harness_disabled`, `owner_retired`, `owner_over_cap`, `wrong_player` (403), `address_blocked`, `internal`.
+`no_header`, `malformed_scheme`, `token_shape`, `unknown_token`, `token_revoked`, `token_expired`, `player_not_active`, `harness_disabled`, `owner_retired`, `owner_over_cap`, `wrong_player` (403), `address_blocked`, `internal`, `auth_unavailable` (503), `kill_switch` (503), `lookup_busy` (503), `origin_rejected` (403), `rate_limited` (429), `too_many_open_requests` (429), `client_gone` (499), `batch_not_allowed` (400), `unauthorized`, `missing_session`, `session_superseded`, `session_not_found`, `not_found`, `host_rejected`, `method_not_allowed`, `body_too_large`, `body_timeout`, `parse_error`.
+
+The status in brackets is the one the front door sends for that reason where its call site shows it; a reason without one is answered at its own call site.
 
 ## HTTP refusals
 

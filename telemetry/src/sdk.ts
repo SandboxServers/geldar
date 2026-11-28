@@ -121,8 +121,6 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
   try {
     // Only http(s) is a collector. Anything else with a scheme (ftp:, otel-gateway:4318) is off.
     if (!hasHttpScheme(endpoint)) return OFF;
-    // Only a running SDK widens the log allow-list, so an off start adds no keys.
-    if (options.extraKeys !== undefined) allowLogKeys(options.extraKeys);
     const limits = { ...DEFAULT_LIMITS, ...options.limits };
     const exporters = options.exporters ?? {};
     // Resource attributes are shared by every signal, so they carry no life or player identifier.
@@ -261,6 +259,9 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
         return stopping;
       },
     };
+    // Only a running SDK widens the log allow-list, so an off start (no endpoint, a failed setup or a
+    // foreign global owner) adds no keys. Set after the registration check, before the handle is kept.
+    if (options.extraKeys !== undefined) allowLogKeys(options.extraKeys);
     active = handle;
     return handle;
   } catch {
