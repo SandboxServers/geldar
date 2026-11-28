@@ -25,9 +25,12 @@
 
 ## Known limit (to narrow later)
 
-The `mcp` and `ranger` NATS users carry broad `$JS.API.>` and `$JS.ACK.>` grants, copied from the colo users. The nf
-subjects stay under `geldar.nf.` and `$KV.geldar-*`; the JetStream grants are wider than the Bodies need. Narrow them
-in a later packet, with a test per user.
+The `mcp` and `ranger` NATS users are narrowed, and no further. Both are denied the human inbox (`_INBOX.human.>`
+subscribes), the maintenance and dead-letter publishes (`geldar.nf.maintenance`, `geldar.nf.dlq`), and the stream
+delete, consumer delete and purge (`$JS.API.STREAM.DELETE`, `$JS.API.STREAM.PURGE`, `$JS.API.CONSUMER.DELETE`). The
+broad `$JS.API.>` and `$JS.ACK.>` grants remain, copied from the colo users. The nf subjects stay under `geldar.nf.`
+and `$KV.geldar-*`. A per-user inbox prefix is later work. The human inbox denial follows decision 0387 (the NeoForge shard is human-directed; 0387 is Proposed, and its
+status line says the owner accepts or edits it). This decision does not close its open item D-11.
 
 ## Open
 

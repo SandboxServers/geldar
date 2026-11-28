@@ -1,7 +1,7 @@
 # NeoForge (geldar-nf) Mind shard file: what the nf rangers read (players-host and geldar-mcp), decision 0480.
 # Mounted into the ranger containers and geldar-mcp as /opt/geldar/shards/nf.yaml (compose/nf-live-rangers.yml, P4).
 # Derived from shards/colo-mind.yaml: the same blocks, with `sovereign.players` cut to the five Turbo rangers.
-# Every address is a geldar-nf compose service name or loopback. Nothing here is agent-visible text.
+# Every address is a geldar-nf compose service name or loopback. Only mind.agent.personality_seed is agent-visible text (the persona the Mind's agent reads); the rest is shard configuration.
 # UNVERIFIED values, copied from colo until read on the node: seed, world_border_radius (the NF world's own values
 # are not in the repo; read them before the rangers come up, see decision 0480).
 shard: nf                        # must equal GELDAR_SHARD (threshold/mcp config.ts:194)
@@ -87,8 +87,9 @@ sovereign:
     - { player_id: ag-turbopink-01, life_id: ag_turbopink_01, name: TurboPink }
 
 # The nf Mind's own identity. It is not a Body and has no game account; the username is a non-colliding value that
-# the MCP cross-checks against the shard (decision 0480). The name, seed and lives below are copied from colo and are
-# gated with the Mind (scriptorium, kit): not in use until the owner settles them.
+# the MCP cross-checks against the shard (decision 0480). The name and seed are copied from colo and are gated with the
+# Mind (scriptorium, kit): not in use until the owner settles them. No colo life is used on nf, so `lives` is empty
+# until the owner names the nf lives.
 mind:
   agent:
     name: Adam
@@ -121,7 +122,7 @@ mind:
   plan:
     expires_after_ticks: 1200
   run_tier: strong
-  lives: { strong: ag_colo_01, fast: ag_adam_04, smoke: ag_smoke_01 }
+  lives: {}
 
 # Pinned models: the digests recorded from Ollama on 2026-11-09, as in phase0 and colo.
 model_pins:

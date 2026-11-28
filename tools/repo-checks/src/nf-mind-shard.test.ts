@@ -76,11 +76,15 @@ describe('shards/nf-mind.yaml', () => {
     }
   });
 
-  it('names no colo life or player', () => {
+  it('names no colo life or player, anywhere in the file', () => {
     const colo = new Set(players(COLO_TEXT).flatMap((p) => [p.player_id, p.life_id]));
     for (const p of players(NF_TEXT)) {
       expect(colo.has(p.player_id)).toBe(false);
       expect(colo.has(p.life_id)).toBe(false);
+    }
+    // mind.agent.lives too: the colo Mind's lives, named here so a re-added one fails by name.
+    for (const id of [...colo, 'ag_colo_01', 'ag_adam_04', 'ag_smoke_01']) {
+      expect(NF_TEXT.includes(id), id).toBe(false);
     }
   });
 });

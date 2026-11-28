@@ -130,6 +130,11 @@ Expected: `0068` and `t`.
 
 ## N3. Build and render
 
+**Prerequisite P1 (hard gate).** Golem must accept `neoforge` as an RCON host. That change is on branch
+`phase1/nf-rangers-golem-host` and is held until geldar-69 merges it together with the Body recreation. Do not start N3
+or N4 before P1 is merged and the five ranger Bodies are recreated from it. Without P1 the Bodies crash-loop under
+`restart: unless-stopped`, because they cannot reach RCON on `neoforge`.
+
 ```sh
 git -C <node checkout> fetch
 git -C <node checkout> merge --ff-only <merged commit>
@@ -149,7 +154,13 @@ Expected: `config --quiet` prints nothing. `build` finishes for three images: `g
 NF_RANGERS=on DEPLOY_DRY_RUN=1 deploy/nf-deploy.sh plan
 ```
 
-Expected: the plan lists the rangers step and no recreate of nats, neoforge, velocity, eventsink or postgres.
+Expected: the plan lists the rangers step, which reads exactly:
+
+```text
+rangers (NF_RANGERS=on, after the steps above): up -d --wait --no-deps geldar-mcp and the five ranger Bodies (ranger-yellow ranger-green ranger-blue ranger-red ranger-pink); geldar-mcp publishes 127.0.0.1:46788, the Bodies publish nothing
+```
+
+and no recreate of nats, neoforge, velocity, eventsink or postgres. The `46788` is `RANGERS_PORT` in `deploy/nf-rangers-lib.sh`.
 
 ```sh
 NF_RANGERS=on deploy/nf-deploy.sh up
