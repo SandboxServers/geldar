@@ -134,9 +134,9 @@ describe('NeoForge overlay: the service', () => {
     expect(base?.labels['geldar.scratch']).toBe('true');
   });
 
-  it('keeps RCON out of the paper overlay and never names the live secrets', () => {
-    expect(SCRATCH.services.paper?.ports).toBeUndefined();
-    expect(SCRATCH_TEXT).not.toMatch(/SCRATCH_RCON_PORT/);
+  it('keeps the NeoForge RCON default equal to the base overlay default, and never names the live secrets', () => {
+    expect(NF_RCON_DEFAULT).toBe(35575);
+    expect(SCRATCH_DEFAULTS.SCRATCH_RCON_PORT).toBe(NF_RCON_DEFAULT);
     expect(NF_TEXT).not.toMatch(/compose\/secrets/);
   });
 });
