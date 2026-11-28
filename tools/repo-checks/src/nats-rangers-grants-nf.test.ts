@@ -23,8 +23,23 @@ function publishAllowed(entry: { pub: string[]; deny: string[] } | undefined, su
   return entry.pub.some(match) && !entry.deny.some(match);
 }
 
+/** The subscribe deny list of a generated entry (its raw conf line). */
+function subDenyOf(raw: string): string[] {
+  const list = /subscribe: \{ allow: \[[^\]]*\], deny: \[([^\]]*)\]/.exec(raw)?.[1] ?? '';
+  return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '');
+}
+
+/** Whether a user may subscribe to a subject: its subscribe allow list admits it and its subscribe deny list does not. */
+function subscribeAllowed(entry: { sub: string[]; raw: string } | undefined, subject: string) {
+  if (!entry) return false;
+  return publishAllowed({ pub: entry.sub, deny: subDenyOf(entry.raw) }, subject);
+}
+
 describe.skipIf(!hasPwsh)('NF NATS grants for the rangers and the MCP', () => {
-  const users: Record<string, { user: string; pub: string[]; deny: string[]; sub: string[] }> = {};
+  const users: Record<
+    string,
+    { user: string; raw: string; pub: string[]; deny: string[]; sub: string[] }
+  > = {};
   it('generates the two users from the nf generator', () => {
     const r = renderGenerator('nf', { flags: ['--live', '--local'], checkout: true });
     try {
@@ -43,6 +58,26 @@ describe.skipIf(!hasPwsh)('NF NATS grants for the rangers and the MCP', () => {
     expect(publishAllowed(users.mcp, '$KV.geldar-presence.ag_turbogreen_01')).toBe(true);
     expect(publishAllowed(users.mcp, 'geldar.nf.body.ag_turbogreen_01.hearing')).toBe(false);
     expect(publishAllowed(users.mcp, 'geldar.nf.life.ag_turbogreen_01.sheet')).toBe(false);
+  });
+
+  it('denies the ranger the maintenance and dead-letter publishes, the stream delete, and the human inbox', () => {
+    expect(publishAllowed(users.ranger, 'geldar.nf.maintenance')).toBe(false);
+    expect(publishAllowed(users.ranger, 'geldar.nf.dlq')).toBe(false);
+    expect(publishAllowed(users.ranger, '$JS.API.STREAM.DELETE.KV_geldar-life-registry')).toBe(
+      false,
+    );
+    expect(subscribeAllowed(users.ranger, '_INBOX.human.x')).toBe(false);
+    expect(subscribeAllowed(users.ranger, '_INBOX.ranger.x')).toBe(true);
+  });
+
+  it('denies the MCP the same maintenance, dead-letter, stream and consumer deletes, and the human inbox', () => {
+    expect(publishAllowed(users.mcp, 'geldar.nf.maintenance')).toBe(false);
+    expect(publishAllowed(users.mcp, 'geldar.nf.dlq')).toBe(false);
+    expect(publishAllowed(users.mcp, '$JS.API.STREAM.PURGE.GELDAR_EVENTS_NF')).toBe(false);
+    expect(publishAllowed(users.mcp, '$JS.API.CONSUMER.DELETE.GELDAR_EVENTS_NF.eventsink')).toBe(
+      false,
+    );
+    expect(subscribeAllowed(users.mcp, '_INBOX.human.x')).toBe(false);
   });
 
   it('denies each ranger the kino, control, block-owner, helper, level, hearing, provenance and life subjects', () => {

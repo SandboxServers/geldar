@@ -98,8 +98,22 @@ const seedApi = (b: string): string[] => [
   `$JS.API.STREAM.UPDATE.KV_${b}`,
 ];
 
+/** The broad JetStream grants: only the ranger and mcp users may carry them (the known limit in deploy/nats-auth-nf.ps1). */
+const WIDE_JS = ['$JS.API.>', '$JS.ACK.>'];
+/** The denies every mcp and ranger user carries: the maintenance and dead-letter publishes, and the stream and consumer deletes. */
+const BROAD_DENY = [
+  'geldar.nf.maintenance',
+  'geldar.nf.dlq',
+  '$JS.API.STREAM.DELETE.>',
+  '$JS.API.STREAM.PURGE.>',
+  '$JS.API.CONSUMER.DELETE.>',
+];
+
 /** The exact allow and deny lists, restated here so a changed generator fails. */
-const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }> = {
+const EXPECTED: Record<
+  string,
+  { pub: string[]; deny: string[]; sub: string[]; subDeny?: string[] }
+> = {
   neoforge: {
     pub: ['geldar.nf.*', ...STREAMS.flatMap(streamApi), '_INBOX.>'],
     deny: ['geldar.nf.maintenance', 'geldar.nf.dlq'],
@@ -159,8 +173,9 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
       '$JS.ACK.>',
       '_INBOX.>',
     ],
-    deny: ['geldar.nf.body.*.hearing'],
+    deny: ['geldar.nf.body.*.hearing', ...BROAD_DENY],
     sub: ['_INBOX.>'],
+    subDeny: ['_INBOX.human.>'],
   },
   ranger: {
     pub: [
@@ -186,6 +201,7 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
       'geldar.nf.body.*.hearing',
       'geldar.nf.provenance.>',
       'geldar.nf.life.>',
+      ...BROAD_DENY,
     ],
     sub: [
       'geldar.nf.body.>',
@@ -194,6 +210,7 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
       'geldar.nf.provenance.>',
       '_INBOX.>',
     ],
+    subDeny: ['_INBOX.human.>'],
   },
 };
 
@@ -203,8 +220,6 @@ function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
   if (['_INBOX.>', '_INBOX.human.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
   if (/^\$JS\.FC\.KV_geldar-(life-registry|skins)\.>$/.test(subject)) return true;
-  // The rangers' MCP and body sets (the colo sets with s=nf) also name the presence and checkpoint buckets, and the JetStream wildcards.
-  if (['$JS.API.>', '$JS.ACK.>'].includes(subject)) return true;
   if (subject.startsWith('$KV.')) return KV_NAMES.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
     const tokens = subject.split('.');
@@ -375,17 +390,29 @@ describe.skipIf(!hasPwsh)(
         expect(e.pub, `${e.user} publish`).toEqual(EXPECTED[e.user]?.pub);
         expect(e.deny, `${e.user} deny`).toEqual(EXPECTED[e.user]?.deny);
         expect(e.sub, `${e.user} subscribe`).toEqual(EXPECTED[e.user]?.sub);
+        const subDeny = [
+          ...(
+            /subscribe: \{ allow: \[[^\]]*\], deny: \[([^\]]*)\]/.exec(e.raw)?.[1] ?? ''
+          ).matchAll(/"([^"]+)"/g),
+        ];
+        expect(
+          subDeny.map((m) => m[1]),
+          `${e.user} subscribe deny`,
+        ).toEqual(EXPECTED[e.user]?.subDeny ?? []);
       }
     });
 
-    it('scopes every subject to this shard, its two streams, its two buckets or the inbox', () => {
+    it('scopes every subject to this shard, its two streams, its two buckets or the inbox; only ranger and mcp carry the broad JetStream grants', () => {
       for (const e of parseEntries(conf())) {
-        for (const subject of [...e.pub, ...e.sub, ...e.deny]) {
-          expect(inScope(subject), `${e.user}: ${subject}`).toBe(true);
+        const wideOk = ['mcp', 'ranger'].includes(e.user);
+        for (const subject of [...e.pub, ...e.sub]) {
+          const ok = WIDE_JS.includes(subject) ? wideOk : inScope(subject);
+          expect(ok, `${e.user}: ${subject}`).toBe(true);
           expect(subject, e.user).not.toBe('>');
           expect(subject, e.user).not.toMatch(/^geldar\.(\*|>)/);
           expect(subject, e.user).not.toMatch(/colo|phase0/);
         }
+        for (const subject of e.deny) expect(subject, e.user).not.toMatch(/colo|phase0|^>$/);
       }
     });
 

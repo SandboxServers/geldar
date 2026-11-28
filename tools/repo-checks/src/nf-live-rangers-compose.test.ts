@@ -164,6 +164,20 @@ describe('nf-live-rangers overlay: structure', () => {
     }
   });
 
+  it('gives rangers-admin the superuser password file admin.sh reads, the MCP role file, and the pepper at the CLI path', () => {
+    const admin = (overlay.services as Record<string, Doc>)['rangers-admin'] ?? {};
+    const env = admin.environment as Record<string, string>;
+    expect(env.GELDAR_ADMIN_PG_PASSWORD_FILE).toBe('/run/secrets/postgres');
+    expect(admin.secrets).toEqual([
+      'postgres',
+      'postgres-mcp.txt',
+      {
+        source: 'mcp-token-pepper.txt',
+        target: '/opt/geldar/compose/secrets/mcp-token-pepper.txt',
+      },
+    ]);
+  });
+
   it('stays under the 500-line soft cap', () => {
     expect(RANGERS_TEXT.split('\n').length).toBeLessThan(500);
   });
