@@ -84,8 +84,10 @@ describe.skipIf(!hasPwsh)('NF NATS set: the upgrade path from the ten-file node'
     expect(Object.keys(before).sort()).toEqual(['nats-auth.conf', ...OLD_PASSWORDS].sort());
     const again = runGenerator();
     expect(again.status).not.toBe(0);
+    // pwsh wraps the error view at the console width (80 columns on CI), so the list may break after a comma with a gutter
+    // ("| ") in front of the next name. Only that line break is allowed between the names; the names, order and wording are exact.
     expect(again.stderr).toMatch(
-      /nats-auth\.conf exists but nats-human\.txt, nats-mcp\.txt, nats-ranger\.txt is missing/,
+      /nats-auth\.conf exists but nats-human\.txt,[\s|]+nats-mcp\.txt,[\s|]+nats-ranger\.txt is missing/,
     );
     expect(again.stderr).toMatch(/Nothing was written/);
     for (const f of ADDED_FILES) expect(existsSync(join(secrets, f)), f).toBe(false);
