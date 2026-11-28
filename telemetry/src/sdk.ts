@@ -20,6 +20,7 @@ import {
   type PushMetricExporter,
 } from '@opentelemetry/sdk-metrics';
 import { BatchSpanProcessor, type SpanExporter, TracerProvider } from '@opentelemetry/sdk-trace';
+import { allowLogKeys } from './attributes.ts';
 import {
   AllowListLogProcessor,
   AllowListSpanProcessor,
@@ -56,6 +57,11 @@ export interface TelemetryOptions {
    * and no timer, and its global API stays a no-op. Context and propagator are always installed.
    */
   signals?: { traces?: boolean; metrics?: boolean; logs?: boolean };
+  /**
+   * Extra log-record keys this service may ship on top of the allow-list. Process-wide, so one SDK per
+   * process. Only log records read them; the credential deny rule still drops forbidden names.
+   */
+  extraKeys?: readonly string[];
 }
 
 export interface TelemetryHandle {
@@ -253,6 +259,9 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
         return stopping;
       },
     };
+    // Only a running SDK widens the log allow-list, so an off start (no endpoint, a failed setup or a
+    // foreign global owner) adds no keys. Set after the registration check, before the handle is kept.
+    if (options.extraKeys !== undefined) allowLogKeys(options.extraKeys);
     active = handle;
     return handle;
   } catch {

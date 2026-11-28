@@ -46,4 +46,24 @@ describe('logger extraKeys', () => {
     });
     expect(filterAttributes({ 'geldar.custom_field': 'x' }, 'trace').attributes).toEqual({});
   });
+
+  it('let the MCP closed values through on logs, and the credential deny rule still wins', () => {
+    createLogger({
+      name: 'mcp',
+      extraKeys: ['tool', 'status', 'duration_ms', 'api_token'],
+      write: () => {},
+    });
+    // None of the three MCP names matches the credential deny rule.
+    expect(hasForbiddenSegment('tool')).toBe(false);
+    expect(hasForbiddenSegment('status')).toBe(false);
+    expect(hasForbiddenSegment('duration_ms')).toBe(false);
+    const logged = filterAttributes(
+      { tool: 'look', status: 429, duration_ms: 3, api_token: 'secret' },
+      'log',
+    );
+    expect(logged.attributes).toEqual({ tool: 'look', status: 429, duration_ms: 3 });
+    expect(logged.dropped).toEqual([{ key: 'api_token', reason: 'forbidden' }]);
+    // extraKeys are log-only: the same names stay off spans.
+    expect(filterAttributes({ tool: 'look', status: 429 }, 'trace').attributes).toEqual({});
+  });
 });

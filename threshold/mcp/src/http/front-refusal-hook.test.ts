@@ -35,10 +35,15 @@ describe('the onRefusal hook (T-06d2)', () => {
     expect(seen).toEqual([{ reason: 'no_header', status: 401 }]);
   });
 
-  it('is not called for a valid token', async () => {
+  it('is not called for a valid token on an open session', async () => {
     const seen: Refusal[] = [];
     await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
-    await rig.send('/p/aa', { body: BODY });
+    const session = await rig.openSession();
+    const reply = await rig.send('/p/aa', {
+      body: '{"jsonrpc":"2.0","id":3,"method":"ping"}',
+      headers: { 'Mcp-Session-Id': session },
+    });
+    expect(reply.status).toBe(200);
     expect(seen).toEqual([]);
   });
 
