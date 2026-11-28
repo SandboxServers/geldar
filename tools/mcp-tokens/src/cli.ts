@@ -412,19 +412,28 @@ async function runPlayerFlags(
 /** `player adopt-sheets --shard <file> --sheets <json>`: prints the dry-run plan; `--apply --operator-confirm` writes it. */
 async function runAdoptSheets(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<number> {
   if (args.length !== 0) throw new Error(USAGE);
-  if (parsed.flags.has('--apply') && !parsed.flags.has('--operator-confirm')) {
+  const apply = parsed.flags.has('--apply');
+  if (apply && parsed.flags.has('--dry-run')) {
+    io.err('adopt-sheets: --apply and --dry-run cannot be combined');
+    return 2;
+  }
+  if (apply && !parsed.flags.has('--operator-confirm')) {
     io.err('adopt-sheets: --apply needs --operator-confirm');
     return 2;
   }
   const sheets = sheetsObject(await readSheetFile(resolve(requireFlag(parsed, '--sheets'))));
+  if (apply && Object.values(sheets).some((value) => value !== 'standard')) {
+    io.err('adopt-sheets: --apply writes the standard sheet only (0328)');
+    return 2;
+  }
   const lives = readShardLives(await readFile(resolve(requireFlag(parsed, '--shard')), 'utf8'));
   let lines: string[] = [];
   await withSql(env, async (sql) => {
-    if (parsed.flags.has('--apply')) lines = await applyAdoption(sql, lives, sheets);
+    if (apply) lines = await applyAdoption(sql, lives, sheets);
     else lines = (await planAdoption(sql, lives, sheets)).map(formatPlanLine);
   });
   for (const line of lines) io.out(line);
-  return 0;
+  return lines.some((line) => line.endsWith(': failed')) ? 1 : 0;
 }
 
 async function runRoster(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {

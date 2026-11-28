@@ -4,10 +4,9 @@
 -- existing row fails and no existing writer is refused. No row, column or table changes.
 -- The constraint name is the one PostgreSQL gives the inline CHECK in 0051. The drop has no
 -- IF EXISTS on purpose: a different name fails the migration loudly instead of leaving two checks.
-BEGIN;
 
 ALTER TABLE character_sheet_adoptions DROP CONSTRAINT character_sheet_adoptions_source_check;
 ALTER TABLE character_sheet_adoptions ADD CONSTRAINT character_sheet_adoptions_source_check
   CHECK (source IN ('config', 'roster', 'birth', 'conversion'));
 
-COMMIT;
+INSERT INTO schema_migrations (version) VALUES ('0057') ON CONFLICT DO NOTHING;

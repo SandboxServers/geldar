@@ -214,7 +214,7 @@ const AGENTS_SHEET_INSERT = `INSERT INTO agents (agent_id, name, life_seq, game_
  * sheet_adopted event row this add writes always passes the contract. The pattern is a copy of the
  * schema's, held equal by a drift test (the contract validator threw under vitest here).
  */
-function checkAdoptionLife(life: string): void {
+export function checkAdoptionLife(life: string): void {
   if (!SHEET_LIFE_ID.test(life)) {
     throw new Error(`life ${life} cannot take a sheet: its id must match ${SHEET_LIFE_ID.source}`);
   }

@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { validateSheetAdoptedPayload } from '@geldar/contract';
 import { STANDARD_SHEET } from '@geldar/psyche';
 import { afterEach, describe, expect, it } from 'vitest';
 import { applyAdoption } from './adopt-apply.ts';
@@ -34,6 +35,7 @@ class ApplySql implements Sql {
   private snapshot: Map<string, Stored>;
   private saved: Map<string, Stored> | null = null;
   failAudit = false;
+  eventError: unknown = null;
 
   constructor(rows: Record<string, Stored>) {
     this.live = new Map(Object.entries(rows));
@@ -76,7 +78,10 @@ class ApplySql implements Sql {
           .map(([id, s]) => ({ agent_id: id, died_at: s.died_at, sheet_hash: s.sheet_hash })),
       };
     }
-    if (text.startsWith('INSERT INTO events')) return { rows: [] };
+    if (text.startsWith('INSERT INTO events')) {
+      if (this.eventError !== null) throw this.eventError;
+      return { rows: [] };
+    }
     if (text.startsWith('UPDATE agents')) {
       const life = this.live.get(String(values[0]));
       if (life === undefined) return { rows: [] };
@@ -102,6 +107,13 @@ describe('applyAdoption', () => {
     expect(sql.audits()).toHaveLength(1);
     expect(sql.audits()[0]?.text).toContain("'conversion', 'adopted'");
     expect(sql.audits()[0]?.values[0]).toBe(`conversion:sheet_adopted:${LIFE}`);
+    const events = sql.calls.filter((c) => c.text.startsWith('INSERT INTO events'));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.values[0]).toBe(`conversion:sheet_adopted:${LIFE}`);
+    const check = validateSheetAdoptedPayload(JSON.parse(String(events[0]?.values[2])));
+    expect(check.ok).toBe(true);
+    expect(JSON.parse(String(events[0]?.values[2])).source).toBe('conversion');
+    expect(JSON.parse(String(events[0]?.values[2])).sheet_hash).toBe(HASH);
   });
 
   it('refuses a named sheet value and writes nothing', async () => {
@@ -172,17 +184,48 @@ describe('applyAdoption', () => {
     expect(sql.audits()).toHaveLength(1);
   });
 
-  it('a failed audit insert rolls back the events row and the agents write', async () => {
+  it('a failed audit insert rolls back the events row and the agents write, and reports failed', async () => {
     const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
     sql.failAudit = true;
-    await expect(applyAdoption(sql, SHARD, { [LIFE]: 'standard' })).rejects.toThrow(
-      'audit insert refused',
-    );
+    const lines = await applyAdoption(sql, SHARD, { [LIFE]: 'standard' });
+    expect(lines).toEqual([`${LIFE}: failed`]);
     const texts = sql.calls.map((c) => c.text);
     expect(texts.some((t) => t.startsWith('INSERT INTO events'))).toBe(true);
     expect(texts).toContain('ROLLBACK');
     expect(texts).not.toContain('COMMIT');
     expect(sql.live.get(LIFE)?.sheet_hash).toBeNull();
+  });
+
+  it('a unique violation on the event id is skipped: the earlier adoption stands and nothing is rolled forward', async () => {
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    sql.eventError = {
+      code: '23505',
+      detail: `Key (source_event_id)=(conversion:sheet_adopted:${LIFE}) already exists.`,
+    };
+    const lines = await applyAdoption(sql, SHARD, { [LIFE]: 'standard' });
+    expect(lines).toEqual([`${LIFE}: skipped`]);
+    expect(sql.audits()).toHaveLength(0);
+    expect(sql.calls.map((c) => c.text)).toContain('ROLLBACK');
+    expect(sql.live.get(LIFE)?.sheet_hash).toBeNull();
+  });
+
+  it('another unique violation, on a different key, is a failed life, not a skip', async () => {
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    sql.eventError = { code: '23505', detail: 'Key (agent_id)=(ag_other) already exists.' };
+    expect(await applyAdoption(sql, SHARD, { [LIFE]: 'standard' })).toEqual([`${LIFE}: failed`]);
+  });
+
+  it('a bad life id is failed before its transaction; the other lives still print', async () => {
+    const BAD = 'Bad Life!';
+    const sql = new ApplySql({
+      [BAD]: { sheet_hash: null, died_at: null },
+      [LIFE]: { sheet_hash: null, died_at: null },
+    });
+    const lines = await applyAdoption(sql, [BAD, LIFE], { [BAD]: 'standard', [LIFE]: 'standard' });
+    expect(lines).toEqual([`${BAD}: failed`, `${LIFE}: adopted`]);
+    expect(sql.calls.some((c) => c.values.includes(BAD))).toBe(false);
+    expect(sql.live.get(BAD)?.sheet_hash).toBeNull();
+    expect(sql.live.get(LIFE)?.sheet_hash).toBe(HASH);
   });
 });
 
@@ -208,6 +251,125 @@ describe('player adopt-sheets --apply (cli)', () => {
     const errs: string[] = [];
     return { outs, errs, out: (line) => outs.push(line), err: (line) => errs.push(line) };
   }
+
+  /** An env whose connect records each call: a refused run must never reach it. */
+  function envFor(sql: ApplySql): { env: Env; connects: () => number } {
+    let connects = 0;
+    const env = {
+      shardFile: '',
+      secretDir: '',
+      connect: async () => {
+        connects += 1;
+        return Object.assign(sql, { end: async () => {} });
+      },
+    } as unknown as Env;
+    return { env, connects: () => connects };
+  }
+
+  it('--apply with a named sheet exits 2 before connecting, even in a mixed map', async () => {
+    const { shard } = await fixture();
+    const sheetsFile = join(dirs[0] ?? '', 'mixed.json');
+    await writeFile(
+      sheetsFile,
+      JSON.stringify({ [LIFE]: 'standard', ag_other_01: STANDARD_SHEET }),
+    );
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    const { env, connects } = envFor(sql);
+    const out = capture();
+    const code = await run(
+      [
+        'player',
+        'adopt-sheets',
+        '--shard',
+        shard,
+        '--sheets',
+        sheetsFile,
+        '--apply',
+        '--operator-confirm',
+      ],
+      out,
+      env,
+    );
+    expect(code).toBe(2);
+    expect(out.errs).toEqual(['adopt-sheets: --apply writes the standard sheet only (0328)']);
+    expect(connects()).toBe(0);
+    expect(sql.calls).toHaveLength(0);
+  });
+
+  it('--apply with a named sheet only exits 2 before connecting', async () => {
+    const { shard, sheetsFile } = await fixture();
+    await writeFile(sheetsFile, JSON.stringify({ [LIFE]: 'named' }));
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    const { env, connects } = envFor(sql);
+    const out = capture();
+    const code = await run(
+      [
+        'player',
+        'adopt-sheets',
+        '--shard',
+        shard,
+        '--sheets',
+        sheetsFile,
+        '--apply',
+        '--operator-confirm',
+      ],
+      out,
+      env,
+    );
+    expect(code).toBe(2);
+    expect(out.errs).toEqual(['adopt-sheets: --apply writes the standard sheet only (0328)']);
+    expect(connects()).toBe(0);
+  });
+
+  it('--apply with --dry-run exits 2 before connecting', async () => {
+    const { shard, sheetsFile } = await fixture();
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    const { env, connects } = envFor(sql);
+    const out = capture();
+    const code = await run(
+      [
+        'player',
+        'adopt-sheets',
+        '--shard',
+        shard,
+        '--sheets',
+        sheetsFile,
+        '--apply',
+        '--operator-confirm',
+        '--dry-run',
+      ],
+      out,
+      env,
+    );
+    expect(code).toBe(2);
+    expect(out.errs).toEqual(['adopt-sheets: --apply and --dry-run cannot be combined']);
+    expect(connects()).toBe(0);
+    expect(sql.calls).toHaveLength(0);
+  });
+
+  it('--apply where a life write fails prints the line and exits 1', async () => {
+    const { shard, sheetsFile } = await fixture();
+    const sql = new ApplySql({ [LIFE]: { sheet_hash: null, died_at: null } });
+    sql.failAudit = true;
+    const { env } = envFor(sql);
+    const out = capture();
+    const code = await run(
+      [
+        'player',
+        'adopt-sheets',
+        '--shard',
+        shard,
+        '--sheets',
+        sheetsFile,
+        '--apply',
+        '--operator-confirm',
+      ],
+      out,
+      env,
+    );
+    expect(code).toBe(1);
+    expect(out.outs).toEqual([`${LIFE}: failed`]);
+  });
 
   it('dry run writes nothing: only the planner SELECT runs', async () => {
     const { shard, sheetsFile } = await fixture();

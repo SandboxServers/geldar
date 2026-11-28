@@ -1,7 +1,7 @@
 import { STANDARD_SHEET } from '@geldar/psyche';
 import { formatPlanLine, planAdoption } from './convert-sheets.ts';
 import type { Sql } from './owners.ts';
-import { sheetHash, transaction } from './players.ts';
+import { checkAdoptionLife, sheetHash, transaction } from './players.ts';
 
 /** Thrown inside one life's transaction when its UPDATE matches no row: the transaction rolls back. */
 class LifeChanged extends Error {}
@@ -10,7 +10,9 @@ class LifeChanged extends Error {}
  * Writes the standard sheet to each life the plan marks would-adopt (decision 0287, sql 0057). Only
  * the standard sheet is written: any other `--sheets` value refuses the whole run before any SQL.
  * Each life is one transaction: its events row, the agents row, then its audit row. Returns one
- * printed line per life: `adopted` or `skipped` for the lives written, the plan line for the rest.
+ * printed line per life: `adopted` or `skipped` for the lives written, the plan line for the rest,
+ * and `<life>: failed` for a life whose write threw. A failed life does not stop the run, so the
+ * lines of the lives already written are all returned; the caller exits non-zero on any `failed`.
  */
 export async function applyAdoption(
   sql: Sql,
@@ -27,16 +29,26 @@ export async function applyAdoption(
       lines.push(formatPlanLine(line));
       continue;
     }
-    lines.push(`${line.life}: ${await adoptLife(sql, line.life)}`);
+    lines.push(`${line.life}: ${await adoptLifeOrFail(sql, line.life)}`);
   }
   return lines;
+}
+
+async function adoptLifeOrFail(sql: Sql, life: string): Promise<'adopted' | 'skipped' | 'failed'> {
+  try {
+    return await adoptLife(sql, life);
+  } catch {
+    return 'failed';
+  }
 }
 
 /**
  * One life, in one transaction. The UPDATE repeats the planner's test in SQL (no baseline, not dead),
  * so a life that changed between the read and the write matches no row and is skipped, not overwritten.
+ * A unique violation on this life's event id means the adoption was already written: skipped.
  */
 async function adoptLife(sql: Sql, life: string): Promise<'adopted' | 'skipped'> {
+  checkAdoptionLife(life);
   const hash = sheetHash(STANDARD_SHEET);
   const sheet = JSON.stringify(STANDARD_SHEET);
   const eventId = `conversion:sheet_adopted:${life}`;
@@ -71,7 +83,14 @@ async function adoptLife(sql: Sql, life: string): Promise<'adopted' | 'skipped'>
     });
     return 'adopted';
   } catch (error) {
-    if (error instanceof LifeChanged) return 'skipped';
+    if (error instanceof LifeChanged || isEventIdViolation(error, eventId)) return 'skipped';
     throw error;
   }
+}
+
+/** Postgres unique violation (23505) whose detail names this life's event id. */
+function isEventIdViolation(error: unknown, eventId: string): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { code, detail } = error as { code?: unknown; detail?: unknown };
+  return code === '23505' && typeof detail === 'string' && detail.includes(eventId);
 }
