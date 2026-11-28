@@ -28,6 +28,10 @@ geldar-69. Never run two steps at once, and never skip ahead.
   Never use a pattern kill (`pkill`, `killall`).
 - A repo change does not reach the node by itself. `compose/**`, `deploy/**` and `shards/**` arrive only by a manual checkout
   update in N3.
+- Every `plan`, `up`, `rangers-admin` and `probe` command carries the same `NF_HUMAN`, `NF_TELEMETRY` and `NF_EXTRA_MODS` as the
+  live run. Take the values from the live run (`NF_TELEMETRY` and `NF_EXTRA_MODS` from the ops env file, `NF_HUMAN` from the shell;
+  never print the file). The `<same as the live run>` placeholders are not shell syntax: replace each with the live value. Omitting
+  one changes the render: compose recreates `neoforge`, and `check_human_orphan` refuses while a human container exists.
 - Use `<nf nats container>`, `<nf velocity container>`, `<nf postgres container>` and `<ranger container>` for the container
   names; read the real names with `docker ps` in N0.
 
@@ -101,20 +105,36 @@ docker kill -s HUP <nf nats container>
 The extra users are harmless unused, so the four new password files may stay. If the reload fails and the conf will not load,
 roll back and tell geldar-69; the fallback is a restart path that recreates neoforge and needs a notice and an owner go.
 
+## N1a. Tokens directory (before N2)
+
+The `rangers-admin` one-shot mounts a host directory for token files (`compose/nf-live-rangers.yml`, `create_host_path: false`).
+Compose never creates it, so the run fails until it exists. Create it outside the checkout, mode 0700, owned by the service uid,
+the same way as the skins directory in [skins.md](skins.md) (`sudo` is needed because `/etc/geldar` is root-owned):
+
+```sh
+sudo install -d -m 0700 -o "$NF_SERVICE_UID" -g "$NF_SERVICE_UID" /etc/geldar/tokens-nf
+export NF_TOKENS_DIR=/etc/geldar/tokens-nf
+stat -c '%a %u %n' "$NF_TOKENS_DIR"
+```
+
+Expected: `700 1001 /etc/geldar/tokens-nf` (the uid is `NF_SERVICE_UID`). `N2` to `N5` pass `NF_TOKENS_DIR` to each `rangers-admin` run.
+
+**Rollback.** `sudo rmdir /etc/geldar/tokens-nf` (it refuses while the directory holds files, which is correct), then `unset NF_TOKENS_DIR`.
+
 ## N2. Database (additive)
 
 Needs N3's admin image, so run N3 first if it is not built. Take a `pg_dump` of `geldar_nf` through an owner-approved path first:
 that dump is the real rollback.
 
 ```sh
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate --dry-run
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate --dry-run
 ```
 
 Expected: exactly `0067` and `0068` pending. Then apply without `--dry-run`:
 
 ```sh
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
 ```
 
 Expected: a one-line OK for the second command, and no password printed. Verify read only:
@@ -151,7 +171,7 @@ Expected: `config --quiet` prints nothing. `build` finishes for three images: `g
 ## N4. Bring the rangers up
 
 ```sh
-NF_RANGERS=on DEPLOY_DRY_RUN=1 deploy/nf-deploy.sh plan
+NF_RANGERS=on NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> DEPLOY_DRY_RUN=1 deploy/nf-deploy.sh plan
 ```
 
 Expected: the plan lists the rangers step, which reads exactly:
@@ -163,7 +183,7 @@ rangers (NF_RANGERS=on, after the steps above): up -d --wait --no-deps geldar-mc
 and no recreate of nats, neoforge, velocity, eventsink or postgres. The `46788` is `RANGERS_PORT` in `deploy/nf-rangers-lib.sh`.
 
 ```sh
-NF_RANGERS=on deploy/nf-deploy.sh up
+NF_RANGERS=on NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> deploy/nf-deploy.sh up
 ```
 
 Expected: `geldar-mcp` healthy, `127.0.0.1:46788` listening (`ss -ltn | grep 46788`), and the five ranger containers `Up`.
@@ -199,10 +219,10 @@ services are not touched.
 Run each command as a one-shot:
 
 ```sh
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin owner-add <owner id> --cap 5
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin roster add <name> --owner <owner id>
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin player-add <player-id> --owner <owner id> --life <life id> --name <Name> --harness <harness>
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin players-status
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin owner-add <owner id> --cap 5
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin roster add <name> --owner <owner id>
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin player-add <player-id> --owner <owner id> --life <life id> --name <Name> --harness <harness>
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin players-status
 ```
 
 Repeat `roster add` and `player-add` for each of the five rangers. `<owner id>` and `<harness>` are owner inputs; the harness
