@@ -80,6 +80,8 @@ export function playerBodyEnv(input: {
   proficiency?: AdamBodyEnv['proficiency'];
   /** The host's Body metrics (`startPlayerTelemetry`); absent means the Body records nothing. */
   metrics?: GolemMetrics;
+  /** AN-50d: `observations` on when true (from GELDAR_OBSERVATIONS); absent or false is off, as today. */
+  observations?: boolean;
 }): AdamBodyEnv {
   return {
     config: input.config,
@@ -91,6 +93,7 @@ export function playerBodyEnv(input: {
     log: input.log,
     ...(input.proficiency === undefined ? {} : { proficiency: input.proficiency }),
     ...(input.metrics === undefined ? {} : { metrics: input.metrics }),
+    ...(input.observations === true ? { observations: true } : {}),
   };
 }
 

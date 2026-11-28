@@ -14,6 +14,7 @@ import { jetstream } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
 import { parse } from 'yaml';
 import { managerAcquire, restartKvFor } from '../adam/main.ts';
+import { observationsFromEnv } from '../adam/observations-env.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl } from '../body/restart.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
@@ -125,6 +126,8 @@ export async function runPlayer(
     server,
     log: (line) => log({ event: 'body', line }),
     metrics: telemetry.metrics,
+    // AN-50d: GELDAR_OBSERVATIONS '1' or 'on' turns the observations option on; otherwise off.
+    observations: observationsFromEnv(env.GELDAR_OBSERVATIONS),
   });
   const serve =
     extraServe ??

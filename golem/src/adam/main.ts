@@ -23,6 +23,7 @@ import { installFatalHandlers } from '../process-fatal.ts';
 import { registryFromConfig } from '../registry.ts';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from './adam-body.ts';
 import { loadAdamConfig } from './adam-config.ts';
+import { observationsOption } from './observations-env.ts';
 import { BodyWatchdog } from './watchdog.ts';
 
 /** An `acquire` error with this flag ends the supervisor instead of being retried. */
@@ -241,6 +242,8 @@ export async function main(): Promise<void> {
     log: (line) => jsonLog({ event: 'body', life_id: config.lifeId, line }),
     metrics: telemetry.metrics,
     ...(tracer === undefined ? {} : { tracer }),
+    // AN-50d: GELDAR_OBSERVATIONS '1' or 'on' turns the observations option on; otherwise absent (off).
+    ...observationsOption(process.env.GELDAR_OBSERVATIONS),
   };
   const manager = new ConnectionManager({
     host: stack.mcHost,
