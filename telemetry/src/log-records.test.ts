@@ -5,7 +5,9 @@ import {
   type ReadableLogRecord,
 } from '@opentelemetry/sdk-logs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emitLogRecord } from './log-records.ts';
+import { allowLogKeys } from './attributes.ts';
+import { emitLogRecord, isShippedRecord } from './log-records.ts';
+import { AllowListLogProcessor } from './sdk-processors.ts';
 
 /** Keeps each record as it is emitted, so a test reads it at once: nothing is queued or exported. */
 class CollectingProcessor implements LogRecordProcessor {
@@ -26,9 +28,12 @@ class CollectingProcessor implements LogRecordProcessor {
 
 let exporter: CollectingProcessor;
 
+// The provider is built as startTelemetry builds it: the MCP extra keys widen the allow-list, and the
+// records pass through the real AllowListLogProcessor before they are collected.
 beforeEach(() => {
+  allowLogKeys(['tool', 'status', 'duration_ms']);
   exporter = new CollectingProcessor();
-  const provider = new LoggerProvider({ processors: [exporter] });
+  const provider = new LoggerProvider({ processors: [new AllowListLogProcessor(exporter)] });
   logs.setGlobalLoggerProvider(provider);
 });
 
@@ -85,19 +90,34 @@ describe('emitLogRecord', () => {
     ]);
   });
 
-  it('never carries a cause, so a token-looking cause never reaches the record', () => {
+  it('is WARN for an error with no status, and ERROR for a closed failure event', () => {
+    emitLogRecord({ event: 'stream_message_retry', error: 'TypeError' });
+    emitLogRecord({ event: 'stop_failed', error: 'Error' });
+    emitLogRecord({ event: 'auth_unavailable', error: 'Error', status: 503 });
+    expect(exporter.getFinishedLogRecords().map((r) => r.severityText)).toEqual([
+      'WARN',
+      'ERROR',
+      'ERROR',
+    ]);
+  });
+
+  it('sends the error as error.type, so a token-looking cause never reaches the record', () => {
     emitLogRecord({
-      event: 'parse_error',
-      status: 400,
+      event: 'rate_limited',
+      status: 429,
       cause: `Authorization: Bearer ${TOKEN}`,
       error: 'TypeError',
     });
     const [record] = exporter.getFinishedLogRecords();
-    expect(record?.attributes).toEqual({ event: 'parse_error', status: 400, error: 'TypeError' });
+    expect(record?.attributes).toEqual({
+      event: 'rate_limited',
+      status: 429,
+      'error.type': 'TypeError',
+    });
     expect(JSON.stringify(exporter.getFinishedLogRecords())).not.toContain('gmcp-');
   });
 
-  it('drops every key it does not name, and uses a fixed body when there is no event', () => {
+  it('drops every key it does not name, suppressed included, and uses a fixed body without an event', () => {
     emitLogRecord({
       event: 'tool_call',
       token: TOKEN,
@@ -108,10 +128,10 @@ describe('emitLogRecord', () => {
     });
     emitLogRecord({ status: 500, player_name: 'Steve' });
     const records = exporter.getFinishedLogRecords();
-    expect(records[0]?.attributes).toEqual({ event: 'tool_call', suppressed: 2 });
+    expect(records[0]?.attributes).toEqual({ event: 'tool_call' });
     expect(records[1]?.body).toBe('log');
     expect(records[1]?.attributes).toEqual({ status: 500 });
-    expect(JSON.stringify(records)).not.toMatch(/gmcp-|Steve|203\.0\.113|hello/);
+    expect(JSON.stringify(records)).not.toMatch(/gmcp-|Steve|203\.0\.113|hello|suppressed/);
   });
 
   it('swallows a failure in the logs API, so the caller never sees an exception', () => {
@@ -120,5 +140,27 @@ describe('emitLogRecord', () => {
     });
     expect(() => emitLogRecord({ event: 'tool_call' })).not.toThrow();
     expect(exporter.getFinishedLogRecords()).toHaveLength(0);
+  });
+});
+
+describe('isShippedRecord', () => {
+  it('ships a tool_call line (it has an outcome)', () => {
+    expect(isShippedRecord({ event: 'tool_call', tool: 'move', outcome: 'ok' })).toBe(true);
+  });
+
+  it('ships a 429 refusal line', () => {
+    expect(isShippedRecord({ event: 'rate_limited', status: 429 })).toBe(true);
+  });
+
+  it('does not ship a routine request line', () => {
+    expect(isShippedRecord({ event: 'session_request', status: 200 })).toBe(false);
+  });
+
+  it('does not ship a pre-auth noise line, even with a 4xx status', () => {
+    expect(isShippedRecord({ event: 'parse_error', status: 400 })).toBe(false);
+  });
+
+  it('ships a line that carries an error', () => {
+    expect(isShippedRecord({ event: 'stream_loop_stopped', error: 'TypeError' })).toBe(true);
   });
 });

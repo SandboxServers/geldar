@@ -16,7 +16,7 @@ export {
   contentAttributes,
   type EventSpan,
 } from './content.ts';
-export { emitLogRecord } from './log-records.ts';
+export { emitLogRecord, isShippedRecord } from './log-records.ts';
 export { createLogger, type LogFields, type Logger, type LogLevel } from './logger.ts';
 export { extractTrace, type HeaderLike, injectTrace } from './nats-trace.ts';
 export {

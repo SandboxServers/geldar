@@ -81,12 +81,6 @@ const MOCK_REFUSAL_EVENTS: readonly string[] = [
   'origin_rejected',
   'session_superseded',
   'session_not_found',
-  'not_found',
-  'host_rejected',
-  'method_not_allowed',
-  'body_too_large',
-  'body_timeout',
-  'parse_error',
 ];
 
 /**

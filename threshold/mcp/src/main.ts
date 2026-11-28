@@ -4,7 +4,11 @@ import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.
 import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { checkSovereignIdentity } from '@geldar/repo-checks/src/identity-mode.ts';
-import { emitLogRecord, startTelemetry as startSpanTelemetry } from '@geldar/telemetry';
+import {
+  emitLogRecord,
+  isShippedRecord,
+  startTelemetry as startSpanTelemetry,
+} from '@geldar/telemetry';
 import type { Client, ClientConfig, Pool } from 'pg';
 import { parse } from 'yaml';
 import { NatsBodyGateway } from './body-gateway.ts';
@@ -293,11 +297,12 @@ export function lazyLifeRegistry(agents: PgAgentStore, clock: Clock) {
  * front door's listen. A failure closes what was opened, in reverse, and rethrows.
  */
 export async function startMcp(config: McpConfig, ports: McpPorts): Promise<RunningMcp> {
-  // Every line goes to the stderr sink as before; once the span SDK is on, it also ships as one OTLP log record.
+  // Every line goes to the stderr sink as before; once the span SDK is on, the lines isShippedRecord
+  // names (tool calls, refusals, errors) also ship as one OTLP log record each.
   let shipRecords = false;
   const sink = (line: Record<string, string | number>) => {
     ports.log(line);
-    if (shipRecords) emitLogRecord(line);
+    if (shipRecords && isShippedRecord(line)) emitLogRecord(line);
   };
   const log = (line: Record<string, unknown>) => sink(safeLogLine(line));
   const now = () => ports.clock.nowMs();

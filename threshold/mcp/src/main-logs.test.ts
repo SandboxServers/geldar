@@ -1,4 +1,5 @@
 import { FakeClock } from '@geldar/mcp-mock';
+import { isShippedRecord } from '@geldar/telemetry';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Pool } from 'pg';
@@ -163,9 +164,10 @@ describe('the log record wiring in startMcp', () => {
     const off = await runWithLogs(undefined);
     expect(off.records).toEqual([]);
     const on = await runWithLogs('http://127.0.0.1:4318');
-    // Every line after the span SDK starts is shipped once; mcp_start (before the SDK) and mcp_stopped
-    // (after its shutdown) are never shipped.
+    // Every line after the span SDK starts that isShippedRecord names is shipped once; mcp_start (before the
+    // SDK) and mcp_stopped (after its shutdown) are never shipped, and a routine line is not shipped at all.
     const shipped = on.stderr
+      .filter((line) => isShippedRecord(line))
       .map((line) => line.event)
       .filter((event) => event !== 'mcp_start' && event !== 'mcp_stopped');
     expect(on.records.map((record) => record.body)).toEqual(shipped);
