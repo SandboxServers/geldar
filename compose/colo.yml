@@ -223,6 +223,11 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
       # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
       GELDAR_TELEMETRY_URL:
+      # AN-12b sheet switch, off by default. Set GELDAR_SHEET_SHARD=colo in the node env file to run the state service and
+      # outbox publisher; GELDAR_XP and GELDAR_PROFICIENCY_THRESHOLDS stay unset until the XP producers are on. Blank is off.
+      GELDAR_SHEET_SHARD: "${GELDAR_SHEET_SHARD:-}"
+      GELDAR_XP: "${GELDAR_XP:-}"
+      GELDAR_PROFICIENCY_THRESHOLDS: "${GELDAR_PROFICIENCY_THRESHOLDS:-}"
     secrets: [postgres]
     networks: [colo]
     depends_on:

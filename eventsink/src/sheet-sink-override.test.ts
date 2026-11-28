@@ -8,9 +8,19 @@ import { sinkPlan } from './sink-plan.ts';
 
 const OVERRIDE = fileURLToPath(new URL('../../compose/opt-in/sheet-sink.yml', import.meta.url));
 const VALIDATED_PATH = fileURLToPath(new URL('../../compose/sheet-sink.yml', import.meta.url));
+const COLO = fileURLToPath(new URL('../../compose/colo.yml', import.meta.url));
 
 /** The sink variables sink-plan.ts reads, from its own module (GELDAR_SHEET_SHARD, GELDAR_XP, GELDAR_PROFICIENCY_THRESHOLDS). */
 const SINK_ENV = ['GELDAR_SHEET_SHARD', 'GELDAR_XP', 'GELDAR_PROFICIENCY_THRESHOLDS'];
+
+/** The text of the eventsink service in compose/colo.yml: from its key to the next two-space service key. */
+function coloEventsink(): string {
+  const text = readFileSync(COLO, 'utf8').replace(/\r\n/g, '\n');
+  const start = text.search(/^  eventsink:$/m);
+  if (start < 0) throw new Error('no eventsink service in compose/colo.yml');
+  const after = text.slice(start + 1).search(/^  [a-z][\w-]*:$/m);
+  return after < 0 ? text.slice(start) : text.slice(start, start + 1 + after);
+}
 
 /** The variable names declared as keys in the override, each with an empty value (passed from the host). */
 function overrideKeys(): string[] {
@@ -33,5 +43,14 @@ describe('compose/opt-in/sheet-sink.yml (AN-12b opt-in override)', () => {
 
   it('is not at the validated path compose/sheet-sink.yml', () => {
     expect(existsSync(VALIDATED_PATH)).toBe(false);
+  });
+});
+
+describe('compose/colo.yml passes the sink variables through empty (AN-12b, node env file)', () => {
+  it('the eventsink service carries each variable once, as an empty pass-through', () => {
+    const block = coloEventsink();
+    for (const name of SINK_ENV) {
+      expect(block.split(`${name}: "\${${name}:-}"`).length - 1, name).toBe(1);
+    }
   });
 });

@@ -24,6 +24,14 @@ describe('sinkPlan: the environment read by eventsink main', () => {
     expect(sinkPlan({ GELDAR_SHEET_SHARD: '   ' }).shard).toBeUndefined();
   });
 
+  it('three blank variables, as colo.yml passes them through when the host sets nothing, equal unset', () => {
+    const blank = { GELDAR_SHEET_SHARD: '', GELDAR_XP: '', GELDAR_PROFICIENCY_THRESHOLDS: '' };
+    expect(sinkPlan(blank)).toEqual(sinkPlan({}));
+    expect(sinkPlan(blank).shard).toBeUndefined();
+    expect(sinkPlan(blank).xp).toEqual({ enabled: false, thresholds: DEFAULT_THRESHOLDS });
+    expect(startShardServices(sinkPlan(blank), starters())).toEqual([]);
+  });
+
   it('reads the shard name when it is set', () => {
     expect(sinkPlan({ GELDAR_SHEET_SHARD: 'colo' }).shard).toBe('colo');
   });

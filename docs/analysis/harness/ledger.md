@@ -115,6 +115,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-47a | combat facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 45-50k | Done (#799, #802, #804; real `combat_fact` captures 2026-11-20, #823) |
 | AN-47b | combat award normaliser (0321 shared encounter key; the visible-fight half is AN-47c) | sheet W6-W8 | AN-46, AN-47a, AN-25, AN-09a | 45-50k | Done (#814; its worknote still lists a real-payload capture as owed, and whether the fixtures were refreshed from the #823 captures is unverified) |
 | AN-47c | visible-fight observation in the Body (`fight_seen`) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Done (#831, merge `49868434`; built from the real `engaged` captures in `fixtures/combat-real.json`) |
+| AN-47e | eventsink sheet switch through the node env file (`colo.yml` pass-through, default off) | sheet W6-W8 (AN-12b follow-up) | AN-12b | 10-15k | Done on `phase1/eventsink-sheet-env` (local commit, not pushed; worknote `AN-47e-eventsink-sheet-env.md`) |
 | AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | Done (#800) |
 | AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | Done (#810; captures #823, anvil and enchanting-table re-run #826) |
 | AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |

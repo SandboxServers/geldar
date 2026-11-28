@@ -156,7 +156,7 @@ Volumes: `postgres-data`, `nats-data`, `paper-data`, `velocity-data` (lines 740 
 | `colo-notice.yml` | `admin` gets the `nats-deploy` secret from the node's secrets directory. |
 | `deploy/compose.secrets.yml` | Repoints 17 secret names at `${GELDAR_SECRETS_DIR}`. |
 | `opt-in/scratch.yml` | Replaces every published port with a loopback port from `SCRATCH_*_PORT` (defaults 15432, 14222, 18222, 35565); caps memory and CPU on every service; `restart: "no"`; label `geldar.scratch=true`; secrets and the world volume from the script's state directory. |
-| `opt-in/sheet-sink.yml` | `eventsink` gets `GELDAR_SHEET_SHARD`, `GELDAR_XP` and `GELDAR_PROFICIENCY_THRESHOLDS` from the host when set. |
+| `opt-in/sheet-sink.yml` | `eventsink` gets `GELDAR_SHEET_SHARD`, `GELDAR_XP` and `GELDAR_PROFICIENCY_THRESHOLDS` from the host when set. `colo.yml` passes the same three through already (empty when unset), so colo needs no overlay: see the node env file note in [colo deploy](../runbooks/colo-deploy.md). |
 
 ## Signcheck stack: `compose/signcheck.yml`
 
