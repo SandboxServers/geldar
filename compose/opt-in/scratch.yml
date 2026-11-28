@@ -50,6 +50,10 @@ services:
       MEMORY: ${PAPER_MEMORY:-2G}
       UID: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}"
       GID: "${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    # RCON only, on loopback: the host port is SCRATCH_RCON_PORT (default 35575, the scratch-a value; deploy/scratch/<suffix>.env
+    # sets another per project). The game port is never published. Same mapping as compose/opt-in/scratch-neoforge.yml.
+    ports: !override
+      - "127.0.0.1:${SCRATCH_RCON_PORT:-35575}:25575"
     deploy:
       resources:
         limits:
