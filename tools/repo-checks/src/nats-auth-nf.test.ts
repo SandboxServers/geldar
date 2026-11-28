@@ -21,30 +21,55 @@ import {
 } from './nats-auth-fixtures.ts';
 
 /** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
-const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed', 'body', 'human'];
-/** The eleven files the generator writes: the conf, the seven NATS passwords (human included), postgres.txt, velocity-forwarding.txt and rcon.txt. */
+const NF_USERS = [
+  'neoforge',
+  'sink',
+  'deploy',
+  'velocity',
+  'seed',
+  'body',
+  'human',
+  'mcp',
+  'ranger',
+];
+/** The fifteen files the generator writes: the conf, the nine NATS passwords, postgres.txt, velocity-forwarding.txt, rcon.txt,
+ * postgres-mcp.txt and mcp-token-pepper.txt. */
 const NF_FILES = [
   'nats-auth.conf',
   ...NF_USERS.map((u) => `nats-${u}.txt`),
   'postgres.txt',
   'velocity-forwarding.txt',
   'rcon.txt',
+  'postgres-mcp.txt',
+  'mcp-token-pepper.txt',
 ].sort();
 const NF_PROBE = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
+const NF_RANGERS = readFileSync(join(ROOT, 'compose', 'nf-live-rangers.yml'), 'utf8');
 const NF_HUMAN = readFileSync(join(ROOT, 'compose', 'nf-live-human.yml'), 'utf8');
 /** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
 function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
   return { onlyA: a.filter((f) => !b.includes(f)), onlyB: b.filter((f) => !a.includes(f)) };
 }
-/** The SECRET_FILES list of deploy/nf-deploy.sh (the files the operator script requires before any start). */
+/** The SECRET_FILES of deploy/nf-deploy.sh plus RANGER_SECRETS of deploy/nf-rangers-lib.sh (the ranger files, required with NF_RANGERS=on). */
 function deploySecretFiles(): string[] {
-  const m = /^SECRET_FILES="([^"]+)"/m.exec(
-    readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8'),
-  );
-  return (m?.[1] ?? '').split(' ').filter((f) => f !== '');
+  const words = (src: string, name: string): string[] =>
+    (new RegExp(`^${name}="([^"]+)"`, 'm').exec(src)?.[1] ?? '').split(' ').filter((f) => f !== '');
+  return [
+    ...words(readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8'), 'SECRET_FILES'),
+    ...words(readFileSync(join(ROOT, 'deploy', 'nf-rangers-lib.sh'), 'utf8'), 'RANGER_SECRETS'),
+  ];
 }
 const STREAMS = ['GELDAR_EVENTS', 'GELDAR_EVENTS_NF'];
 const BUCKETS = ['geldar-life-registry', 'geldar-skins'];
+/** Every KV bucket a nf user may name: the two identity buckets, and the ones the rangers' Bodies and the MCP's presence use. */
+const KV_NAMES = [
+  ...BUCKETS,
+  'geldar-presence',
+  'geldar-checkpoints',
+  'geldar-body-generation',
+  'geldar-plans',
+  'geldar-seen',
+];
 const NF_LIVE = readFileSync(join(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 
 const streamApi = (s: string): string[] => [
@@ -73,8 +98,22 @@ const seedApi = (b: string): string[] => [
   `$JS.API.STREAM.UPDATE.KV_${b}`,
 ];
 
+/** The broad JetStream grants: only the ranger and mcp users may carry them (the known limit in deploy/nats-auth-nf.ps1). */
+const WIDE_JS = ['$JS.API.>', '$JS.ACK.>'];
+/** The denies every mcp and ranger user carries: the maintenance and dead-letter publishes, and the stream and consumer deletes. */
+const BROAD_DENY = [
+  'geldar.nf.maintenance',
+  'geldar.nf.dlq',
+  '$JS.API.STREAM.DELETE.>',
+  '$JS.API.STREAM.PURGE.>',
+  '$JS.API.CONSUMER.DELETE.>',
+];
+
 /** The exact allow and deny lists, restated here so a changed generator fails. */
-const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }> = {
+const EXPECTED: Record<
+  string,
+  { pub: string[]; deny: string[]; sub: string[]; subDeny?: string[] }
+> = {
   neoforge: {
     pub: ['geldar.nf.*', ...STREAMS.flatMap(streamApi), '_INBOX.>'],
     deny: ['geldar.nf.maintenance', 'geldar.nf.dlq'],
@@ -125,6 +164,54 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
     deny: [],
     sub: ['_INBOX.human.>'],
   },
+  mcp: {
+    pub: [
+      'geldar.nf.sovereign_call',
+      'geldar.nf.body.>',
+      '$KV.geldar-presence.>',
+      '$JS.API.>',
+      '$JS.ACK.>',
+      '_INBOX.>',
+    ],
+    deny: ['geldar.nf.body.*.hearing', ...BROAD_DENY],
+    sub: ['_INBOX.>'],
+    subDeny: ['_INBOX.human.>'],
+  },
+  ranger: {
+    pub: [
+      'geldar.nf.>',
+      '$JS.API.>',
+      '$JS.ACK.>',
+      '_INBOX.>',
+      ...[
+        'geldar-life-registry',
+        'geldar-checkpoints',
+        'geldar-body-generation',
+        'geldar-skins',
+        'geldar-plans',
+        'geldar-seen',
+      ].map((b) => `$KV.${b}.>`),
+    ],
+    deny: [
+      'geldar.nf.kino.>',
+      'geldar.nf.blockowner.changed',
+      'geldar.nf.ctl.body.>',
+      'geldar.nf.helper.body.>',
+      'geldar.nf.state.*.level',
+      'geldar.nf.body.*.hearing',
+      'geldar.nf.provenance.>',
+      'geldar.nf.life.>',
+      ...BROAD_DENY,
+    ],
+    sub: [
+      'geldar.nf.body.>',
+      'geldar.nf.blockowner.changed',
+      'geldar.nf.state.*.level',
+      'geldar.nf.provenance.>',
+      '_INBOX.>',
+    ],
+    subDeny: ['_INBOX.human.>'],
+  },
 };
 
 /** Whether a subject is one this shard's NATS may carry: geldar.nf.*, the inbox, $JS.FC, $JS.API.INFO, or a JetStream
@@ -133,7 +220,7 @@ function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
   if (['_INBOX.>', '_INBOX.human.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
   if (/^\$JS\.FC\.KV_geldar-(life-registry|skins)\.>$/.test(subject)) return true;
-  if (subject.startsWith('$KV.')) return BUCKETS.some((b) => subject.startsWith(`$KV.${b}.`));
+  if (subject.startsWith('$KV.')) return KV_NAMES.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
     const tokens = subject.split('.');
     const names = [...STREAMS, ...BUCKETS.map((b) => `KV_${b}`)];
@@ -194,6 +281,12 @@ function runGenerator(dir: string, flags: string[] = ['--live', '--local']) {
   );
 }
 
+/** Folds pwsh's wrapped, ANSI-coloured error view into plain text: colour escapes go, and a line break with its gutter becomes a space. */
+function normalisePwshError(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ANSI colour escape is the input this strips
+  return text.replace(/\u001b\[[0-9;]*m/g, '').replace(/\r?\n[\s|]*/g, ' ');
+}
+
 describe('NATS subject matching (the test helper)', () => {
   it.each([
     ['a.>', 'a', false],
@@ -226,7 +319,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: refusals write nothing', () => {
       const r = renderGenerator('nf', { flags, checkout });
       made.push(r.dir);
       expect(r.status).not.toBe(0);
-      expect(r.stderr).toMatch(message);
+      expect(normalisePwshError(r.stderr)).toMatch(message);
       expect(existsSync(join(r.dir, 'compose', 'secrets-nf'))).toBe(false);
       expect(existsSync(join(r.dir, 'compose', 'secrets'))).toBe(false);
     },
@@ -251,7 +344,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the
     const dir = seeded('nats-seed.txt', '');
     const r = runGenerator(dir);
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toMatch(/nats-seed\.txt is empty/);
+    expect(normalisePwshError(r.stderr)).toMatch(/nats-seed\.txt is empty/);
     expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
   }, 60_000);
   it.each([
@@ -263,7 +356,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the
       const dir = seeded('nats-sink.txt', text);
       const r = runGenerator(dir);
       expect(r.status).not.toBe(0);
-      expect(r.stderr).toMatch(/double quote or a line break/);
+      expect(normalisePwshError(r.stderr)).toMatch(/double quote or a line break/);
       expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
     },
     60_000,
@@ -303,17 +396,29 @@ describe.skipIf(!hasPwsh)(
         expect(e.pub, `${e.user} publish`).toEqual(EXPECTED[e.user]?.pub);
         expect(e.deny, `${e.user} deny`).toEqual(EXPECTED[e.user]?.deny);
         expect(e.sub, `${e.user} subscribe`).toEqual(EXPECTED[e.user]?.sub);
+        const subDeny = [
+          ...(
+            /subscribe: \{ allow: \[[^\]]*\], deny: \[([^\]]*)\]/.exec(e.raw)?.[1] ?? ''
+          ).matchAll(/"([^"]+)"/g),
+        ];
+        expect(
+          subDeny.map((m) => m[1]),
+          `${e.user} subscribe deny`,
+        ).toEqual(EXPECTED[e.user]?.subDeny ?? []);
       }
     });
 
-    it('scopes every subject to this shard, its two streams, its two buckets or the inbox', () => {
+    it('scopes every subject to this shard, its two streams, its two buckets or the inbox; only ranger and mcp carry the broad JetStream grants', () => {
       for (const e of parseEntries(conf())) {
-        for (const subject of [...e.pub, ...e.sub, ...e.deny]) {
-          expect(inScope(subject), `${e.user}: ${subject}`).toBe(true);
+        const wideOk = ['mcp', 'ranger'].includes(e.user);
+        for (const subject of [...e.pub, ...e.sub]) {
+          const ok = WIDE_JS.includes(subject) ? wideOk : inScope(subject);
+          expect(ok, `${e.user}: ${subject}`).toBe(true);
           expect(subject, e.user).not.toBe('>');
           expect(subject, e.user).not.toMatch(/^geldar\.(\*|>)/);
           expect(subject, e.user).not.toMatch(/colo|phase0/);
         }
+        for (const subject of e.deny) expect(subject, e.user).not.toMatch(/colo|phase0|^>$/);
       }
     });
 
@@ -349,10 +454,10 @@ describe.skipIf(!hasPwsh)(
 
     it('makes the generator output equal the secrets of nf-live.yml and the SECRET_FILES of nf-deploy.sh', () => {
       const generated = readdirSync(dirOf()).sort();
-      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts) and the human
-      // overlay's (nats-human.txt, which only the human lane mounts).
+      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts), the human
+      // overlay's (nats-human.txt, which only the human lane mounts) and the rangers overlay's (the four ranger files).
       const names = [
-        ...`${NF_LIVE}\n${NF_PROBE}\n${NF_HUMAN}`.matchAll(
+        ...`${NF_LIVE}\n${NF_PROBE}\n${NF_HUMAN}\n${NF_RANGERS}`.matchAll(
           /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g,
         ),
       ].map((m) => m[1] ?? '');
@@ -407,7 +512,7 @@ describe.skipIf(!hasPwsh)(
         const out = `${run.stdout}${run.stderr}`;
         for (const f of NF_FILES.filter((x) => x !== 'nats-auth.conf')) {
           const value = readFileSync(join(fresh.dir, 'compose', 'secrets-nf', f), 'utf8');
-          expect(value.length, f).toBe(32);
+          expect(value.length, f).toBe(f === 'mcp-token-pepper.txt' ? 64 : 32);
           expect(out, f).not.toContain(value);
         }
       } finally {
@@ -458,7 +563,7 @@ describe.skipIf(!hasPwsh)(
         writeFileSync(path, '');
         const again = runGenerator(r.dir);
         expect(again.status, f).not.toBe(0);
-        expect(again.stderr, f).toContain(`${f} is empty`);
+        expect(normalisePwshError(again.stderr), f).toContain(`${f} is empty`);
         writeFileSync(path, kept);
       }
     }, 60_000);
@@ -468,7 +573,7 @@ describe.skipIf(!hasPwsh)(
       rmSync(join(dirOf(), 'nats-seed.txt'));
       const again = runGenerator(r.dir);
       expect(again.status).not.toBe(0);
-      expect(again.stderr).toMatch(/nats-seed\.txt is missing/);
+      expect(normalisePwshError(again.stderr)).toMatch(/nats-seed\.txt is missing/);
       expect(existsSync(join(dirOf(), 'nats-seed.txt'))).toBe(false);
       expect(readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8')).toBe(before);
     }, 60_000);

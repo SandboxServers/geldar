@@ -63,6 +63,8 @@ TELEMETRY_OFF=0
 . "$(dirname "$0")/nf-human-lib.sh"
 # The optional extra mods (NF_EXTRA_MODS, deploy/nf-extra-mods-lib.sh): one overlay per enabled name, checked in gates().
 . "$(dirname "$0")/nf-extra-mods-lib.sh"
+# The rangers lane (geldar-mcp and the five players-host Bodies, NF_RANGERS=on only) lives in deploy/nf-rangers-lib.sh.
+. "$(dirname "$0")/nf-rangers-lib.sh"
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -91,6 +93,7 @@ dc() {
   elif [ "$TELEMETRY_OFF" = 1 ]; then
     set -- -f "$OFF_FILE" "$@"
   fi
+  if [ "$RANGERS" = 1 ]; then set -- -f "$RANGERS_FILE" "$@"; fi
   docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
@@ -131,6 +134,7 @@ case $verb in
   plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
   human-down) [ -z "$SERVICE" ] || die "human-down takes no service name" ;;
+  rangers-down) [ -z "$SERVICE" ] || die "rangers-down takes no service name" ;;
   refresh-secrets) [ -z "$SERVICE" ] || die "refresh-secrets takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
@@ -140,7 +144,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|rangers-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -194,11 +198,13 @@ check_no_colo_labels() {
 # stdout and returns 1. Called only once a listener is found.
 # Generalised for the human lane: $1 is the service (velocity, or velocity-human), $2 the bind address and $3 the host port; the
 # one published mapping must be exactly $2:$3->25565/tcp. Only rows of service $1 count; the other services' rows are ignored.
+# $4 is the container port (default 25565; the rangers' geldar-mcp publishes 8788).
 own_service_on_port() {
+  cport=${4:-25565}
   rows=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" \
     --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Ports}}') ||
     { echo "docker ps failed"; return 1; }
-  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->25565/tcp" '
+  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->$cport/tcp" '
     NF == 0 { next }
     NF != 3 { bad = 1; next }
     { all++ }
@@ -230,7 +236,7 @@ check_listener() {
   listeners=$(ss -Hltn "sport = :$1") || die "cannot read the listening sockets (ss)"
   [ -n "$listeners" ] || return 0
   if printf '%s\n' "$listeners" | awk -v want="$2:$1" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
-    reason=$(own_service_on_port "$3" "$2" "$1") && return 0
+    reason=$(own_service_on_port "$3" "$2" "$1" "${4:-25565}") && return 0
   else
     reason="ss socket not $2:$1"
   fi
@@ -238,9 +244,11 @@ check_listener() {
 }
 
 check_secrets() {
+  # Validated here, not in the substitution below: a die inside $(...) only exits the subshell.
+  check_rangers_switch
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   [ -d "$secdir" ] || die "secrets directory missing: $secdir (the per-shard NF secrets step writes it; see the runbook)"
-  for f in $SECRET_FILES; do
+  for f in $SECRET_FILES $(rangers_secret_files); do
     p=$secdir/$f
     [ -f "$p" ] || die "secret file missing: $f"
     [ -s "$p" ] || die "secret file empty: $f"
@@ -408,9 +416,11 @@ check_resources() {
     '' | *[!0-9]*) die "cannot read free RAM from free(1)" ;;
   esac
   mib=$((kb / 1024))
-  need_mib=$((MEM_CAPS_MIB + MEM_MARGIN_MIB))
+  caps=$MEM_CAPS_MIB
+  if [ "$RANGERS" = 1 ]; then caps=$((caps + RANGERS_MEM_CAPS_MIB)); fi
+  need_mib=$((caps + MEM_MARGIN_MIB))
   [ "$mib" -ge "$need_mib" ] ||
-    die "free RAM ${mib} MiB is below $need_mib MiB (the project's caps of $MEM_CAPS_MIB MiB plus a $MEM_MARGIN_MIB MiB margin)"
+    die "free RAM ${mib} MiB is below $need_mib MiB (the project's caps of $caps MiB plus a $MEM_MARGIN_MIB MiB margin)"
   disk=$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')
   case $disk in
     '' | *[!0-9]*) die "cannot read free disk space for $ROOT" ;;
@@ -427,6 +437,7 @@ gates() {
   check_telemetry
   check_extra_mods
   check_human_inputs
+  check_rangers_inputs
   check_operator
   check_telemetry_network
   check_service_uid
@@ -434,6 +445,8 @@ gates() {
   check_port
   check_human_port
   check_human_orphan
+  check_rangers_port
+  check_rangers_orphan
   check_inputs
   check_resources
   check_config
@@ -460,7 +473,10 @@ cmd_plan() {
     say "NF_HUMAN=on: the first on-run recreates nats, eventsink and neoforge (their network set changes). An off-run is refused while velocity-human exists (human-down first)."
   fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
-  say "golem-body and players-host are not in this project and are never started"
+  say "golem-body is not in this project and is never started"
+  if [ "$RANGERS" = 1 ]; then
+    say "rangers (NF_RANGERS=on, after the steps above): up -d --wait --no-deps geldar-mcp and the five ranger Bodies (ranger-yellow ranger-green ranger-blue ranger-red ranger-pink); geldar-mcp publishes 127.0.0.1:$RANGERS_PORT, the Bodies publish nothing"
+  fi
   say "all gates passed"
 }
 
@@ -472,6 +488,7 @@ cmd_up() {
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
   if [ "$HUMAN" = 1 ] && ! act dc up -d --wait velocity-human; then human_fail "velocity-human did not become healthy"; fi
+  if [ "$RANGERS" = 1 ]; then rangers_up; fi
   say "up: project $PROJECT started (no volume removed)"
 }
 
@@ -511,6 +528,8 @@ cmd_down() {
   check_operator
   check_human_switch
   check_no_colo_labels
+  check_rangers_switch
+  check_rangers_orphan
   if [ "$VOLUMES" = 1 ]; then
     printf 'Type the project name (%s) to remove its volumes too: ' "$PROJECT" >&2
     typed=
@@ -569,6 +588,7 @@ cmd_probe() {
   check_no_colo_labels
   check_human_switch
   check_human_orphan
+  check_rangers_orphan probe
   check_secrets
   check_probe_up
   check_extra_mods_drop
@@ -642,6 +662,7 @@ cmd_refresh_secrets() {
     die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
   act dc up -d --wait --force-recreate --no-deps neoforge ||
     die "neoforge did not recreate or become healthy"
+  if [ "$RANGERS" = 1 ]; then rangers_refresh; fi
   say "refresh-secrets: project $PROJECT refreshed (no volume removed, postgres not touched)"
 }
 
@@ -655,4 +676,5 @@ case $verb in
   probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
   human-down) cmd_human_down ;;
+  rangers-down) cmd_rangers_down ;;
 esac

@@ -27,6 +27,11 @@ const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const NF_OVERLAY_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live-telemetry.yml'), 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
+// The ranger files are required only with NF_RANGERS=on, so they live in deploy/nf-rangers-lib.sh, not in SECRET_FILES.
+const RANGER_SECRETS =
+  /^RANGER_SECRETS="([^"]+)"$/m
+    .exec(readFileSync(resolve(ROOT, 'deploy', 'nf-rangers-lib.sh'), 'utf8'))?.[1]
+    .split(' ') ?? [];
 const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const LIST_BYTES = 'bundle list fixture\n';
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -99,6 +104,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
+  copyFileSync(resolve(DEPLOY, 'nf-rangers-lib.sh'), join(repo, 'deploy', 'nf-rangers-lib.sh'));
   copyFileSync(
     resolve(DEPLOY, 'nf-extra-mods-lib.sh'),
     join(repo, 'deploy', 'nf-extra-mods-lib.sh'),
@@ -635,18 +641,23 @@ describe('nf-deploy.sh seed-bundle', () => {
 
 describe('nf-deploy.sh secret list', () => {
   it('keeps its secret file list in sync with the secrets block of compose/nf-live.yml', () => {
-    // The declared set is nf-live.yml's secrets block plus the probe overlay's (nats-body.txt, mounted only by the probe).
+    // The declared set is nf-live.yml's secrets block plus the probe overlay's (nats-body.txt, mounted only by the probe) plus
+    // the rangers overlay's (the four ranger files, mounted only with NF_RANGERS=on). SECRET_FILES lists the base set and
+    // RANGER_SECRETS the four ranger files (required only with NF_RANGERS=on); together they are the union.
     const probeText = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
+    const rangersText = readFileSync(join(ROOT, 'compose', 'nf-live-rangers.yml'), 'utf8');
     const declared = [
-      ...`${NF_COMPOSE_TEXT}\n${probeText}`.matchAll(
+      ...`${NF_COMPOSE_TEXT}\n${probeText}\n${rangersText}`.matchAll(
         /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/(\S+)$/gm,
       ),
     ].map((m) => m[1]);
     const declaredSet = new Set(declared);
-    const missing = [...declaredSet].filter((name) => !SECRET_FILES.includes(name)).sort();
-    const extra = SECRET_FILES.filter((name) => !declaredSet.has(name)).sort();
+    const listed = [...SECRET_FILES, ...RANGER_SECRETS];
+    const missing = [...declaredSet].filter((name) => !listed.includes(name)).sort();
+    const extra = listed.filter((name) => !declaredSet.has(name)).sort();
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
-    expect([...SECRET_FILES].sort()).toEqual([...declaredSet].sort());
-    expect(new Set(SECRET_FILES).size).toBe(SECRET_FILES.length);
+    expect([...listed].sort()).toEqual([...declaredSet].sort());
+    expect(new Set(listed).size).toBe(listed.length);
+    expect(RANGER_SECRETS.filter((name) => SECRET_FILES.includes(name))).toEqual([]);
   });
 });
