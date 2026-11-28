@@ -68,13 +68,16 @@ dc() {
   public_overlay
   # colo-up.sh sets HOLD_PUBLIC=1 until the stack is healthy: the port is published by the last `up` only.
   if [ "${HOLD_PUBLIC:-0}" = 1 ]; then PUBLIC_OVERLAY=; fi
-  compose_call -- "$@"
+  compose_call '' -- "$@"
 }
 
-# Runs docker compose for the project with, in order: the three base files, PUBLIC_OVERLAY when set, then one -f for
-# each EXTRA_OVERLAY entry (entries are colon-separated, `a.yml:b.yml`; blank adds none). Arguments before -- are
-# global options (for example --profile admin) and go after the files; the arguments after -- are the subcommand.
+# Runs docker compose for the project with, in order: the three base files, PUBLIC_OVERLAY when set, the file named by
+# the first argument (empty adds none), then one -f for each EXTRA_OVERLAY entry (entries are colon-separated,
+# `a.yml:b.yml`; blank adds none). Then the global options between that file and -- (for example --profile admin), then
+# the subcommand after --. The first argument goes before EXTRA_OVERLAY so the token overlay keeps its order.
 compose_call() {
+  _pre=$1
+  shift
   _opts=0
   while [ "$1" != -- ]; do
     set -- "$@" "$1"
@@ -82,9 +85,17 @@ compose_call() {
     _opts=$((_opts + 1))
   done
   shift
-  _args=$(($# - _opts))
+  _subs=$(($# - _opts))
+  # Rotate the subcommand to the back: the list is now options, then subcommand.
+  _i=0
+  while [ "$_i" -lt "$_subs" ]; do
+    set -- "$@" "$1"
+    shift
+    _i=$((_i + 1))
+  done
   set -- "$@" -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY"
   if [ -n "${PUBLIC_OVERLAY:-}" ]; then set -- "$@" -f "$PUBLIC_OVERLAY"; fi
+  if [ -n "$_pre" ]; then set -- "$@" -f "$_pre"; fi
   if [ -n "${EXTRA_OVERLAY:-}" ]; then
     _ifs=$IFS
     IFS=:
@@ -95,12 +106,17 @@ compose_call() {
     set +f
     IFS=$_ifs
   fi
-  # Move the subcommand arguments to the end, behind the files and options.
+  # Rotate the options, then the subcommand, to the back: files, options, subcommand.
   _i=0
-  while [ "$_i" -lt "$_args" ]; do
-    _first=$1
+  while [ "$_i" -lt "$_opts" ]; do
+    set -- "$@" "$1"
     shift
-    set -- "$@" "$_first"
+    _i=$((_i + 1))
+  done
+  _i=0
+  while [ "$_i" -lt "$_subs" ]; do
+    set -- "$@" "$1"
+    shift
     _i=$((_i + 1))
   done
   docker compose "$@"

@@ -71,6 +71,24 @@ describe.skipIf(!shOk)(
       expect(sov[sov.indexOf('--profile') + 1]).toBe('sovereign');
     });
 
+    it('the token overlay comes after the base files and before --profile admin, and the subcommand is last', () => {
+      const [adm, sov] = callsOf(`${KINO}:${AGENTS}`, TOKEN);
+      expect(adm.slice(adm.indexOf(TOKEN) - 1)).toEqual([
+        '-f',
+        TOKEN,
+        '-f',
+        KINO,
+        '-f',
+        AGENTS,
+        '--profile',
+        'admin',
+        'config',
+      ]);
+      expect(sov.slice(-3)).toEqual(['--profile', 'sovereign', 'config']);
+      const [blankAdm] = callsOf('', TOKEN);
+      expect(blankAdm.slice(-5)).toEqual(['-f', TOKEN, '--profile', 'admin', 'config']);
+    });
+
     it('a single selected file adds one -f to each call, in last place', () => {
       const [adm, sov] = callsOf(AGENTS, TOKEN);
       expect(filesOf(adm)).toHaveLength(5);
