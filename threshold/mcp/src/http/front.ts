@@ -89,6 +89,19 @@ const MOCK_REFUSAL_EVENTS: readonly string[] = [
   'parse_error',
 ];
 
+/**
+ * The refusal a mock log line stands for: a MOCK_REFUSAL_EVENTS event with a 4xx status. Any other
+ * line, a 5xx one included, is not a refusal and is not reported.
+ */
+export function mockRefusalFor(
+  line: Record<string, unknown>,
+): { reason: string; status: number } | undefined {
+  const { event, status } = line;
+  if (typeof event !== 'string' || !MOCK_REFUSAL_EVENTS.includes(event)) return undefined;
+  if (typeof status !== 'number' || status < 400 || status >= 500) return undefined;
+  return { reason: event, status };
+}
+
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
 }
@@ -238,16 +251,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const frontSink = frontLog(options.log ?? stderrSink);
   // The mock's log: a refusal it made itself is reported once, then the line goes on as before.
   const mockLog = (line: Record<string, unknown>): void => {
-    const { event, status } = line;
-    if (
-      typeof event === 'string' &&
-      MOCK_REFUSAL_EVENTS.includes(event) &&
-      typeof status === 'number' &&
-      status >= 400 &&
-      status < 500
-    ) {
-      refused(event, status);
-    }
+    const refusal = mockRefusalFor(line);
+    if (refusal !== undefined) refused(refusal.reason, refusal.status);
     frontSink(line);
   };
 
@@ -277,9 +282,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         refused('kill_switch', 503);
         return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       }
-      // No client of this server sends Origin, so any Origin is refused, valid token or not.
-      // (The mock refuses an Origin before this hook runs; its `origin_rejected` line is reported below.)
-      if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
+      // No client of this server sends Origin, so any Origin is refused, valid token or not. The mock
+      // refuses a non-local Origin before this hook runs (mockLog reports that one); a local one lands here.
+      if (req.headers.origin !== undefined) {
+        refused('origin_rejected', 403);
+        return { outcome: 'forbidden' };
+      }
       const client = clientAddress(req, trusted, clientIpHeader);
       // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
       // At most one line a minute for each kind: a proxy that lost the header would log on every request.
@@ -396,8 +404,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         return { status: 400, message: 'batch_not_allowed' };
       }
       const player = players.get(res.req);
+      // Unreachable in practice: authenticate sets the player for every request it passes, and the mock
+      // reaches onToolCall only after it. Kept as the defensive answer, and not reported (T-06d2 scope).
       if (player === undefined) {
-        refused('unauthorized', 401);
         return { status: 401, message: 'unauthorized' };
       }
       // Every other method (initialize, resources/read, ...) takes only from the handshake bucket:

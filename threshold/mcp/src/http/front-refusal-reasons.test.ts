@@ -5,7 +5,10 @@ import { PUBLIC_DEFAULTS } from '../config-public.ts';
 import { FakeTokenStore } from '../fakes/stores.fakes.ts';
 import { tokenDigest } from './auth.ts';
 import {
+  CALLS_PER_MINUTE,
+  CapLimiter,
   CONFIG,
+  call,
   FAILED_AUTH_PER_MINUTE,
   type FrontRig,
   MAX_OPEN_PER_PLAYER,
@@ -15,6 +18,7 @@ import {
   TOKEN_A,
   TOKEN_B,
 } from './front.fixture.ts';
+import { mockRefusalFor } from './front.ts';
 import { MAX_LOOKUPS_IN_FLIGHT } from './limits.ts';
 
 type Refusal = { reason: string; status: number };
@@ -273,5 +277,111 @@ describe('the remaining refusal reasons call onRefusal once', () => {
     const reply = await rig.send('/p/aa', { body: BODY, headers: { 'mcp-session-id': old } });
     expect(reply.status).toBe(404);
     expect(seen).toEqual([{ reason: 'session_superseded', status: 404 }]);
+  });
+});
+
+// The origin gate and the 429 gates each report their own refusal once (Packet A, group 1).
+describe('the origin gate and the 429 gates call onRefusal once', () => {
+  it('origin_rejected for a local Origin with a valid token, once, with 403', async () => {
+    const seen: Refusal[] = [];
+    await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
+    const reply = await rig.send('/p/aa', { body: BODY, headers: { Origin: 'http://localhost' } });
+    expect(reply.status).toBe(403);
+    expect(seen).toEqual([{ reason: 'origin_rejected', status: 403 }]);
+  });
+
+  it('origin_rejected for a local Origin with no token, once, with 403', async () => {
+    const seen: Refusal[] = [];
+    await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
+    const reply = await rig.send('/p/aa', {
+      body: BODY,
+      headers: { Origin: 'http://localhost', Authorization: undefined },
+    });
+    expect(reply.status).toBe(403);
+    expect(seen).toEqual([{ reason: 'origin_rejected', status: 403 }]);
+  });
+
+  it('rate_limited for the public per-client bucket, once, with 429', async () => {
+    const seen: Refusal[] = [];
+    await rig.restart({
+      onRefusal: (refusal) => seen.push(refusal),
+      public: { ...PUBLIC_DEFAULTS, rateLimit: { perMinute: 1, burst: 1 } },
+    });
+    await rig.send('/p/aa', { body: BODY });
+    seen.splice(0);
+    const reply = await rig.send('/p/aa', { body: BODY });
+    expect(reply.status).toBe(429);
+    expect(seen).toEqual([{ reason: 'rate_limited', status: 429 }]);
+  });
+
+  it('rate_limited for a tools/call the call budget refuses, once, with 429', async () => {
+    const seen: Refusal[] = [];
+    let deny = false;
+    rig.limiter = new CapLimiter((bucket) =>
+      deny && !bucket.startsWith('auth-failed') ? 0 : 1000,
+    );
+    await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
+    const sessionId = await rig.openSession();
+    deny = true;
+    seen.splice(0);
+    const reply = await rig.send('/p/aa', {
+      body: call('ping'),
+      headers: { 'mcp-session-id': sessionId },
+    });
+    expect(reply.status).toBe(429);
+    expect(seen).toEqual([{ reason: 'rate_limited', status: 429 }]);
+  });
+
+  it('rate_limited for a handshake request the budget refuses, once, with 429', async () => {
+    const seen: Refusal[] = [];
+    let deny = false;
+    rig.limiter = new CapLimiter((bucket) =>
+      deny && !bucket.startsWith('auth-failed') ? 0 : 1000,
+    );
+    await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
+    const sessionId = await rig.openSession();
+    deny = true;
+    seen.splice(0);
+    const reply = await rig.send('/p/aa', {
+      body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }),
+      headers: { 'mcp-session-id': sessionId },
+    });
+    expect(reply.status).toBe(429);
+    expect(seen).toEqual([{ reason: 'rate_limited', status: 429 }]);
+  });
+
+  it('rate_limited on the call past the per-agent call budget, once, with 429', async () => {
+    const seen: Refusal[] = [];
+    await rig.restart({ onRefusal: (refusal) => seen.push(refusal) });
+    const sessionId = await rig.openSession();
+    const statuses: number[] = [];
+    for (let i = 0; i < CALLS_PER_MINUTE + 1; i += 1) {
+      const reply = await rig.send('/p/aa', {
+        body: call('ping', i + 10),
+        headers: { 'mcp-session-id': sessionId },
+      });
+      statuses.push(reply.status);
+    }
+    expect(statuses.at(-1)).toBe(429);
+    expect(statuses.slice(0, -1).every((status) => status === 200)).toBe(true);
+    expect(seen).toEqual([{ reason: 'rate_limited', status: 429 }]);
+  });
+});
+
+// The status bound of the mock refusal map: only a 4xx line of a refusal event is reported.
+describe('mockRefusalFor', () => {
+  it('maps a 4xx refusal event to its reason and status', () => {
+    expect(mockRefusalFor({ event: 'missing_session', status: 400 })).toEqual({
+      reason: 'missing_session',
+      status: 400,
+    });
+  });
+
+  it('does not map a 5xx line of a refusal event', () => {
+    expect(mockRefusalFor({ event: 'missing_session', status: 500 })).toBeUndefined();
+  });
+
+  it('does not map an event that is not a refusal', () => {
+    expect(mockRefusalFor({ event: 'session_request', status: 400 })).toBeUndefined();
   });
 });
