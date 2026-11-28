@@ -53,6 +53,8 @@ describe('GELDAR_OBSERVATIONS is forwarded by the entry points and compose (AN-5
     expect(adam).toContain('...observationsOption(process.env.GELDAR_OBSERVATIONS)');
     const player = readFileSync(join(repoRoot(), 'golem/src/players/main.ts'), 'utf8');
     expect(player).toContain('observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)');
+    const managed = readFileSync(join(repoRoot(), 'golem/src/players/managed-main.ts'), 'utf8');
+    expect(managed).toContain('observations: observationsFromEnv(env.GELDAR_OBSERVATIONS)');
   });
 
   it('colo.yml passes the variable through empty to golem-body and players-host, and sets no value', () => {

@@ -43,6 +43,18 @@ describe('helper config', () => {
     expect(config.natsPassword).toBe(SECRET_TEXT);
   });
 
+  it('forwards GELDAR_OBSERVATIONS to the managed settings only for 1 or on (AN-50d)', () => {
+    const observations = (value: string | undefined) =>
+      loadHelperConfig(value === undefined ? env : { ...env, GELDAR_OBSERVATIONS: value }, fakeFs())
+        .managed.observations;
+    expect(observations(undefined)).toBeUndefined();
+    expect(observations('1')).toBe('1');
+    expect(observations('on')).toBe('on');
+    for (const value of ['', '0', 'off', 'true', '1 ']) {
+      expect(observations(value), `value ${JSON.stringify(value)}`).toBeUndefined();
+    }
+  });
+
   it('reads the request deadline from its env name and refuses a zero one', () => {
     const set = loadHelperConfig({ ...env, GELDAR_BODY_HELPER_DEADLINE_MS: '5000' }, fakeFs());
     expect(set.requestDeadlineMs).toBe(5000);

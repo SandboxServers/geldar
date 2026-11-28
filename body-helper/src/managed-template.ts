@@ -52,6 +52,8 @@ export interface ManagedBodyInput extends BodyTemplateInput {
   /** The managed life id, validated again here before it reaches the container. */
   lifeId: string;
   db: ManagedDbWiring;
+  /** AN-50d: the GELDAR_OBSERVATIONS value to forward ('1' or 'on'). Absent or undefined adds no Env key at all. */
+  observations?: string | undefined;
 }
 
 export interface AdmitInput {
@@ -89,9 +91,17 @@ export function admitName(lifeId: string, mode: AdmitMode = 'add'): string {
   return `${prefix}${lifeId}`;
 }
 
+/** GELDAR_OBSERVATIONS is forwarded only as '1' or 'on', the two values the golem parse turns on (AN-50d). */
+function observationsEnv(value: string | undefined): string[] {
+  if (value === undefined) return [];
+  if (value !== '1' && value !== 'on') throw new Error('observations is 1 or on');
+  return [`GELDAR_OBSERVATIONS=${value}`];
+}
+
 export function managedBodyConfig(input: ManagedBodyInput): Record<string, unknown> {
   const { wiring, limits, db } = input;
   checkLifeId(input.lifeId);
+  const observations = observationsEnv(input.observations);
   return {
     Image: input.image,
     User: `${wiring.uid}:${wiring.uid}`,
@@ -110,6 +120,7 @@ export function managedBodyConfig(input: ManagedBodyInput): Record<string, unkno
       `GELDAR_PG_PORT=${db.port}`,
       `GELDAR_PG_USER=${db.role}`,
       `GELDAR_PG_PASSWORD_FILE=${MANAGED_DB_PASSWORD_FILE}`,
+      ...observations,
     ],
     Labels: {
       'com.centurylinklabs.watchtower.enable': 'false',

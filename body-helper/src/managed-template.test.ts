@@ -90,6 +90,28 @@ describe('managed Body template', () => {
     expect(env).toContain('GELDAR_IN_NETWORK_HOSTS=1');
   });
 
+  it('adds no GELDAR_OBSERVATIONS key when the observations input is unset', () => {
+    const config = managedBodyConfig(managedInput);
+    expect(JSON.stringify(config)).not.toContain('GELDAR_OBSERVATIONS');
+    const env = config.Env as string[];
+    expect(env).toHaveLength(13);
+    expect(managedBodyConfig({ ...managedInput, observations: undefined }).Env).toEqual(env);
+  });
+
+  it('forwards observations 1 and on as GELDAR_OBSERVATIONS with that value, and refuses any other', () => {
+    expect((managedBodyConfig({ ...managedInput, observations: '1' }).Env as string[]).at(-1)).toBe(
+      'GELDAR_OBSERVATIONS=1',
+    );
+    expect(
+      (managedBodyConfig({ ...managedInput, observations: 'on' }).Env as string[]).at(-1),
+    ).toBe('GELDAR_OBSERVATIONS=on');
+    for (const value of ['0', '', 'true', '1 ', 'ON']) {
+      expect(() => managedBodyConfig({ ...managedInput, observations: value })).toThrow(
+        'observations is 1 or on',
+      );
+    }
+  });
+
   it('keeps the Body label so the cap counts it, and binds exactly the NATS, shard and database files', () => {
     const config = managedBodyConfig(managedInput);
     expect((config.Labels as Record<string, string>)[BODY_LABEL]).toBe('ranger');
