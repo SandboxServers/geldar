@@ -37,11 +37,28 @@ check_rangers_conf() {
   done
 }
 
+# On, when NF_MCP_TRUSTED_PROXIES is set: the comma-separated IPv4 literals the MCP trusts for x-geldar-client-ip (the geldar-nf
+# gateway, where the host Caddy reaches the loopback port). Strict: no hostname, IPv6, blank or empty entry and no 0.0.0.0.
+# Exported, as NF_SERVICE_UID is, so the overlay's ${NF_MCP_TRUSTED_PROXIES:-127.0.0.1} reads it. Unset keeps 127.0.0.1.
+check_rangers_proxies() {
+  [ -n "${NF_MCP_TRUSTED_PROXIES+set}" ] || return 0
+  oct='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+  ip="$oct\\.$oct\\.$oct\\.$oct"
+  lines=$(printf '%s' "$NF_MCP_TRUSTED_PROXIES" | wc -l)
+  printf '%s' "$NF_MCP_TRUSTED_PROXIES" | grep -qxE "$ip(,$ip)*" && [ "$lines" -eq 0 ] ||
+    die "NF_MCP_TRUSTED_PROXIES must be a comma-separated list of IPv4 addresses (the geldar-nf gateway), with no blanks and no hostname; refusing"
+  case ",$NF_MCP_TRUSTED_PROXIES," in
+    *,0.0.0.0,*) die "NF_MCP_TRUSTED_PROXIES must not contain 0.0.0.0 (name the gateway address); refusing" ;;
+  esac
+  export NF_MCP_TRUSTED_PROXIES
+}
+
 # On: the overlay and the rangers' shard file exist; the four ranger secret files exist, are non-empty and are mode 0600 (the
 # account's files). Runs before any docker call. Off returns at once.
 check_rangers_inputs() {
   check_rangers_switch
   [ "$RANGERS" = 1 ] || return 0
+  check_rangers_proxies
   [ -f "$RANGERS_FILE" ] || die "overlay $RANGERS_FILE is missing; refusing"
   [ -f "$RANGERS_SHARD" ] || die "shards/nf-mind.yaml is missing (the rangers' shard file); refusing"
   # P1 prerequisite: the Bodies read the NeoForge config from golem/src/config.ts. Without it they crash-loop under restart: unless-stopped.

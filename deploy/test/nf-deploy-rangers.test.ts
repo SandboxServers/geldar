@@ -277,6 +277,42 @@ describe('nf-deploy.sh rangers lane (NF_RANGERS)', () => {
     expect(res.stderr).not.toMatch(/does not contain 'neoforge'/);
   });
 
+  it('NF_MCP_TRUSTED_PROXIES: a valid IPv4 literal or list passes', () => {
+    for (const value of ['192.0.2.1', '192.0.2.1,198.51.100.3']) {
+      const repo = makeRepo();
+      const res = run(repo, { env: { NF_MCP_TRUSTED_PROXIES: value } });
+      expect(res.status, value).toBe(0);
+      expect(res.stderr).not.toMatch(/NF_MCP_TRUSTED_PROXIES/);
+    }
+  });
+
+  it('NF_MCP_TRUSTED_PROXIES: a wildcard, a hostname, IPv6, a blank or an empty value is refused', () => {
+    for (const value of [
+      '0.0.0.0',
+      '198.51.100.1,0.0.0.0',
+      'caddy',
+      '::1',
+      '192.0.2.1, 198.51.100.1',
+      '192.0.2.1,',
+      '',
+      '256.1.1.1',
+    ]) {
+      const repo = makeRepo();
+      const res = run(repo, { env: { NF_MCP_TRUSTED_PROXIES: value } });
+      expect(res.status, JSON.stringify(value)).not.toBe(0);
+      expect(res.stderr, JSON.stringify(value)).toMatch(/NF_MCP_TRUSTED_PROXIES must /);
+      expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
+    }
+  });
+
+  it('NF_MCP_TRUSTED_PROXIES unset passes (the overlay renders 127.0.0.1), and is not checked with NF_RANGERS off', () => {
+    const repo = makeRepo();
+    const unset = run(repo, { env: { NF_MCP_TRUSTED_PROXIES: undefined } });
+    expect(unset.status).toBe(0);
+    const off = run(repo, { env: { NF_RANGERS: undefined, NF_MCP_TRUSTED_PROXIES: 'caddy' } });
+    expect(off.status).toBe(0);
+  });
+
   it('probe refuses while a ranger exists, says rangers-down comes first, and runs no compose call', () => {
     const repo = makeRepo();
     const res = run(repo, { rows: `${LIVE_ROW}\nranger-red`, args: ['probe', '--local'] });
