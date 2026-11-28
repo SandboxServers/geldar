@@ -116,7 +116,9 @@ function selectedOverlay(value: string | undefined): string {
 function composeArgv(value: string | undefined): string[] {
   const bin = mkdtempSync(join(tmpdir(), 'fake-docker-'));
   try {
-    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', {
+      mode: 0o755,
+    });
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const name of CLEARED_VARS) delete env[name];
     delete env.GELDAR_MC_BIND;
@@ -187,38 +189,41 @@ describe.skipIf(!shOk)('colo overlay selection (deploy/common.sh)', () => {
   });
 });
 
-describe.skipIf(!shOk)('colo overlay files passed to docker compose (dc in deploy/common.sh)', () => {
-  it('one selected file adds one -f before the subcommand', () => {
-    const argv = composeArgv(AGENTS);
-    expect(filesOf(argv)).toHaveLength(4);
-    expect(filesOf(argv).slice(-1)).toEqual([AGENTS]);
-    expect(argv[argv.length - 1]).toBe('config');
-  });
+describe.skipIf(!shOk)(
+  'colo overlay files passed to docker compose (dc in deploy/common.sh)',
+  () => {
+    it('one selected file adds one -f before the subcommand', () => {
+      const argv = composeArgv(AGENTS);
+      expect(filesOf(argv)).toHaveLength(4);
+      expect(filesOf(argv).slice(-1)).toEqual([AGENTS]);
+      expect(argv[argv.length - 1]).toBe('config');
+    });
 
-  it('colo-kino.yml and the paper agents overlay each get one -f, in the order given', () => {
-    const argv = composeArgv(`${KINO}:${AGENTS}`);
-    expect(filesOf(argv)).toHaveLength(5);
-    expect(filesOf(argv).slice(-2)).toEqual([KINO, AGENTS]);
-    expect(argv[argv.length - 1]).toBe('config');
-  });
+    it('colo-kino.yml and the paper agents overlay each get one -f, in the order given', () => {
+      const argv = composeArgv(`${KINO}:${AGENTS}`);
+      expect(filesOf(argv)).toHaveLength(5);
+      expect(filesOf(argv).slice(-2)).toEqual([KINO, AGENTS]);
+      expect(argv[argv.length - 1]).toBe('config');
+    });
 
-  it('a blank selection adds no overlay, as unset does', () => {
-    for (const value of ['', undefined]) {
-      const files = filesOf(composeArgv(value));
-      expect(files).toHaveLength(3);
-      expect(files[files.length - 1]).toMatch(/compose\.secrets\.yml$/);
-    }
-  });
+    it('a blank selection adds no overlay, as unset does', () => {
+      for (const value of ['', undefined]) {
+        const files = filesOf(composeArgv(value));
+        expect(files).toHaveLength(3);
+        expect(files[files.length - 1]).toMatch(/compose\.secrets\.yml$/);
+      }
+    });
 
-  it('empty entries between colons add no -f', () => {
-    expect(filesOf(composeArgv(`:${AGENTS}:`))).toEqual([
-      expect.stringMatching(/\bcolo\.yml$/),
-      expect.stringMatching(/nats-auth\.yml$/),
-      expect.stringMatching(/compose\.secrets\.yml$/),
-      AGENTS,
-    ]);
-  });
-});
+    it('empty entries between colons add no -f', () => {
+      expect(filesOf(composeArgv(`:${AGENTS}:`))).toEqual([
+        expect.stringMatching(/\bcolo\.yml$/),
+        expect.stringMatching(/nats-auth\.yml$/),
+        expect.stringMatching(/compose\.secrets\.yml$/),
+        AGENTS,
+      ]);
+    });
+  },
+);
 
 describe('the live settings in compose/colo.yml', () => {
   const source = parse(readFileSync(resolve(ROOT, COLO), 'utf8')) as Source;
