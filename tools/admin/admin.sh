@@ -15,6 +15,7 @@ usage() {
   echo "  player-set-owner <player-id> <owner-id> (moves the player, its roster name and its life in one transaction; refuses a retired player or a full owner)" >&2
   echo "  notice <payload-json> (CD-1d: publishes one maintenance notice as the deploy NATS user; see deploy/colo-notice.sh)" >&2
   echo "  roster add <name> --owner <o> | roster list [--owner <o>] (decision 0108: the roster of Minecraft names)" >&2
+  echo "  adopt-sheets plan --lives <list> | adopt-sheets apply --operator-confirm --plan <12 hex> --lives <list> (S12-04b: the sheet adoption plan and its apply; <list> is a comma list of life ids)" >&2
   exit 2
 }
 
@@ -28,9 +29,46 @@ if [ "$cmd" = notice ]; then
 fi
 
 case $cmd in
-  migrate | owner-add | owner-set-cap | owner-admin | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-flags | player-set-owner | roster) ;;
+  migrate | owner-add | owner-set-cap | owner-admin | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-flags | player-set-owner | roster | adopt-sheets) ;;
   *) usage ;;
 esac
+
+# Checks the --lives value (the same rules as adopt_lives_check in deploy/colo-admin.sh): a comma list of 1 to 120 unique
+# life ids, each matching ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$. Names only the offending id.
+adopt_lives_check() {
+  rest=$1
+  seen=
+  n=0
+  [ -n "$rest" ] || { echo "admin: --lives takes a comma list of life ids" >&2; exit 2; }
+  while :; do
+    id=${rest%%,*}
+    n=$((n + 1))
+    [ "$n" -le 120 ] || { echo "admin: --lives takes at most 120 life ids" >&2; exit 2; }
+    case $id in '' | *[!a-z0-9_]*) echo "admin: life id must match ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}\$: $id" >&2; exit 2 ;; esac
+    printf '%s' "$id" | grep -Eq '^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$' ||
+      { echo "admin: life id must match ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}\$: $id" >&2; exit 2; }
+    case ",$seen," in *",$id,"*) echo "admin: duplicate life id: $id" >&2; exit 2 ;; esac
+    seen=${seen:+$seen,}$id
+    case $rest in *,*) rest=${rest#*,} ;; *) break ;; esac
+  done
+}
+
+# adopt-sheets takes plan --lives <list>, or apply --operator-confirm --plan <12 hex> --lives <list>, in that order. Checked
+# before the password file is read; the shard check (each id in the shard file) runs in the map step below.
+if [ "$cmd" = adopt-sheets ]; then
+  case ${1:-}:$# in
+    plan:3)
+      [ "$2" = --lives ] || { echo "admin: adopt-sheets plan takes --lives <list>" >&2; exit 2; }
+      adopt_lives_check "$3"
+      ;;
+    apply:6)
+      { [ "$2" = --operator-confirm ] && [ "$3" = --plan ] && printf '%s' "$4" | grep -Eq '^[0-9a-f]{12}$' && [ "$5" = --lives ]; } ||
+        { echo "admin: adopt-sheets apply takes --operator-confirm --plan <12 lower-case hex> --lives <list>" >&2; exit 2; }
+      adopt_lives_check "$6"
+      ;;
+    *) echo "admin: adopt-sheets takes plan --lives <list>, or apply --operator-confirm --plan <12 hex> --lives <list>" >&2; exit 2 ;;
+  esac
+fi
 
 # roster takes add or list (decision 0108). Checked before the password file is read; the CLI checks the other arguments.
 if [ "$cmd" = roster ]; then
@@ -57,6 +95,56 @@ PGHOST=${PGHOST:-postgres}
 PGUSER=${PGUSER:-geldar}
 PGDATABASE=${PGDATABASE:-geldar}
 export PGPASSWORD PGHOST PGUSER PGDATABASE
+
+# adopt-sheets (S12-04b). The sheets map is built here from the shard file, with the CLI's readShardLives, and holds only the
+# listed lives (--lives), each "standard". An id the shard file does not list stops the map step before the CLI runs. The
+# CLI prints one `life: verdict` line per life and nothing else. The plan hash is the first 12 hex of sha256 over those
+# lines, sorted (LC_ALL=C), each with its newline. Apply runs the plan again and refuses when the hash differs from the one
+# the operator read. No sheet value is printed; the sheets file sits in a private work directory that the EXIT trap removes.
+ADOPT_MAP_JS='import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const [root, shard, listArg] = process.argv.slice(1);
+const { readShardLives } = await import(pathToFileURL(`${root}/tools/mcp-tokens/src/convert-sheets.ts`).href);
+const lives = readShardLives(readFileSync(shard, "utf8"));
+const wanted = listArg.split(",");
+const missing = wanted.find((life) => !lives.includes(life));
+if (missing !== undefined) {
+  process.stderr.write(`admin: life not in the shard file: ${missing}\n`);
+  process.exit(2);
+}
+process.stdout.write(JSON.stringify(Object.fromEntries(wanted.map((life) => [life, "standard"]))));'
+
+adopt_sheets() {
+  mode=$1
+  if [ "$mode" = plan ]; then lives=${3:-}; want=; else lives=${6:-}; want=${4:-}; fi
+  work=$(mktemp -d) || { echo "admin: cannot make a work directory" >&2; exit 1; }
+  trap 'rm -rf "$work"' EXIT
+  sheets=$work/sheets.json
+  plan=$work/plan.txt
+  umask 077
+  node --input-type=module -e "$ADOPT_MAP_JS" "$ROOT" "$GELDAR_SHARD_FILE" "$lives" >"$sheets" ||
+    { echo "admin: cannot build the sheets map from the shard file" >&2; exit 1; }
+  node "$ROOT/tools/mcp-tokens/src/cli.ts" player adopt-sheets --shard "$GELDAR_SHARD_FILE" --sheets "$sheets" >"$plan" ||
+    { echo "admin: adopt-sheets plan failed" >&2; exit 1; }
+  hash=$(LC_ALL=C sort "$plan" | sha256sum | cut -c1-12)
+  if [ "$mode" = plan ]; then
+    cat "$plan"
+    echo "plan: $hash"
+    exit 0
+  fi
+  if [ "$hash" != "$want" ]; then
+    echo "adopt-sheets-apply: plan changed (expected $want, now $hash)" >&2
+    exit 1
+  fi
+  cat "$plan"
+  echo "plan: $hash"
+  node "$ROOT/tools/mcp-tokens/src/cli.ts" player adopt-sheets --shard "$GELDAR_SHARD_FILE" --sheets "$sheets" --apply --operator-confirm
+  exit $?
+}
+
+if [ "$cmd" = adopt-sheets ]; then
+  adopt_sheets "$@"
+fi
 
 case $cmd in
   migrate) exec node "$ROOT/tools/migrate/src/cli.ts" "$@" ;;

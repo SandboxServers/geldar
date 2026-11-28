@@ -16,7 +16,10 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-telemetry.yml`, 'utf8');
 const SCRATCH_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch.yml`, 'utf8');
 const VERIFY = `${ROOT}deploy/scratch/telemetry-verify.sh`;
-const LIVE_FILES = ['phase0.yml', 'colo.yml', 'nats-auth.yml'].map((f) => `${ROOT}compose/${f}`);
+// colo.yml sets its own Paper limit (15360m, COLO-COMPOSE-RECONCILE), so it is not checked for that value; it must only
+// never name the scratch overlay.
+const LIVE_FILES = ['phase0.yml', 'nats-auth.yml'].map((f) => `${ROOT}compose/${f}`);
+const COLO_TEXT = readFileSync(`${ROOT}compose/colo.yml`, 'utf8');
 
 const OVERRIDE: CollectionTag = {
   tag: '!override',
@@ -50,6 +53,7 @@ describe('scratch-telemetry overlay', () => {
     expect(SCRATCH.services.paper?.deploy?.resources.limits.memory).toBe('3072m');
     expect(SCRATCH.services.paper?.memswap_limit).toBe('3072m');
     for (const file of LIVE_FILES) expect(readFileSync(file, 'utf8')).not.toContain('15360m');
+    expect(COLO_TEXT).not.toContain('scratch');
     const others = Object.entries(OVERLAY.services).filter(([name]) => name !== 'paper');
     for (const [, s] of others) expect(s.deploy?.resources.limits.memory).not.toBe('15360m');
   });

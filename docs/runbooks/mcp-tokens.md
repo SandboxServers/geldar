@@ -80,3 +80,43 @@ Node, through the admin container:
 The thoughts flag has a 10-second window: a second thoughts change within 10 seconds of the last one is refused
 (exit 3, nothing changed, so wait 10 seconds and run it again). The camera flag has no window. An unknown player
 exits 4, a retired player exits 4, and every call writes one `register_audit` row (actor `operator`, action `player.flags`).
+
+## Sheet adoption: plan, then apply (S12-04b)
+
+The plan shows, for each life you list, whether its character sheet would be adopted. It changes nothing. Both verbs take
+an explicit list of lives, and `--lives` is required on both. There is no form that reaches every life.
+
+    deploy/colo-admin.sh adopt-sheets-plan --lives <list>
+
+The list is a comma list of life ids with no spaces. Rules:
+
+- 1 to 120 ids.
+- Each id matches `^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$`.
+- No id appears twice.
+- Every id must be in the shard file (`GELDAR_SHARD_FILE`): a life in the `mind.lives` tier table, or a ranger in
+  `sovereign.players`.
+
+Any bad id, a duplicate, or a count outside 1 to 120 refuses the whole run before docker or the CLI runs. The message
+names only the offending id, or the count or duplicate problem.
+
+The plan prints one line per listed life, `<life-id>: <verdict>`, then one line `plan: <12 hex>`. The 12 hex digits are
+the plan hash. The hash covers exactly the listed lives: it is over the verdict lines of those lives, so it changes when
+any verdict changes and when the list changes. No sheet value is printed.
+
+    deploy/colo-admin.sh adopt-sheets-apply --operator-confirm --plan <12 hex> --lives <list>
+
+Give the arguments in that order: the hash the plan printed, then the same list. The apply runs the plan again with that
+list inside the admin container. If the hash differs from the one you give, it prints
+`plan changed (expected <your hash>, now <new hash>)` and writes nothing: read the plan again and decide on the new one.
+A plan that fails, or a bad argument, also writes nothing. Run the plan first; do not give a hash you have not read.
+`DEPLOY_DRY_RUN=1` prints the command and starts no container.
+
+The first list for the adoption (23 lives) is:
+
+    deploy/colo-admin.sh adopt-sheets-plan --lives ag_jason_01,ag_kimberly_01,ag_tommy_01,ag_zack_01,ag_billy_01,ag_trini_01,ag_picard_01,ag_riker_01,ag_data_01,ag_troi_01,ag_laforge_01,ag_worf_01,ag_bcrusher_01,ag_wcrusher_01,ag_lewis_01,ag_clark_01,ag_chapman_01,ag_macdonald_01,ag_leonardo_01,ag_zeopink_01,ag_zeoyellow_01,ag_zeoblue_01,ag_zeogreen_01
+
+Every other life stays NULL. Lives outside a list are not adopted by any run. The owner widens the adoption only by a new
+list, planned and applied the same way.
+
+Until the apply is built into the CLI, the apply step ends with `adopt-sheets: --apply is S12-04b` and exit 2, and
+nothing is written. The plan works now.

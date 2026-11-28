@@ -68,15 +68,58 @@ dc() {
   public_overlay
   # colo-up.sh sets HOLD_PUBLIC=1 until the stack is healthy: the port is published by the last `up` only.
   if [ "${HOLD_PUBLIC:-0}" = 1 ]; then PUBLIC_OVERLAY=; fi
-  if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
-  elif [ -n "$PUBLIC_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
-  elif [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" "$@"
+  compose_call '' -- "$@"
+}
+
+# Runs docker compose for the project with, in order: the three base files, PUBLIC_OVERLAY when set, the file named by
+# the first argument (empty adds none), then one -f for each EXTRA_OVERLAY entry (entries are colon-separated,
+# `a.yml:b.yml`; blank adds none). Then the global options between that file and -- (for example --profile admin), then
+# the subcommand after --. The first argument goes before EXTRA_OVERLAY so the token overlay keeps its order.
+compose_call() {
+  _pre=$1
+  shift
+  _opts=0
+  while [ "$1" != -- ]; do
+    set -- "$@" "$1"
+    shift
+    _opts=$((_opts + 1))
+  done
+  shift
+  _subs=$(($# - _opts))
+  # Rotate the subcommand to the back: the list is now options, then subcommand.
+  _i=0
+  while [ "$_i" -lt "$_subs" ]; do
+    set -- "$@" "$1"
+    shift
+    _i=$((_i + 1))
+  done
+  set -- "$@" -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY"
+  if [ -n "${PUBLIC_OVERLAY:-}" ]; then set -- "$@" -f "$PUBLIC_OVERLAY"; fi
+  if [ -n "$_pre" ]; then set -- "$@" -f "$_pre"; fi
+  if [ -n "${EXTRA_OVERLAY:-}" ]; then
+    _ifs=$IFS
+    IFS=:
+    set -f
+    for _entry in $EXTRA_OVERLAY; do
+      if [ -n "$_entry" ]; then set -- "$@" -f "$_entry"; fi
+    done
+    set +f
+    IFS=$_ifs
   fi
+  # Rotate the options, then the subcommand, to the back: files, options, subcommand.
+  _i=0
+  while [ "$_i" -lt "$_opts" ]; do
+    set -- "$@" "$1"
+    shift
+    _i=$((_i + 1))
+  done
+  _i=0
+  while [ "$_i" -lt "$_subs" ]; do
+    set -- "$@" "$1"
+    shift
+    _i=$((_i + 1))
+  done
+  docker compose "$@"
 }
 
 # The public Minecraft port overlay (compose/colo-public.yml) is merged only when the node env sets both

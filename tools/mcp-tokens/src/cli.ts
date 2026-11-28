@@ -6,13 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { identityHash } from '../../../threshold/register/src/identity.ts';
-import {
-  formatPlanLine,
-  type PlanLine,
-  planAdoption,
-  readShardLives,
-  sheetsObject,
-} from './convert-sheets.ts';
+import { applyAdoption } from './adopt-apply.ts';
+import { formatPlanLine, planAdoption, readShardLives, sheetsObject } from './convert-sheets.ts';
 import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
 import { parseOwnerAdmin, runOwnerAdmin } from './owner-admin.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
@@ -116,6 +111,7 @@ const SWITCHES = new Set([
   '--allow-meta',
   '--dry-run',
   '--apply',
+  '--operator-confirm',
 ]);
 
 export interface Parsed {
@@ -413,21 +409,31 @@ async function runPlayerFlags(
   return result.exit;
 }
 
-/** `player adopt-sheets --shard <file> --sheets <json>`: prints the dry-run plan; `--apply` waits for S12-04b. */
+/** `player adopt-sheets --shard <file> --sheets <json>`: prints the dry-run plan; `--apply --operator-confirm` writes it. */
 async function runAdoptSheets(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<number> {
   if (args.length !== 0) throw new Error(USAGE);
-  if (parsed.flags.has('--apply')) {
-    io.err('adopt-sheets: --apply is S12-04b');
+  const apply = parsed.flags.has('--apply');
+  if (apply && parsed.flags.has('--dry-run')) {
+    io.err('adopt-sheets: --apply and --dry-run cannot be combined');
+    return 2;
+  }
+  if (apply && !parsed.flags.has('--operator-confirm')) {
+    io.err('adopt-sheets: --apply needs --operator-confirm');
     return 2;
   }
   const sheets = sheetsObject(await readSheetFile(resolve(requireFlag(parsed, '--sheets'))));
+  if (apply && Object.values(sheets).some((value) => value !== 'standard')) {
+    io.err('adopt-sheets: --apply writes the standard sheet only (0328)');
+    return 2;
+  }
   const lives = readShardLives(await readFile(resolve(requireFlag(parsed, '--shard')), 'utf8'));
-  let plan: PlanLine[] = [];
+  let lines: string[] = [];
   await withSql(env, async (sql) => {
-    plan = await planAdoption(sql, lives, sheets);
+    if (apply) lines = await applyAdoption(sql, lives, sheets);
+    else lines = (await planAdoption(sql, lives, sheets)).map(formatPlanLine);
   });
-  for (const line of plan) io.out(formatPlanLine(line));
-  return 0;
+  for (const line of lines) io.out(line);
+  return lines.some((line) => line.endsWith(': failed')) ? 1 : 0;
 }
 
 async function runRoster(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {

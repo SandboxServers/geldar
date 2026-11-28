@@ -237,6 +237,7 @@ describe.skipIf(skipWithoutSh())('extra mods: the real plan refuses before any d
     }
     copyFileSync(DEPLOY, join(repo, 'deploy', 'nf-deploy.sh'));
     copyFileSync(`${ROOT}deploy/nf-human-lib.sh`, join(repo, 'deploy', 'nf-human-lib.sh'));
+    copyFileSync(`${ROOT}deploy/nf-rangers-lib.sh`, join(repo, 'deploy', 'nf-rangers-lib.sh'));
     copyFileSync(LIB, join(repo, 'deploy', 'nf-extra-mods-lib.sh'));
     copyFileSync(
       `${ROOT}compose/neoforge/extra-mods.pins`,
