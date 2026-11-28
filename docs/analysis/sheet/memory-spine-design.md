@@ -1,6 +1,6 @@
 # Memory spine: design proposal (D0 of decision 0391)
 
-Status: PROPOSAL. Nothing here is decided. Owner decisions and Kiraifayi's cognition decisions are listed as questions in section 5, each with a recommendation.
+Status: PROPOSAL. Owner questions Q1 to Q4 and Q7 to Q9 are decided by decisions 0453 to 0459 (owner ruling 2026-11-28 relayed via geldar-69, adopting the recommendations below). Kiraifayi's questions Q5, Q6, Q10 and Q11 are not decided; section 5.1 lists them with their defaults. Everything else here stays a proposal.
 Checked: geldar `origin/main` at `62f6ee4c`; kit (`geldar-scriptorium`) `origin/scriptorium/hw0` at `9bd4612`, read-only. Where I could not verify a fact I write "unknown".
 
 Scope: decision 0391 item 1 names the memory spine as the next track, with the exit test "a fact learned in session one is used in session three", for any harness an owner brings. The design source is Stage 3 (E10) of [the 2026-11-14 autonomy review](../autonomy/review-and-plan-2026-11-14.md). This document does not restate E10. It says what exists, the smallest change set, and how a test shard would measure it.
@@ -134,5 +134,21 @@ Kiraifayi (cognition):
 - Q6. Consolidation model and effort: the life's own model at higher effort (E10, decision 0157), and one self instead of planner and worker for single-model players. Recommendation: confirm E10 as written and measure before changing.
 - Q10. Entry kinds: free text chosen by the agent, or a small fixed set. Recommendation: free text with views derived by code (E10), so kind names seed no social concept.
 - Q11. Belief checks: flag-only or refuse? Recommendation: flag-only first (the review says the citation check limits invented beliefs but does not stop them).
+
+### 5.1 Open-questions status (2026-11-27)
+
+| Q | Topic | Owner or Kiraifayi | Status | Record | Recommended default | Safe? |
+|---|---|---|---|---|---|---|
+| Q1 | Spec amendments, by record | Owner | Decided: yes, each by record | 0453 | Yes; spec text edit left to the owner | Yes |
+| Q2 | Experience record for every harness | Owner | Decided | 0454 | Every harness | Yes |
+| Q3 | Retention and erasure | Owner | Decided; heard-text cap still open | 0455 | Erase with the life; append-only; cap is the owner's value | Yes; cap open |
+| Q4 | Who may read the record | Owner | Decided | 0456 | Own record only; operators via the database | Yes |
+| Q5 | Wording and timing of what the agent reads | Kiraifayi | Open, not decided | none | Least text that works; no schedule words; no examples of kinds | Safe as a direction. Its wording is agent-visible and needs Kiraifayi's ruling |
+| Q6 | Consolidation model and effort | Kiraifayi | Open, not decided | none | Confirm E10 as written; measure before changing | Safe: no change and no agent-visible text |
+| Q7 | Pass bar, arms, run count | Owner | Decided: two and two; bar values still open | 0457 | Two control and two memory worlds; bar fixed before the run | Yes; values open |
+| Q8 | BD18 in this track | Owner | Decided | 0458 | Separate card, not a blocker for the exit test | Yes |
+| Q9 | First cohort | Owner | Decided | 0459 | Clean agents first | Yes |
+| Q10 | Entry kinds: free text or fixed set | Kiraifayi | Open, not decided | none | Free text, with views derived by code | Safe, provided no kind names appear in any agent-read text |
+| Q11 | Belief checks: flag-only or refuse | Kiraifayi | Open, not decided | none | Flag-only first | Safe: flags change no agent-visible text |
 
 Unverified, needed before the cards are final: what image players run versus hw0 (MK0); whether review rows 0b.1 and 1.3 merged; the events-table type names for acts and outcomes; where the kit saves the full run stream; the next free decision and SQL numbers at the time of writing.
