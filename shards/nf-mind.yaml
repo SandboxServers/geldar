@@ -1,0 +1,143 @@
+# NeoForge (geldar-nf) Mind shard file: what the nf rangers read (players-host and geldar-mcp), decision 0480.
+# Mounted into the ranger containers and geldar-mcp as /opt/geldar/shards/nf.yaml (compose/nf-live-rangers.yml, P4).
+# Derived from shards/colo-mind.yaml: the same blocks, with `sovereign.players` cut to the five Turbo rangers.
+# Every address is a geldar-nf compose service name or loopback. Nothing here is agent-visible text.
+# UNVERIFIED values, copied from colo until read on the node: seed, world_border_radius (the NF world's own values
+# are not in the repo; read them before the rangers come up, see decision 0480).
+shard: nf                        # must equal GELDAR_SHARD (threshold/mcp config.ts:194)
+seed: 8675309                    # UNVERIFIED: copied from colo; the NF world seed is not in the repo
+tick_rate: 20                    # 20 TPS is the gate (decisions 0038 and 0047)
+world_border_radius: 9500        # UNVERIFIED: copied from colo; the NF world border is read on the node
+# The largest limits an intent may ask for: the output validator's bounds (animus validate/bounds.ts).
+max_world_ticks: 240000          # limits.max_world_ticks of an intent; the contract's own cap
+max_block_operations: 10000      # limits.max_block_operations of an intent; the contract's own cap
+population_target: 1
+identity_mode: watched           # unwatched | watched (spec 5.15.8; a shard-file value, never agent-visible text)
+reflexes:                        # one flag per spec 5.2 reflex; enabled: false turns all off
+  enabled: true
+  eat: true
+  retreat: true
+  hazard_escape: true
+  fall_stop: true
+  fight_or_flee: true
+  blocked_path: true
+  panic_burrow: true
+  dark_shelter: false            # off 2026-11-27 (owner): the body keeps working in the dark
+chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
+memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
+attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
+lifecycle: { permadeath: false }
+body_actions: { edit_sign: false, use: true, swim: false, building: true }
+models:
+  strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
+  fast: ["qwen3:8b"]
+
+# Public surfaces: the nf MCP is loopback only (127.0.0.1:46788, compose/nf-live-rangers.yml). No Caddy route exists
+# for nf yet (runbook section 7), so these values are the colo ones kept for the parser.
+public:
+  trusted_proxies: ["127.0.0.1"]
+  client_ip_header: x-geldar-client-ip
+  rate_limit:
+    per_minute: 600
+    burst: 120
+  kill_switch: false
+# Sovereign players (spec 5.15; decisions 0040, 0041, 0052). `players` lists the five rangers on geldar-nf only.
+# players-host refuses an unlisted id. The player id is the life id with dashes (ag-turbogreen-01 for ag_turbogreen_01).
+sovereign:
+  allowed: true
+  harnesses:
+    claude: { enabled: true }
+    chatgpt: { enabled: true }
+  owner_cap_default: 3
+  owner_cap_owner: 20
+  mcp:
+    max_body_bytes: 65536
+    port: 8788
+    max_connections_per_address: 512
+    max_connections: 1024
+    wait_cap_seconds: 240
+    keepalive_seconds: 25
+    max_result_bytes: 16384
+    show_unavailable_tools: false
+    trusted_proxies: []
+    replay_minutes: 60
+  wake:
+    min_spacing_seconds: 30
+    intent_run_too_long_seconds: 300
+  presence:
+    lease_seconds: 60
+    hibernate_after_seconds: 600
+    start: always                # G2 (owner): `always` for the pre-Mind window; flip to on_demand before the hand-off
+  budget:
+    credits_per_real_hour: 30
+    cap_credits: 240
+  rate_limits:
+    calls_per_minute: 60
+    act_min_seconds: 2
+    say_min_seconds: 3
+    journal_min_seconds: 5
+    handshake_per_minute: 300
+    owner_calls_per_minute: 600
+    failed_auth_per_minute: 30
+  players:
+    - { player_id: ag-turboyelo-01, life_id: ag_turboyelo_01, name: TurboYellow }
+    - { player_id: ag-turbogreen-01, life_id: ag_turbogreen_01, name: TurboGreen }
+    - { player_id: ag-turboblue-01, life_id: ag_turboblue_01, name: TurboBlue }
+    - { player_id: ag-turbored-01, life_id: ag_turbored_01, name: TurboRed }
+    - { player_id: ag-turbopink-01, life_id: ag_turbopink_01, name: TurboPink }
+
+# The nf Mind's own identity. It is not a Body and has no game account; the username is a non-colliding value that
+# the MCP cross-checks against the shard (decision 0480). The name, seed and lives below are copied from colo and are
+# gated with the Mind (scriptorium, kit): not in use until the owner settles them.
+mind:
+  agent:
+    name: Adam
+    username: ag_nfmind_01
+    tier: strong
+    personality_seed: "Curious and patient; careful after dark; likes making things last and counting what he has; generous with neighbours but remembers who helped him; dry, understated humour. Quirk: he names the places he finds (the Long Ford, the Bent Oak) and uses those names later."
+  thinker:
+    host: 127.0.0.1              # PLACEHOLDER: the Thinker socket of the Mind, loopback; no Thinker can reach it yet
+    port: 7410
+    name: unreachable-placeholder  # PLACEHOLDER: the Thinker name in the welcome frame; the gateway replaces it
+    heartbeat_s: 15
+    warm_timeout_s: 180
+  snapshot_retry_s: 60
+  thinker_wait_s: 20
+  prompt_budget_tokens: 2500
+  max_beliefs: 40
+  max_commitments: 10
+  thought_version: 5
+  thought:
+    max_tokens: 600
+    temperature: 0.7
+    deadline_s: 25
+    reasoning: "off"
+  reflection:
+    max_tokens: 1200
+    deadline_s: 180
+    reasoning: "on"
+  admission:
+    max_thoughts_per_real_hour: 120
+  plan:
+    expires_after_ticks: 1200
+  run_tier: strong
+  lives: { strong: ag_colo_01, fast: ag_adam_04, smoke: ag_smoke_01 }
+
+# Pinned models: the digests recorded from Ollama on 2026-11-09, as in phase0 and colo.
+model_pins:
+  "qwen3:32b":
+    digest: "sha256:030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840"
+    num_ctx: 8704
+    keep_alive: 30m
+    max_concurrent: 1
+  "qwen3:8b":
+    digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+    num_ctx: 8704
+    keep_alive: 30m
+    max_concurrent: 1
+
+embedding:
+  model: nomic-embed-text        # decision D-P0-12
+  digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
+  dims: 768
+  on_cpu: true

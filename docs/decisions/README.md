@@ -281,3 +281,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0457](0457-spine-test-arms-two-and-two.md) | Spine test shard: two control and two memory worlds, control on the pre-spine tag, bar fixed before the run (design Q7) | Accepted (owner ruling 2026-11-28 relayed via geldar-69) |
 | [0458](0458-body-perception-memory-separate-card.md) | BD18 Body perception memory is a separate card, not a blocker for the exit test (design Q8) | Accepted (owner ruling 2026-11-28 relayed via geldar-69) |
 | [0459](0459-spine-first-cohort-clean-agents.md) | The first memory-spine cohort is clean agents with no seeded charters (design Q9) | Accepted (owner ruling 2026-11-28 relayed via geldar-69) |
+| [0480](0480-nf-rangers.md) | The Turbo rangers run as players-host Bodies and geldar-mcp on geldar-nf, behind an opt-in overlay | Accepted (operator brief 2026-11-28); presence.start is open (G2) |
