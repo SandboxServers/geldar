@@ -1815,6 +1815,14 @@ export interface PlaySurroundings {
     held_item: string | null;
     health_estimate: string;
     /**
+     * The other agent's block position, as the Body perceives it. Absent when the Body does not perceive the agent. Carries no id.
+     */
+    pos?: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    /**
      * Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.
      */
     vertical?: "above" | "level" | "below";
@@ -13378,6 +13386,14 @@ export interface SnapshotSurroundings {
     distance: number;
     held_item: string | null;
     health_estimate: string;
+    /**
+     * The other agent's block position, as the Body perceives it. Absent when the Body does not perceive the agent. Carries no id.
+     */
+    pos?: {
+      x: number;
+      y: number;
+      z: number;
+    };
     /**
      * Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.
      */
