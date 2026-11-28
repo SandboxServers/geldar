@@ -50,3 +50,41 @@ describe('damage text: the hurt event wording (PX-1)', () => {
     expect(e).toMatchObject({ amount: 0 });
   });
 });
+
+describe('damage actor: named only when the agent could know who hit them', () => {
+  it('names a Minecraft name with a basis of seen', () => {
+    const [e] = mapMindEvent(
+      damage({ cause: 'ENTITY_ATTACK', amount: 2, actor: { name: 'Zack', basis: 'seen' } }),
+      1,
+      ctx,
+    );
+    expect(e).toMatchObject({ actor: 'Zack' });
+  });
+
+  it('drops a life id shaped name even with a basis: no actor on the line', () => {
+    const [e] = mapMindEvent(
+      damage({ cause: 'ENTITY_ATTACK', amount: 2, actor: { name: 'ag_ada_01', basis: 'seen' } }),
+      1,
+      ctx,
+    );
+    expect(e).not.toHaveProperty('actor');
+  });
+
+  it('drops a name with a digit even with a basis: no actor on the line', () => {
+    const [e] = mapMindEvent(
+      damage({ cause: 'ENTITY_ATTACK', amount: 2, actor: { name: 'Zack2', basis: 'seen' } }),
+      1,
+      ctx,
+    );
+    expect(e).not.toHaveProperty('actor');
+  });
+
+  it('drops an actor with no basis: no actor on the line', () => {
+    const [e] = mapMindEvent(
+      damage({ cause: 'ENTITY_ATTACK', amount: 2, actor: { name: 'Zack' } }),
+      1,
+      ctx,
+    );
+    expect(e).not.toHaveProperty('actor');
+  });
+});
