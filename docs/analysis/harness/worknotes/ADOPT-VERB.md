@@ -8,9 +8,12 @@
 
 ## Design
 
-- `deploy/colo-admin.sh adopt-sheets-plan` takes no arguments. `adopt-sheets-apply --operator-confirm --plan <12 hex>`
-  takes exactly those three arguments in that order. Both pass the arguments to the admin one-shot
-  (`run --rm --no-deps admin adopt-sheets plan|apply ...`), as the other verbs do. `DEPLOY_DRY_RUN=1` prints the command.
+- `deploy/colo-admin.sh adopt-sheets-plan --lives <list>` takes exactly those two arguments. `adopt-sheets-apply
+  --operator-confirm --plan <12 hex> --lives <list>` takes exactly those five arguments in that order (ADOPT-LIVES). `--lives`
+  is required on both, so there is no unrestricted form. `<list>` is a comma list of 1 to 120 unique life ids, each matching
+  `^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$`; a bad id, a duplicate or a count outside 1 to 120 refuses the run before docker
+  runs. Both pass the arguments to the admin one-shot (`run --rm --no-deps admin adopt-sheets plan|apply ...`), as the other
+  verbs do. `DEPLOY_DRY_RUN=1` prints the command.
 - `tools/admin/admin.sh adopt-sheets` checks its arguments before the password file is read. Then it:
   1. builds the sheets map from the shard file with `readShardLives` (`tools/mcp-tokens/src/convert-sheets.ts`): every
      life gets `standard`. The snippet runs `node --input-type=module -e` and imports the `.ts` file through
@@ -34,6 +37,23 @@ The failing tests are the names in the file's `describe`/`it` text.
 | 3 | tools/admin/admin.sh | `[ "$2" = --operator-confirm ]` to `[ "$2" = "$2" ]` | apply without --operator-confirm runs the CLI | FAIL: "refuses adopt-sheets with no --operator-confirm before the CLI runs" (1 failed) |
 | 4 | tools/admin/admin.sh | `if [ "$hash" != "$want" ]` to `if [ 0 -eq 1 ]` | a changed plan still applies | FAIL: "apply with a different hash refuses, says both hashes, and runs no apply" (1 failed) |
 | 5 | tools/admin/admin.sh | `LC_ALL=C sort "$plan"` to `cat "$plan"` | plan hash differs from the sorted hash | FAIL: "plan prints the verdict lines in the CLI order and the sorted plan hash, and runs no apply"; "apply with the hash the operator read runs the apply once, with --operator-confirm"; "apply with a different hash refuses, says both hashes, and runs no apply" (3 failed) |
+
+## Revert table (ADOPT-LIVES)
+
+Each row is one mutation of one line, applied to the WIP state, run against `deploy/test/colo-admin-adopt.test.ts` (57 tests).
+Each mutation fails at least one test; the names are the file's `describe`/`it` text.
+
+| # | File | Line mutated | Expected failure | Observed |
+|---|------|--------------|------------------|----------|
+| 1 | deploy/colo-admin.sh | `[ "$1" = --lives ]` dropped from the plan check | plan accepts a flag other than --lives | FAIL: "refuses a flag other than --lives to plan before any container starts" (1 failed) |
+| 2 | deploy/colo-admin.sh | `[ "$4" = --lives ]` dropped from the apply check | apply accepts --apply in place of --lives | FAIL: "refuses --apply in place of --lives before any container starts" (1 failed) |
+| 3 | deploy/colo-admin.sh | id regex `_[0-9]{2,}$` loosened to `{1,}` | a one-digit id passes | FAIL: "refuses a bad id to plan before any container starts" (1 failed) |
+| 4 | deploy/colo-admin.sh | `die "duplicate life id: $id"` removed | a duplicate id passes | FAIL: "refuses a duplicate to plan before any container starts"; "refuses a duplicate id to apply before any container starts" (2 failed) |
+| 5 | deploy/colo-admin.sh | `[ "$n" -le 120 ]` loosened to `121` | 121 ids pass | FAIL: "refuses 121 ids to plan before any container starts" (1 failed) |
+| 6 | tools/admin/admin.sh | `if (missing !== undefined)` replaced by `if (false)` | an id not in the shard file passes | FAIL: "refuses a life id that the shard file does not list, names only that id, and runs no CLI"; "refuses an apply with an unlisted id before the CLI runs" (2 failed) |
+| 7 | tools/admin/admin.sh | `const wanted = listArg.split(",")` replaced by `const wanted = lives` | the map holds every shard life, not only the listed ones | FAIL: 8 tests, including "the sheets map holds only the listed lives, each standard" and "apply with the hash of a wider list refuses for the restricted list" (8 failed) |
+| 8 | tools/admin/admin.sh | `[ "$2" = --lives ]` in the plan check replaced by `[ "$2" = "$2" ]` | plan accepts a flag other than --lives | FAIL: "refuses adopt-sheets with a flag other than --lives before the CLI runs" (1 failed) |
+| 9 | tools/admin/admin.sh | `[ "$5" = --lives ]` dropped from the apply check | apply accepts --apply in place of --lives | FAIL: "refuses adopt-sheets with --apply in place of --lives before the CLI runs" (1 failed) |
 
 ## Merge note: colo images rebuild on merge
 

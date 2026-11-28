@@ -155,18 +155,44 @@ player_set_owner_args() {
   set_owner_owner=$2
 }
 
-# adopt-sheets-plan takes no arguments. adopt-sheets-apply takes exactly --operator-confirm --plan <12 hex>, in that order:
-# the plan hash the operator read. The admin container runs the plan again and refuses when it has changed (S12-04b).
+# adopt-sheets-plan --lives <list>, or adopt-sheets-apply --operator-confirm --plan <12 hex> --lives <list>: exactly these
+# arguments, in this order. --lives is required on both, so the verbs never reach every life. The admin container runs the
+# plan again with the same list and refuses when the hash has changed (S12-04b).
 adopt_args() {
   case $cmd in
-    adopt-sheets-plan) [ $# -eq 0 ] || die "adopt-sheets-plan takes no arguments" ;;
+    adopt-sheets-plan)
+      [ $# -eq 2 ] && [ "$1" = --lives ] || die "adopt-sheets-plan takes exactly --lives <comma list of life ids>"
+      adopt_lives_check "$2"
+      ;;
     adopt-sheets-apply)
-      [ $# -eq 3 ] && [ "$1" = --operator-confirm ] && [ "$2" = --plan ] ||
-        die "adopt-sheets-apply takes exactly --operator-confirm --plan <12 hex>"
+      [ $# -eq 5 ] && [ "$1" = --operator-confirm ] && [ "$2" = --plan ] && [ "$4" = --lives ] ||
+        die "adopt-sheets-apply takes exactly --operator-confirm --plan <12 hex> --lives <comma list of life ids>"
       printf '%s' "$3" | grep -Eq '^[0-9a-f]{12}$' || die "--plan takes the 12 lower-case hex digits the plan line printed"
       adopt_plan=$3
+      adopt_lives_check "$5"
       ;;
   esac
+}
+
+# Checks the --lives value: a comma list of 1 to 120 unique life ids, each matching ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$. The
+# admin container checks each id against the shard file (readShardLives) before the CLI runs; this stops the run before
+# docker starts. The message names only the offending id. Sets adopt_lives to the list as given.
+adopt_lives_check() {
+  rest=$1
+  seen=
+  n=0
+  [ -n "$rest" ] || die "--lives takes a comma list of life ids"
+  while :; do
+    id=${rest%%,*}
+    n=$((n + 1))
+    [ "$n" -le 120 ] || die "--lives takes at most 120 life ids"
+    case $id in '' | *[!a-z0-9_]*) die "life id must match ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}\$: $id" ;; esac
+    printf '%s' "$id" | grep -Eq '^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$' || die "life id must match ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}\$: $id"
+    case ",$seen," in *",$id,"*) die "duplicate life id: $id" ;; esac
+    seen=${seen:+$seen,}$id
+    case $rest in *,*) rest=${rest#*,} ;; *) break ;; esac
+  done
+  adopt_lives=$1
 }
 
 # Writes the overlay that mounts a host directory into the admin service only: $1 is the target, $2 is "" or
@@ -332,8 +358,8 @@ if [ "$DRY_RUN" = 1 ]; then
     roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster add $roster_name --owner $roster_owner" ;;
     roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster list${roster_owner:+ --owner $roster_owner}" ;;
     player-set-owner) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin player-set-owner $set_owner_player $set_owner_owner" ;;
-    adopt-sheets-plan) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin adopt-sheets plan" ;;
-    adopt-sheets-apply) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin adopt-sheets apply --operator-confirm --plan $adopt_plan" ;;
+    adopt-sheets-plan) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin adopt-sheets plan --lives $adopt_lives" ;;
+    adopt-sheets-apply) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin adopt-sheets apply --operator-confirm --plan $adopt_plan --lives $adopt_lives" ;;
     *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin $cmd $*" ;;
   esac
   if [ "$cmd" = token-mint ]; then
@@ -378,10 +404,10 @@ elif [ "$cmd" = roster-list ]; then
   fi
 elif [ "$cmd" = adopt-sheets-plan ]; then
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm --no-deps admin adopt-sheets plan || die "adopt-sheets-plan failed; nothing was applied"
+  adm run --rm --no-deps admin adopt-sheets plan --lives "$adopt_lives" || die "adopt-sheets-plan failed; nothing was applied"
 elif [ "$cmd" = adopt-sheets-apply ]; then
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm --no-deps admin adopt-sheets apply --operator-confirm --plan "$adopt_plan" ||
+  adm run --rm --no-deps admin adopt-sheets apply --operator-confirm --plan "$adopt_plan" --lives "$adopt_lives" ||
     die "adopt-sheets-apply refused or failed; the admin container printed why, and a refused apply writes nothing"
 else
   adm config --quiet || die "admin service config does not validate"
