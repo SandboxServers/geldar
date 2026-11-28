@@ -377,8 +377,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: 3
-          memory: "8589934592"
+          cpus: 8
+          memory: "16106127360"
           pids: 512
     entrypoint:
       - /bin/sh
@@ -398,7 +398,7 @@ services:
       GID: "1000"
       HARDCORE: "FALSE"
       MAX_PLAYERS: "400"
-      MEMORY: 6G
+      MEMORY: 10G
       MOTD: Geldar - no humans
       ONLINE_MODE: "FALSE"
       PAPER_BUILD: "74"
@@ -435,7 +435,7 @@ services:
       options:
         max-file: "3"
         max-size: 10m
-    memswap_limit: "8589934592"
+    memswap_limit: "16106127360"
     networks:
       colo: null
     pids_limit: 512

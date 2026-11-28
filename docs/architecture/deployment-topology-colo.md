@@ -73,7 +73,7 @@ Every deploy script calls compose through one wrapper, `dc()` in `deploy/common.
 
 ### Resource budget
 
-Each service has a literal CPU and memory default in `compose/colo.yml` (`${GELDAR_COLO_<SERVICE>_CPUS:-x}`), and `shards/colo.yaml` holds the total. `geldar.ps1` (`Read-ColoConfig`) refuses a total below the sum. Summed by hand from `compose/colo.yml` on 2026-11-16, the 14 services come to 10.6 CPUs and 19968m, which equals `cpu_limit: 10.6` and `memory_limit: 19968m` in `shards/colo.yaml`. The nine default services alone come to 6.85 CPUs and 13184m.
+Each service has a literal CPU and memory default in `compose/colo.yml` (`${GELDAR_COLO_<SERVICE>_CPUS:-x}`), and `shards/colo.yaml` holds the total. `geldar.ps1` (`Read-ColoConfig`) refuses a total below the sum. Summed by hand from `compose/colo.yml` on 2026-11-16, the 13 services come to 14.6 CPUs and 25088m, which equals `cpu_limit: 14.6` and `memory_limit: 25088m` in `shards/colo.yaml`. The nine default services alone come to 11.85 CPUs and 20352m.
 
 ## How a release reaches the node
 

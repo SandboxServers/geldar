@@ -20,15 +20,7 @@ trap 'rm -f "$ADMIN_OVERLAY"; rm -rf "$WORK"' EXIT
 
 # Runs one compose call for the admin service. The token overlay is added only for token-mint.
 adm() {
-  if [ -n "$ADMIN_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
-  elif [ -n "$ADMIN_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
-  elif [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" --profile admin "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" --profile admin "$@"
-  fi
+  compose_call "${ADMIN_OVERLAY:-}" --profile admin -- "$@"
 }
 
 # Prints the name of the running postgres container of this project, or nothing. The one-shot never starts postgres.
@@ -215,11 +207,7 @@ host_ps() {
 }
 
 sov() {
-  if [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" --profile sovereign "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" --profile sovereign "$@"
-  fi
+  compose_call '' --profile sovereign -- "$@"
 }
 
 run_hosts() {

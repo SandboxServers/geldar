@@ -14,8 +14,9 @@ describe('NATS overlay secret paths (C2-07f)', () => {
   it('the secrets overlay is merged after the NATS overlay, in every compose call', () => {
     const lines = ['common.sh', 'colo-admin.sh']
       .flatMap((f) => read(f).split('\n'))
-      .filter((l) => l.includes('docker compose -p') && l.includes('$SECRETS_OVERLAY'));
-    expect(lines.length).toBeGreaterThanOrEqual(8);
+      .filter((l) => l.includes('-p "$PROJECT"') && l.includes('$SECRETS_OVERLAY'));
+    // Every call now takes its files from one builder (compose_call in common.sh), so there is exactly one such line.
+    expect(lines).toHaveLength(1);
     for (const l of lines) {
       expect(l, l).toContain('$NATS_OVERLAY');
       expect(l.indexOf('$NATS_OVERLAY'), l).toBeLessThan(l.indexOf('$SECRETS_OVERLAY'));

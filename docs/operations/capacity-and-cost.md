@@ -76,7 +76,7 @@ Re-derived on 2026-11-16 from the per-service defaults in `compose/colo.yml` (`G
 
 | Service | Profile | CPUs | Memory |
 |---|---|---|---|
-| `paper` | default | 3 | 8192m (heap 6G, line 117) |
+| `paper` | default | 8 | 15360m (heap 10G) |
 | `postgres` | default | 1 | 2048m |
 | `velocity` | default | 0.5 | 1024m |
 | `nats` | default | 0.5 | 512m |
@@ -86,14 +86,13 @@ Re-derived on 2026-11-16 from the per-service defaults in `compose/colo.yml` (`G
 | `bluemap-web` | default | 0.25 | 64m |
 | `bluemap-alias` | default | 0.1 | 64m |
 | `golem-body` | `adam` | 1 | 2048m |
-| `animus` | `mind` | 1 | 2048m |
 | `players-host` | `sovereign` | 1 | 2048m |
 | `register` | `register` | 0.25 | 128m |
 | `admin` | `admin` | 0.5 | 512m |
-| **Total, 14 services** | | **10.6** | **19968m** |
-| Default profile only, 9 services | | 6.85 | 13184m |
+| **Total, 13 services** | | **14.6** | **25088m** |
+| Default profile only, 9 services | | 11.85 | 20352m |
 
-The total equals `cpu_limit: 10.6` and `memory_limit: 19968m` in `shards/colo.yaml` (lines 13 and 14). That file's header says the limits are "first guesses, to be measured in C1-10 on the node; they are not results". No C1-10 measurement is committed.
+The total equals `cpu_limit: 14.6` and `memory_limit: 25088m` in `shards/colo.yaml` (lines 13 and 14). That file's header says the limits are "first guesses, to be measured in C1-10 on the node; they are not results". No C1-10 measurement is committed.
 
 Two limits this total does not cover:
 
@@ -159,7 +158,7 @@ The body benchmark (spec section 10, Phase 0) on the owner's desktop, not the Co
 None is resolved here.
 
 1. **Tick rate in the cost model.** Spec 9 costs against "the baseline tick rate of 10"; spec 10 says all phases run at 20 TPS. Spec 9 also says its budgets are in real time, so the tick rate changes how long an in-game day lasts, not the per-day figures above. See [time, shards and phases](../concepts/time-shards-and-phases.md#conflicts-recorded).
-2. **Paper's memory.** `compose/colo.yml`: 8192m and heap 6G. Decisions 0351 and 0352 (node surveys, 2026-11-15): 14 GiB limit, heap 10 GiB; 0351 item 13 proposes 15 GiB. Decision [0082](../decisions/0082-colo-compose-network-and-limits.md) (Proposed): every limit comes from `shards/colo.yaml`. See [node facts](node-facts.md#conflicts-recorded).
+2. **Paper's memory.** `compose/colo.yml`: 15360m (15 GiB) and heap 10G (D1). Decisions 0351 and 0352 (node surveys, 2026-11-15): 14 GiB limit, heap 10 GiB; 0351 item 13 proposes 15 GiB. Decision [0082](../decisions/0082-colo-compose-network-and-limits.md) (Proposed): every limit comes from `shards/colo.yaml`. See [node facts](node-facts.md#conflicts-recorded).
 3. **The shard total and the running population.** `shards/colo.yaml` calls its limits "the TOTAL budget of the shard" and counts one player host. 19 player Bodies ran on 2026-11-15 (0350, unverified). Whether the total is meant to cover per-player hosts is not stated.
 
 ## Not measured

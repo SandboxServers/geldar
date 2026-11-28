@@ -115,7 +115,7 @@ Standalone, on its own network `colo` (name `${GELDAR_NETWORK:-geldar-colo}`, su
 |---|---|---|---|---|---|---|---|
 | `postgres` | default | 1, 2048m, 256 | pgvector, digest | none | `postgres-data`; `../sql` init | `pg_isready` | none |
 | `nats` | default | 0.5, 512m, 256 | nats, digest; JetStream, no monitor port | none | `nats-data` | `nc -z 127.0.0.1 4222` (TCP probe; never the monitor) | none |
-| `paper` | default | 3, 8192m, 512; heap 6G | itzg/minecraft-server, digest | none | `paper-data`; entrypoint; Geldar-Core jar; the BlueMap, Chunky and CoreProtect jars from the node state directory (`GELDAR_STATE_DIR`), read-only; `../plugins/bluemap/config` read-only; agent skin PNGs read-only, never created by compose | `mc-health` and the Geldar-Core ready marker | none |
+| `paper` | default | 8, 15360m, 512; heap 10G | itzg/minecraft-server, digest | none | `paper-data`; entrypoint; Geldar-Core jar; the BlueMap, Chunky and CoreProtect jars from the node state directory (`GELDAR_STATE_DIR`), read-only; `../plugins/bluemap/config` read-only; agent skin PNGs read-only, never created by compose | `mc-health` and the Geldar-Core ready marker | none |
 | `velocity` | default | 0.5, 1024m, 256 | itzg/mc-proxy, digest | `${GELDAR_PORT_BOT:-25567}` to 25565 | `velocity.toml`; `velocity-data`; velocity-identity jar | Identity ready marker and port open | `paper`, `nats` healthy |
 | `eventsink` | default | 0.5, 512m, 256 | `GELDAR_EVENTSINK_IMAGE` | none | none | none | `postgres`, `nats` healthy |
 | `golem-body` | `adam` | 1, 2048m, 256 | `GELDAR_BODY_IMAGE`; entry `src/adam/main.ts` | none | `shards/colo-mind.yaml` read-only as `/opt/geldar/shards/colo.yaml` | none | `nats` healthy |

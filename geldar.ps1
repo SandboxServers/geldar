@@ -97,9 +97,9 @@ function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) 
     throw "${Path}: memory_limit '$memory' must be a whole number of m or g, from 10m to 99999g"
   }
   # The total is the least the shard may have. The per-service budgets are literal defaults in compose/colo.yml
-  # (${GELDAR_COLO_<SERVICE>_CPUS:-x} and _MEM:-y); their sums are the floor. Paper's heap (MEMORY: 6G in compose,
+  # (${GELDAR_COLO_<SERVICE>_CPUS:-x} and _MEM:-y); their sums are the floor. Paper's heap (MEMORY: 10G in compose,
   # a test keeps the two equal) plus 1 GiB is the floor for the memory total.
-  $paperHeapMiB = 6144
+  $paperHeapMiB = 10240
   $toMiB = { param([string] $size) if ($size -match '^([0-9]+)g$') { [double] $Matches[1] * 1024 } else { [double] ($size -replace 'm$', '') } }
   $budgetCpu = 0.0
   $budgetMiB = 0.0
@@ -121,7 +121,7 @@ function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) 
     throw "${Path}: cpu_limit $cpu is below the sum of the per-service CPU budgets in compose/colo.yml ($budgetCpu)"
   }
   if ((& $toMiB $memory) -lt ($paperHeapMiB + 1024)) {
-    throw "${Path}: memory_limit $memory is below Paper's heap (6G) plus 1 GiB (7168m)"
+    throw "${Path}: memory_limit $memory is below Paper's heap (10G) plus 1 GiB (11264m)"
   }
   if ((& $toMiB $memory) -lt $budgetMiB) {
     throw "${Path}: memory_limit $memory is below the sum of the per-service memory budgets in compose/colo.yml ($($budgetMiB)m)"
