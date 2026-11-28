@@ -1,6 +1,6 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { hasPwsh, parseEntries, renderGenerator } from './nats-auth-fixtures.ts';
 
 // The rangers' NATS grants on geldar-nf (deploy/nats-auth-nf.ps1: the mcp and ranger users), read from a generated conf and
@@ -40,7 +40,9 @@ describe.skipIf(!hasPwsh)('NF NATS grants for the rangers and the MCP', () => {
     string,
     { user: string; raw: string; pub: string[]; deny: string[]; sub: string[] }
   > = {};
-  it('generates the two users from the nf generator', () => {
+  // Filled once for the whole describe, so a filtered run (-t) still judges the grants. An empty map would make every deny
+  // case pass vacuously (publishAllowed(undefined) is false), so the fill itself asserts both users are present.
+  beforeAll(() => {
     const r = renderGenerator('nf', { flags: ['--live', '--local'], checkout: true });
     try {
       expect(r.status, r.stderr).toBe(0);
@@ -51,6 +53,10 @@ describe.skipIf(!hasPwsh)('NF NATS grants for the rangers and the MCP', () => {
     }
     expect(Object.keys(users)).toEqual(expect.arrayContaining(['mcp', 'ranger']));
   }, 120_000);
+
+  it('generates the two users from the nf generator', () => {
+    expect(Object.keys(users)).toEqual(expect.arrayContaining(['mcp', 'ranger']));
+  });
 
   it('lets the MCP send the sovereign call, the body requests and the presence record, and denies the hearing subject', () => {
     expect(publishAllowed(users.mcp, 'geldar.nf.sovereign_call')).toBe(true);
