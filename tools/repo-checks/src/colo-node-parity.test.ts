@@ -240,7 +240,7 @@ describe('the live settings in compose/colo.yml', () => {
 
   it('paper starts with the players_sleeping_percentage gamerule', () => {
     expect(services.paper?.environment?.RCON_CMDS_STARTUP).toContain(
-      'gamerule players_sleeping_percentage 50',
+      'gamerule players_sleeping_percentage 10',
     );
   });
 

@@ -405,7 +405,7 @@ services:
       RCON_CMDS_STARTUP: |-
         worldborder set 19000
         gamerule keep_inventory false
-        gamerule players_sleeping_percentage 50
+        gamerule players_sleeping_percentage 10
         gamerule immediate_respawn false
         gamerule show_advancement_messages false
         gamerule send_command_feedback false

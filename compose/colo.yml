@@ -135,7 +135,7 @@ services:
       # Agent skin PNGs (<agent_id>.png) for the BlueMap skin provider (GX-07). Read-only mount below; the plugin falls back to its default skin when a file is missing.
       GELDAR_AGENT_SKINS_DIR: /data/skins
       # On 2026-11-15 the owner moved the colo border to radius 9500 (diameter 19000) for the spawn-town cutover. shards/colo-mind.yaml world_border_radius must match.
-      RCON_CMDS_STARTUP: "worldborder set 19000\ngamerule keep_inventory false\ngamerule players_sleeping_percentage 50\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
+      RCON_CMDS_STARTUP: "worldborder set 19000\ngamerule keep_inventory false\ngamerule players_sleeping_percentage 10\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
       - paper-data:/data
