@@ -401,7 +401,8 @@ function Get-NatsUsers([string] $Shard) {
       # proficiency subject (state.<life>.proficiency), which this deny does not match.
       # Hearing (decision 0199, MH-CH): only the plugin publishes a hearing notice, so the body cannot forge one.
       # Provenance (AN-28c): the body hears provenance and cannot forge it (the plugin is the only publisher).
-      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing", "geldar.$s.provenance.>");
+      # Sheet life (GX-NATS): the body cannot publish the life subtree; eventsink is its only publisher.
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing", "geldar.$s.provenance.>", "geldar.$s.life.>");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
       # State (AN-12b): the body hears only the level pushes (state.<life>.level); its request is in its Pub, and replies come on _INBOX.>.
@@ -412,7 +413,8 @@ function Get-NatsUsers([string] $Shard) {
       Sub = @('_INBOX.>') }
     # State (0280, AN-02b, AN-12b): the eventsink publishes the level push (state.<life>.level) and subscribes to the
     # request (state.<life>.proficiency, queue group state-service) on the state subtree, and replies on the inbox.
-    eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>") + $js; Sub = @("geldar.$s.state.*.proficiency", '_INBOX.>') }
+    # Sheet life (GX-NATS): the eventsink publishes the sheet subject of each life (geldar.<s>.life.<id>.sheet); no other role may.
+    eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>", "geldar.$s.life.*.sheet") + $js; Sub = @("geldar.$s.state.*.proficiency", '_INBOX.>') }
     # Hearing (decision 0199, MH-CH): mcp's body.> allow would cover the hearing subject, so it is denied by name.
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; PubDeny = @("geldar.$s.body.*.hearing"); Sub = @('_INBOX.>') }
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
@@ -422,7 +424,8 @@ function Get-NatsUsers([string] $Shard) {
     # Block ownership (decision 0165): the plugin answers blockowner.query (replies go to the inbox) and publishes blockowner.changed;
     # it is denied publishing the query itself.
     # State (0280): paper is denied the level push too; the eventsink is the only publisher of it.
-    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
+    # Sheet life (GX-NATS): paper is denied the life subtree too; the eventsink is the only publisher of it.
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.life.>"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
     # Deploy (CD-1d): colo-notice.sh publishes the maintenance notice as this user and nothing else (no JetStream API, no Kino).

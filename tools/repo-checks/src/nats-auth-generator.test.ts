@@ -145,12 +145,13 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     const bare = entries.some((e) =>
       [...e.pub, ...e.sub].some(
         // AN-12b: one life's level push (body) and one life's proficiency request (eventsink) are the two exact one-token grants
-        // of the state subtree; the table above pins each of them.
+        // of the state subtree; the table above pins each of them. GX-NATS: the eventsink's one life sheet subject is the third.
         (s) =>
           s.split('.').includes('*') &&
           s !== `geldar.${SHARD}.kino.*.feed` &&
           s !== `geldar.${SHARD}.state.*.level` &&
-          s !== `geldar.${SHARD}.state.*.proficiency`,
+          s !== `geldar.${SHARD}.state.*.proficiency` &&
+          s !== `geldar.${SHARD}.life.*.sheet`,
       ),
     );
     expect(bare).toBe(false);
@@ -170,6 +171,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.state.*.level`,
       `geldar.${SHARD}.body.*.hearing`,
       `geldar.${SHARD}.provenance.>`,
+      `geldar.${SHARD}.life.>`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,
@@ -177,6 +179,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.ctl.body.>`,
       `geldar.${SHARD}.helper.body.>`,
       `geldar.${SHARD}.state.*.level`,
+      `geldar.${SHARD}.life.>`,
     ]);
     expect(by('kino')?.deny).toEqual([]);
     const reach = (subject: string, list: string[]) =>

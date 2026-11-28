@@ -85,8 +85,9 @@ export function expectedTable(s: string): Record<string, { pub: string[]; sub: s
       sub: ['_INBOX.>'],
     },
     // State (0280, AN-02b): the eventsink publishes the level push on state.<life>.level.
+    // Sheet life (GX-NATS): the eventsink publishes each life's sheet subject.
     eventsink: {
-      pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS],
+      pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, `geldar.${s}.life.*.sheet`, ...JS],
       sub: [`geldar.${s}.state.*.proficiency`, '_INBOX.>'],
     },
     mcp: {

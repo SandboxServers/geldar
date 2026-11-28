@@ -193,7 +193,7 @@ describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', ()
   );
 
   it(
-    'the body keeps every earlier subject: provenance is the only addition to its lists',
+    'the body keeps every earlier subject: provenance and the sheet life deny are the only additions to its lists',
     () => {
       const r = renderGenerator(SHARD);
       try {
@@ -214,6 +214,7 @@ describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', ()
           `geldar.${SHARD}.state.*.level`,
           `geldar.${SHARD}.body.*.hearing`,
           p,
+          `geldar.${SHARD}.life.>`,
         ]);
         const expectedBody = expectedTable(SHARD).body;
         expect(expectedBody, 'body role in the expected table').toBeDefined();
@@ -278,4 +279,81 @@ describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', ()
       /nats-auth\.yml|colo\.yml|config\.yml|provenance\.enabled/,
     );
   });
+});
+
+/**
+ * The sheet life subjects (GX-NATS), on the colo table: the eventsink is their only publisher. A deny entry wins over an
+ * allow entry in nats-server, so "cannot publish" is checked as a deny match on the parsed list, not as a missing allow.
+ */
+describe.skipIf(!hasPwsh)('sheet life subjects (GX-NATS): the colo role table', () => {
+  const LIFE = 'geldar.colo.life.ag_test_01.sheet';
+  const matchesAny = (list: string[], subject: string) =>
+    list.some((p) => subjectMatches(p, subject));
+
+  /** Renders the colo table once per test and removes the temp copy. */
+  function withColoEntries(check: (entries: ReturnType<typeof parseEntries>) => void) {
+    const r = renderGenerator('colo');
+    try {
+      expect(r.status, r.stderr).toBe(0);
+      check(parseEntries(r.conf));
+    } finally {
+      rmSync(r.dir, { recursive: true, force: true });
+    }
+  }
+
+  it(
+    'eventsink can publish geldar.colo.life.<id>.sheet',
+    () =>
+      withColoEntries((entries) => {
+        const e = entries.find((x) => x.user === 'eventsink');
+        expect(matchesAny(e?.pub ?? [], LIFE)).toBe(true);
+      }),
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'body cannot publish geldar.colo.life.<id>.sheet',
+    () =>
+      withColoEntries((entries) => {
+        const body = entries.find((x) => x.user === 'body');
+        expect(matchesAny(body?.deny ?? [], LIFE)).toBe(true);
+      }),
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'paper cannot publish geldar.colo.life.<id>.sheet',
+    () =>
+      withColoEntries((entries) => {
+        const paper = entries.find((x) => x.user === 'paper');
+        expect(matchesAny(paper?.deny ?? [], LIFE)).toBe(true);
+      }),
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'body PubDeny and Sub both carry geldar.colo.provenance.>',
+    () =>
+      withColoEntries((entries) => {
+        const body = entries.find((x) => x.user === 'body');
+        expect(body?.deny).toContain('geldar.colo.provenance.>');
+        expect(body?.sub).toContain('geldar.colo.provenance.>');
+      }),
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'supervisor, register and helper rows equal the expected table',
+    () =>
+      withColoEntries((entries) => {
+        const table = expectedTable('colo');
+        for (const role of ['supervisor', 'register', 'helper']) {
+          const e = entries.find((x) => x.user === role);
+          expect(e?.pub, `${role} pub`).toEqual(table[role]?.pub);
+          expect(e?.sub, `${role} sub`).toEqual(table[role]?.sub);
+          expect(e?.deny, `${role} deny`).toEqual([]);
+        }
+      }),
+    GENERATOR_TIMEOUT_MS,
+  );
 });

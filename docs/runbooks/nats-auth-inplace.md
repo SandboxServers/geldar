@@ -45,7 +45,7 @@ On 2026-11-14 the other users matched the generator of that day. The hearing den
 
 Pending additions. Each needs its own decision-owner go:
 
-- Sheet state subjects (decision 0280 known gap): the `state.*.level` deny for body and paper is in the generator but not in the live file. Not in the generator: eventsink publish `geldar.<s>.life.*.sheet`, and body and paper PubDeny `geldar.<s>.life.>`.
+- Sheet state subjects (decision 0280 known gap): the `state.*.level` deny for body and paper is in the generator but not in the live file. In the generator since GX-NATS: eventsink publish `geldar.<s>.life.*.sheet`, and body and paper PubDeny `geldar.<s>.life.>`. Not in the live file as recorded.
 - Hearing subject (decision 0199 option A): body, mind and mcp PubDeny `geldar.<s>.body.*.hearing`. In the generator since commit `3f6c1071`; not in the live file as recorded.
 - Provenance (AN-28c): body PubDeny and Sub on `geldar.<s>.provenance.>`. In the generator since AN-28c; not in the live file as recorded.
 - Body control on the live node: `body` and `paper` PubDeny `geldar.<s>.ctl.body.>` (the generator on `main` has it, the live file does not), and the `register` user. The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
