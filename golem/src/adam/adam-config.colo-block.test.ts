@@ -20,8 +20,16 @@ describe('shards/colo-mind.yaml character block (CHAR-BLOCK)', () => {
     expect(doc.character).toEqual({ mode: 'sheet', rolls: false, proficiency: { enabled: false } });
   });
 
-  it('parses to sheet mode with no rolls and no proficiency', () => {
+  // parseAdamConfig types `character` as optional; this block always sets it, so a missing one fails the test.
+  function parsedCharacter() {
     const character = parseAdamConfig(doc, () => undefined).character;
+    expect(character).toBeDefined();
+    if (!character) throw new Error('shards/colo-mind.yaml must parse to a character');
+    return character;
+  }
+
+  it('parses to sheet mode with no rolls and no proficiency', () => {
+    const character = parsedCharacter();
     expect(character.config.mode).toBe('sheet');
     expect(character.config.rolls).toBe(false);
     expect(character.config.proficiency.enabled).toBe(false);
@@ -29,7 +37,7 @@ describe('shards/colo-mind.yaml character block (CHAR-BLOCK)', () => {
 
   it('stores no sheet in the file, so each life takes the standard sheet unless the database has one', () => {
     expect(doc.mind.agent.character_sheet).toBeUndefined();
-    const character = parseAdamConfig(doc, () => undefined).character;
+    const character = parsedCharacter();
     expect(character.source).toBe('standard');
     expect(character.sheet).toBe(STANDARD_SHEET);
   });
