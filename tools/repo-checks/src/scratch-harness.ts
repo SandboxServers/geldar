@@ -98,6 +98,8 @@ export function stubs(): { base: string; env: Env } {
   const bin = join(base, 'bin');
   mkdirSync(bin);
   mkdirSync(join(base, 'home'));
+  // The Docker root is a real directory by default, so the gate reads its figure as a host path.
+  mkdirSync(join(base, 'docker-root'));
   const files: Record<string, string> = {
     docker: [
       '#!/bin/sh',
@@ -116,7 +118,7 @@ export function stubs(): { base: string; env: Env } {
       '    grep -q nats-body.txt "$SCRATCH_SECRETS_DIR/nats-override.yml" 2>/dev/null && echo BODY_SECRET_IN_OVERRIDE >>"$STUB_LOG"',
       '    exit "${STUB_RUN_EXIT:-0}" ;;',
       '  *" down -v"*) [ -z "$STUB_FAIL_DOWN" ] || exit 1 ;;',
-      '  info*) [ -n "$STUB_NO_INFO" ] || echo /var/lib/docker ;;',
+      '  info*) [ -n "$STUB_NO_INFO" ] || echo "$STUB_DOCKER_ROOT" ;;',
       'esac',
       'exit 0',
       '',
@@ -128,7 +130,7 @@ export function stubs(): { base: string; env: Env } {
       '#!/bin/sh',
       'echo Filesystem',
       'case "$*" in',
-      '  */var/lib/docker*) echo "x 1 1 $STUB_DOCKER_KB 1% /var/lib/docker" ;;',
+      '  *"$STUB_DOCKER_ROOT"*) echo "x 1 1 $STUB_DOCKER_KB 1% $STUB_DOCKER_ROOT" ;;',
       '  *) echo "x 1 1 $STUB_DISK_KB 1% /" ;;',
       'esac',
       '',
@@ -145,6 +147,7 @@ export function stubs(): { base: string; env: Env } {
     XDG_STATE_HOME: slash(join(base, 'state')),
     SYSTEMROOT: process.env.SYSTEMROOT ?? '',
     STUB_LOG: slash(join(base, 'docker.log')),
+    STUB_DOCKER_ROOT: slash(join(base, 'docker-root')),
     STUB_RAM_KB: '20000000',
     STUB_DISK_KB: '50000000',
     STUB_DOCKER_KB: '50000000',

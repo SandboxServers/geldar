@@ -421,18 +421,28 @@ gate() {
   ram=$(free_ram_kb)
   disk_repo=$(free_kb "$ROOT")
   disk_docker=""
-  if [ -n "$root" ]; then
+  fallback=""
+  if [ -n "$root" ] && [ -d "$root" ]; then
     disk_docker=$(free_kb "$root")
+  elif [ -n "$root" ] && is_kb "$disk_repo"; then
+    # Docker Desktop on Windows reports a root inside its Linux VM, which is not a host path: the repo drive stands in.
+    fallback=1
   fi
-  if ! is_kb "$ram" || ! is_kb "$disk_repo" || ! is_kb "$disk_docker"; then
+  if ! is_kb "$ram" || ! is_kb "$disk_repo" || { [ -z "$fallback" ] && ! is_kb "$disk_docker"; }; then
     echo "gate: could not read free RAM or free disk as numbers (Docker root: '${root:-unknown}'); nothing started" >&2
     exit 3
   fi
-  disk=$disk_repo
-  if [ "$disk_docker" -lt "$disk" ]; then
-    disk=$disk_docker
+  if [ -n "$fallback" ]; then
+    disk=$disk_repo
+    echo "gate: disk figure from the repo checkout $ROOT (docker root $root is not a host path)"
+    echo "gate: free RAM $(gb "$ram") (need 10 GB), free disk $(gb "$disk") (need 20 GB, the repo checkout $ROOT)"
+  else
+    disk=$disk_repo
+    if [ "$disk_docker" -lt "$disk" ]; then
+      disk=$disk_docker
+    fi
+    echo "gate: free RAM $(gb "$ram") (need 10 GB), free disk $(gb "$disk") (need 20 GB, the smaller of $ROOT and Docker root $root)"
   fi
-  echo "gate: free RAM $(gb "$ram") (need 10 GB), free disk $(gb "$disk") (need 20 GB, the smaller of $ROOT and Docker root $root)"
   if [ "$ram" -ge "$RAM_MIN_KB" ] && [ "$disk" -ge "$DISK_MIN_KB" ]; then
     return 0
   fi
