@@ -1,0 +1,49 @@
+# The public MCP HTTP front for the NeoForge shard (same handlers as mcp.caddy). Load this file, then `caddy reload`
+# where reload works; on the Colo node it does not, see runbooks/nf-mcp-caddy.md.
+# Placeholders, never real values: GELDAR_DOMAIN (the project domain) and GELDAR_NF_MCP_UPSTREAM (the node loopback
+# address of the NeoForge MCP, its port is <node-loopback-port>; set in the node env file by the operator, not in this repo).
+# Caddy is the only trusted proxy. Its kill switch is nf-mcp-off.caddy.
+mcp.neoforge.{$GELDAR_DOMAIN} {
+	# The MCP HTTP transport uses POST (JSON-RPC), GET (the event stream) and DELETE (end a session).
+	@not_allowed not method POST GET DELETE
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	# Response headers: no Server banner, no sniffing, no referrer (R4-05).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	# The same limit as BODY_LIMIT_BYTES in threshold/mcp/src/http/front.ts (64 KiB).
+	request_body {
+		max_size 64KiB
+	}
+
+	# Only /p/<player_id> is proxied. The pattern is the one in compose/cloudflared/config.example.yml.
+	@player path_regexp player ^/p/[a-z][a-z0-9-]{1,38}$
+	handle @player {
+		reverse_proxy {$GELDAR_NF_MCP_UPSTREAM} {
+			# The MCP accepts its loopback dev hosts; a public Host would get 403, as for Glass.
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			flush_interval -1
+			# Intended to close open streams on a reload. Unproven for SSE until the live check;
+			# restart the NeoForge MCP container after the swap (runbooks/nf-mcp-caddy.md).
+			stream_close_delay 5s
+		}
+	}
+
+	# Every other path is 404.
+	handle {
+		respond 404
+	}
+}

@@ -1,0 +1,13 @@
+# Kill switch for the NeoForge public MCP. To turn it off, install it in place of nf-mcp.caddy (on the Colo node
+# `colo-public.sh off nf-mcp` with a restart of board-proxy, because `caddy reload` FAILS there: its admin API is off, owner
+# ruling R39). Never restart Caddy for any other reason: it serves other sites on the node.
+# The body is the 0090 kill-switch body, the one the MCP itself answers.
+mcp.neoforge.{$GELDAR_DOMAIN} {
+	header Content-Type application/json
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	respond `{"error":{"code":"unavailable","message":"Service unavailable"}}` 503
+}
