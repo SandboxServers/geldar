@@ -1,0 +1,16 @@
+# The node's Ledger and OTel agents on the colo paper (COLO-COMPOSE-RECONCILE, decision D2). Opt-in: the node selects it
+# with GELDAR_COLO_EXTRA_OVERLAY=compose/opt-in/colo-paper-agents.yml (deploy/common.sh passes it to docker compose).
+# colo.yml has none of these lines. Mounts cannot be gated by a variable, so an overlay is the only form.
+# Every mount sets create_host_path: false: a missing jar or properties file fails the start with its source path,
+# and compose never creates an empty file or directory in its place.
+services:
+  paper:
+    environment:
+      JAVA_AGENTS: /opt/otel/opentelemetry-javaagent.jar
+      OTEL_JAVAAGENT_CONFIGURATION_FILE: /opt/otel/otel-agent.properties
+      OTEL_SDK_DISABLED: "false"
+    volumes:
+      - {type: bind, source: ../plugin/ledger/build/libs/ledger.jar, target: /plugins/ledger.jar, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/otel/opentelemetry-javaagent.jar', target: /opt/otel/opentelemetry-javaagent.jar, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: ./paper/otel-agent.properties, target: /opt/otel/otel-agent.properties, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/ledger/ledger.properties', target: /data/plugins/Ledger/ledger.properties, read_only: true, bind: {create_host_path: false}}
