@@ -145,11 +145,16 @@ describe('prompts/body-api/v13.json against the Body', () => {
     expect(strip(v13, v13Programs.slice(0, -3))).toEqual(strip(v12, v12Programs));
   });
 
-  it('keeps the v12 description text', () => {
+  it('keeps the v12 description apart from the owner-approved programs sentence', () => {
     const v12 = JSON.parse(
       readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v12.json'), 'utf8'),
     ) as { description: string };
-    expect((JSON.parse(RAW) as { description: string }).description).toBe(v12.description);
+    const sentence = 'The programs are those of v12 plus explore, farm and patrol.';
+    const description = (JSON.parse(RAW) as { description: string }).description;
+    expect(v12.description).toContain('The programs are the same as v10.');
+    expect(description).toBe(
+      v12.description.replace('The programs are the same as v10.', sentence),
+    );
   });
 
   it('carries no marker word in agent-visible text', () => {
