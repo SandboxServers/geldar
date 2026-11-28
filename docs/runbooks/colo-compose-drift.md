@@ -26,9 +26,7 @@ Values are from the node's compose file and the repo's. No secret values, no add
 3. `RCON_CMDS_STARTUP`, gamerule: the repo carries `gamerule players_sleeping_percentage 10` (decision 0460); the node has no
    such line. The live world value is 10 (set by the owner on 2026-11-27 through RCON). A Paper recreate from the node
    file would leave the gamerule at the default, so the repo line is what keeps the live value.
-3b. `RCON_CMDS_STARTUP`, border: the node file says `worldborder set 3000`, which is stale. The live border is 19000
-   (the 2026-11-15 spawn-town cutover), and the repo says `worldborder set 19000`, which is right. Do not copy 3000 back
-   from the node.
+3b. The node border is `worldborder set 19000`, equal to the repo; there is no border difference.
 4. golem-body: the repo has `profiles: ["adam"]` (decision 0212); the node has no profile line.
 5. players-host restart policy: node `on-failure:5`, repo `unless-stopped` (decision 0342).
 6. players-host: the repo passes `GELDAR_TELEMETRY_URL` through (#840); the node does not. Two C1-07 comments are
