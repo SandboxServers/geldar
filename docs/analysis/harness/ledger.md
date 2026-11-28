@@ -172,6 +172,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | NF-CHAT-S | delivery spike, scratch shard | NF chat plan (NeoForge campaign) | NF-CHAT-0, NF-CHAT-1 | ops | BlockedDependency |
 | NF-CHAT-2 | proximity chat on NeoForge, off by default; unblocks HC-27b `spoke_first` and AN-49 there | NF chat plan (NeoForge campaign) | NF-CHAT-S | | BlockedDependency (NF-CHAT-S) |
 | NF-CHAT-3 | muffled notices, no speech hash | NF chat plan (NeoForge campaign) | NF-CHAT-2, a 0383 amendment, NF-BODY | | BlockedDecision |
+| COLO-COMPOSE-RECONCILE | repo compose reconciled to the node's live settings (variables, opt-in overlay), then the operator copy; the card changes nothing on the node | colo compose (`work-packets-colo-compose-reconcile.md`) | none (0342, 0430, 0212 stand) | 40-50k | BlockedDecision (D1 to D5, owner; Paper recreate needs owner approval) |
 
 Work merged without a card id: the state-subject NATS ACL (#394), the step-0 test-shard driver (#519), the nats-auth test split (#534), the card files (#457, #463, #464).
 

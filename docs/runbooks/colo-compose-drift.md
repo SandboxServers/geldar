@@ -2,6 +2,11 @@
 
 Status: finding, read-only, 2026-11-20. Nothing on the node has been changed for it.
 
+Update 2026-11-28: the node's `colo.yml` was hand-patched (file sha256 starts `ebca19fc`), and the CD never copies `compose/`.
+The by-hand procedure and the rule not to overwrite the node file with a repo copy are in
+[colo-deploy.md](colo-deploy.md) ("Compose on the node"). The card that makes the repo file express the node's live settings,
+so the copy is safe, is [work-packets-colo-compose-reconcile.md](../analysis/harness/work-packets-colo-compose-reconcile.md).
+
 ## What the deploy reads
 
 - `deploy/common.sh` sets `ROOT` from `GELDAR_COLO_ROOT`, and the compose file is `COMPOSE_FILE` under it. On the node
