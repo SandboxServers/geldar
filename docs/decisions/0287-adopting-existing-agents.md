@@ -3,7 +3,7 @@
 - Status: Proposed (the operator records acceptance; no `--apply` has run against any agent).
 - Date: 2026-11-28
 - Spec: none. This is a contract record for the character-sheet campaign; `docs/spec.md` is not edited.
-- Related: 0328 (the stage order and the held-live ruling this record carries out), 0186 (the immutable adopted baseline), 0050 (`agents_sheet_immutable`), 0051 (`character_sheet_adoptions`), 0282 (sheet erasure), sql `0057_character_sheet_adoptions_conversion.sql`, the `player adopt-sheets` verb (S12-04a planner, S12-04b apply).
+- Related: 0328 (the stage order and the held-live ruling this record carries out), 0186 (the immutable adopted baseline), migration 0050 (`agents_sheet_immutable`), migration 0051 (`character_sheet_adoptions`), 0282 (sheet erasure), sql `0057_character_sheet_adoptions_conversion.sql`, the `player adopt-sheets` verb (S12-04a planner, S12-04b apply).
 
 ## Context
 
@@ -19,5 +19,5 @@ Lives that existed before the character sheet have no adopted baseline: `agents.
 ## Consequences
 
 - Nothing in CI, and nothing in the default path of the verb, writes: the write needs both `--apply` and `--operator-confirm`, and neither has a default or an environment fallback.
-- Open before any `--apply`: the `sheet_adopted` event payload schema (`contract/schemas/sheet-adopted-event.schema.json`) lists `source` as `config`, `roster` or `birth`. The apply writes `conversion`, so the schema needs the same value (a contract change, not made in this record).
+- Before any `--apply`: the contract enum change is made with this record. The `sheet_adopted` event payload schema (`contract/schemas/sheet-adopted-event.schema.json`) now lists `source` as `config`, `roster`, `birth` or `conversion`, because the apply writes `conversion`. The generated types and validators are regenerated from it.
 - Open: the constraint name in sql 0057 is the PostgreSQL default for the inline CHECK in 0051. It is confirmed by ops against a database migrated to 0066 before the migration runs there.
