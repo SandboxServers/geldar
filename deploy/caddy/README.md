@@ -9,6 +9,7 @@ Decisions: [0071](../../docs/decisions/0071-public-endpoints-and-ports.md) (the 
 | BlueMap map | `map.caddy` | `map-off.caddy` | `{$GELDAR_MAP_UPSTREAM}` |
 | Glass | `glass.caddy` | `glass-off.caddy` | `{$GELDAR_GLASS_UPSTREAM}` |
 | MCP (`/p/<player_id>` only) | `mcp.caddy` | `mcp-off.caddy` | `{$GELDAR_MCP_UPSTREAM}` |
+| NeoForge MCP (`/p/<player_id>` only, `mcp.neoforge.<domain>`) | `nf-mcp.caddy` | `nf-mcp-off.caddy` | `{$GELDAR_NF_MCP_UPSTREAM}` (set in the node env file; the MCP stays on the node loopback). Installed only by name: `colo-public.sh install nf-mcp`. Runbook: `docs/runbooks/nf-mcp-caddy.md` |
 | OTLP ingest (see the OTLP section) | `otel.caddy` | `otel-off.caddy` | `{$GELDAR_INGEST_UPSTREAM}` |
 | BlueMap NeoForge map | `map-neoforge.caddy` | `map-neoforge-off.caddy` | `{$GELDAR_MAP_NF_UPSTREAM}` |
 

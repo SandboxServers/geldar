@@ -168,10 +168,73 @@ describe('deploy/caddy site files', () => {
   });
 });
 
+// nf-mcp is the NeoForge shard's MCP front: the same handlers as mcp.caddy, on mcp.neoforge.<domain>.
+const withoutComments = (text: string) =>
+  text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+const mcpShape = (text: string) =>
+  withoutComments(text)
+    .replace(/mcp\.(neoforge\.)?\{\$GELDAR_DOMAIN\}/, 'HOST')
+    .replace(/\{\$GELDAR_(NF_)?MCP_UPSTREAM\}/, 'UPSTREAM');
+
+describe('nf-mcp site (the NeoForge shard MCP front)', () => {
+  const live = read('nf-mcp.caddy');
+  const off = read('nf-mcp-off.caddy');
+
+  it('serves mcp.neoforge from the project domain placeholder, live and off alike', () => {
+    expect(live).toContain('mcp.neoforge.{$GELDAR_DOMAIN} {');
+    expect(off).toContain('mcp.neoforge.{$GELDAR_DOMAIN} {');
+  });
+
+  it('has the same handlers as mcp.caddy, line for line, apart from the host and the upstream name', () => {
+    // Would fail if a method list, header rule, body cap, regex, Host, flush or stream setting differed from mcp.caddy.
+    expect(mcpShape(live)).toBe(mcpShape(read('mcp.caddy')));
+  });
+
+  it('refuses every method but POST, GET and DELETE with 405, as the first handle', () => {
+    expect(live).toMatch(/^\s*@not_allowed not method POST GET DELETE$/m);
+    expect(live).toMatch(/handle @not_allowed \{\s*respond 405\s*\}/);
+    expect(live.indexOf('handle @not_allowed')).toBeLessThan(live.indexOf('reverse_proxy'));
+  });
+
+  it('strips the client address headers and sets x-geldar-client-ip from the remote host', () => {
+    expect(live).toMatch(/^\s*request_header -x-geldar-client-ip$/m);
+    expect(live).toMatch(/^\s*request_header -X-Forwarded-For$/m);
+    expect(live).toMatch(/^\s*request_header -CF-Connecting-IP$/m);
+    expect(live).toMatch(/^\s*header_up x-geldar-client-ip \{remote_host\}$/m);
+  });
+
+  it('caps the body at 64KiB and proxies only /p/<player_id> with the mcp.caddy pattern', () => {
+    expect(live).toMatch(/request_body \{\s*max_size 64KiB\s*\}/);
+    const pattern = read('mcp.caddy').match(/path_regexp player (\S+)/);
+    expect(pattern).not.toBeNull();
+    expect(live).toContain(`path_regexp player ${pattern?.[1]}`);
+    expect(live).toMatch(/handle \{\s*respond 404\s*\}/);
+  });
+
+  it('sets Host localhost, flush_interval -1 and stream_close_delay 5s on its one proxy block', () => {
+    expect(live).toMatch(/reverse_proxy \{\$GELDAR_NF_MCP_UPSTREAM\} \{/);
+    expect(live).toMatch(/^\s*header_up Host localhost$/m);
+    expect(live).toMatch(/^\s*flush_interval -1$/m);
+    expect(live).toMatch(/^\s*stream_close_delay 5s$/m);
+    expect(live).not.toMatch(/127\.0\.0\.1|GELDAR_MCP_UPSTREAM\}/);
+  });
+
+  it('kill switch answers 503 with the 0090 body and proxies nothing', () => {
+    expect(off).not.toContain('reverse_proxy');
+    expect(off).toContain(
+      'respond `{"error":{"code":"unavailable","message":"Service unavailable"}}` 503',
+    );
+  });
+});
+
 describe('register shares the Glass host (decision 0135, amendment R42)', () => {
-  it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp only', () => {
+  it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp nf-mcp only', () => {
     const script = readFileSync(resolve(repo, 'deploy/colo-public.sh'), 'utf8');
-    expect(script).toMatch(/^SITES="map glass mcp"$/m);
+    // Removing nf-mcp from the list fails this line: the nf-mcp site must be in SITES.
+    expect(script).toMatch(/^SITES="map glass mcp nf-mcp"$/m);
     // No separate register SITE: the SITES list above is exact, and no register site file is named or installed. The
     // GELDAR_REGISTER_UPSTREAM placeholder on the glass site is allowed. Would fail on e.g. SITES="map glass mcp register",
     // a `$s-register` variable, or an 'install register.caddy' line.

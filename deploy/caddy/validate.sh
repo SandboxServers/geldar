@@ -18,6 +18,7 @@ env_args=(
   -e GELDAR_MAP_NF_UPSTREAM=map-nf.example.test:8110
   -e GELDAR_GLASS_UPSTREAM=glass.example.test:8080
   -e GELDAR_MCP_UPSTREAM=mcp.example.test:8788
+  -e GELDAR_NF_MCP_UPSTREAM=127.0.0.1:46788
   -e GELDAR_REGISTER_UPSTREAM=register.example.test:18090
   -e GELDAR_KINO_ENABLED=1
   -e GELDAR_INGEST_HOST=ingest.example.test
@@ -45,5 +46,5 @@ check killed map-off.caddy glass-off.caddy mcp-off.caddy
 check live-otel map.caddy glass.caddy mcp.caddy otel.caddy
 check killed-otel map-off.caddy glass-off.caddy mcp-off.caddy otel-off.caddy
 # The NeoForge map is a separate host (map.neoforge.<domain>), so its live and kill-switch files may share a set with the others.
-check live-nf map.caddy glass.caddy mcp.caddy map-neoforge.caddy
-check killed-nf map-off.caddy glass-off.caddy mcp-off.caddy map-neoforge-off.caddy
+check live-nf map.caddy glass.caddy mcp.caddy map-neoforge.caddy nf-mcp.caddy
+check killed-nf map-off.caddy glass-off.caddy mcp-off.caddy map-neoforge-off.caddy nf-mcp-off.caddy
