@@ -39,7 +39,7 @@ COMPOSE_FILE=$ROOT/compose/nf-live.yml
 PROBE_FILE=$ROOT/compose/nf-live-probe.yml
 SERVICES="nats postgres eventsink identity-seed velocity neoforge"
 # The secret files compose/nf-live.yml declares under ${NF_SECRETS_DIR:-./secrets-nf}. A test keeps this list in sync.
-SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt"
+SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt nats-mcp.txt nats-ranger.txt postgres-mcp.txt mcp-token-pepper.txt"
 # The one published host port (127.0.0.1:46565, velocity). Nothing else may listen on it.
 PORT=46565
 # Memory: the sum of the memory caps in compose/nf-live.yml, in MiB (neoforge 12288, postgres 2048, velocity 1024, nats 512,

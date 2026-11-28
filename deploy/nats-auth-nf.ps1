@@ -64,6 +64,14 @@ function Get-NfNatsUsers {
     # Its inbox is _INBOX.human. only (never the shared _INBOX.>): a compromised proxy cannot read or forge another user's inbox.
     # The publish grant of _INBOX.human.> is kept until S1 proves the client never publishes to an inbox (UNVERIFIED until then).
     human = @{ Pub = $velocityApi + @(foreach ($b in $buckets) { "`$JS.FC.KV_$b.>" }) + @("$humanInbox>"); Sub = @("$humanInbox>") }
+    # The MCP door (threshold/mcp on geldar-nf, compose/nf-live-rangers.yml): the colo mcp set with s=nf. It publishes the
+    # sovereign calls and the presence record, and talks to the Bodies over NATS; it is denied the hearing subject by name.
+    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", '$KV.geldar-presence.>', '$JS.API.>', '$JS.ACK.>', '_INBOX.>'); PubDeny = @("geldar.$s.body.*.hearing"); Sub = @('_INBOX.>') }
+    # The ranger Bodies (players-host, the five Turbo lives): the colo body set with s=nf, the same denies and subscribes.
+    # The body's denies are copied from geldar.ps1 (Get-NatsUsers, body); a ranger may not forge a kino, control or life subject.
+    ranger = @{ Pub = @("geldar.$s.>", '$JS.API.>', '$JS.ACK.>', '_INBOX.>') + @(foreach ($b in 'geldar-life-registry', 'geldar-checkpoints', 'geldar-body-generation', 'geldar-skins', 'geldar-plans', 'geldar-seen') { "`$KV.$b.>" });
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing", "geldar.$s.provenance.>", "geldar.$s.life.>");
+      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", "geldar.$s.state.*.level", "geldar.$s.provenance.>", '_INBOX.>') }
   }
 }
 
@@ -125,8 +133,9 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
   # The NATS passwords, then the Postgres password, the Velocity forwarding secret and the RCON password (nf-live.yml declares
   # them; rcon is read by the neoforge service's RCON_PASSWORD_FILE). Each is 32 symbols from $alphabet (the neoforge entrypoint
-  # accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten. Eleven files in all with the conf (nats-body.txt is the probe's, nats-human.txt the human lane's).
-  $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding', 'rcon'
+  # accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten. The MCP pepper is 64 symbols (the MCP refuses a shorter one).
+  # Fifteen files in all with the conf (nats-body.txt is the probe's, nats-human.txt the human lane's, the mcp and ranger ones the rangers').
+  $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding', 'rcon', 'postgres-mcp', 'mcp-token-pepper'
   foreach ($name in $names) {
     $path = Join-Path $dir "$name.txt"
     if (Test-Path -LiteralPath $path) {
@@ -135,7 +144,8 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
       Set-OwnerOnlyAcl $path
       continue
     }
-    $bytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+    $length = if ($name -eq 'mcp-token-pepper') { 64 } else { 32 }
+    $bytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes($length)
     $secret = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
     Write-NfSecretFile $path $secret
     Write-Host "created compose/secrets-nf/$name.txt"

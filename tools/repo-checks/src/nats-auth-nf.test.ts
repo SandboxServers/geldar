@@ -21,15 +21,35 @@ import {
 } from './nats-auth-fixtures.ts';
 
 /** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
-const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed', 'body', 'human'];
-/** The eleven files the generator writes: the conf, the seven NATS passwords (human included), postgres.txt, velocity-forwarding.txt and rcon.txt. */
+const NF_USERS = [
+  'neoforge',
+  'sink',
+  'deploy',
+  'velocity',
+  'seed',
+  'body',
+  'human',
+  'mcp',
+  'ranger',
+];
+/** The fifteen files the generator writes: the conf, the nine NATS passwords, postgres.txt, velocity-forwarding.txt, rcon.txt,
+ * postgres-mcp.txt and mcp-token-pepper.txt. */
 const NF_FILES = [
   'nats-auth.conf',
   ...NF_USERS.map((u) => `nats-${u}.txt`),
   'postgres.txt',
   'velocity-forwarding.txt',
   'rcon.txt',
+  'postgres-mcp.txt',
+  'mcp-token-pepper.txt',
 ].sort();
+/** The four files only the rangers overlay (compose/nf-live-rangers.yml, P4) declares; the base declared set lacks them until then. */
+const RANGER_ONLY_FILES = [
+  'nats-mcp.txt',
+  'nats-ranger.txt',
+  'postgres-mcp.txt',
+  'mcp-token-pepper.txt',
+];
 const NF_PROBE = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
 const NF_HUMAN = readFileSync(join(ROOT, 'compose', 'nf-live-human.yml'), 'utf8');
 /** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
@@ -45,6 +65,15 @@ function deploySecretFiles(): string[] {
 }
 const STREAMS = ['GELDAR_EVENTS', 'GELDAR_EVENTS_NF'];
 const BUCKETS = ['geldar-life-registry', 'geldar-skins'];
+/** Every KV bucket a nf user may name: the two identity buckets, and the ones the rangers' Bodies and the MCP's presence use. */
+const KV_NAMES = [
+  ...BUCKETS,
+  'geldar-presence',
+  'geldar-checkpoints',
+  'geldar-body-generation',
+  'geldar-plans',
+  'geldar-seen',
+];
 const NF_LIVE = readFileSync(join(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 
 const streamApi = (s: string): string[] => [
@@ -125,6 +154,51 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
     deny: [],
     sub: ['_INBOX.human.>'],
   },
+  mcp: {
+    pub: [
+      'geldar.nf.sovereign_call',
+      'geldar.nf.body.>',
+      '$KV.geldar-presence.>',
+      '$JS.API.>',
+      '$JS.ACK.>',
+      '_INBOX.>',
+    ],
+    deny: ['geldar.nf.body.*.hearing'],
+    sub: ['_INBOX.>'],
+  },
+  ranger: {
+    pub: [
+      'geldar.nf.>',
+      '$JS.API.>',
+      '$JS.ACK.>',
+      '_INBOX.>',
+      ...[
+        'geldar-life-registry',
+        'geldar-checkpoints',
+        'geldar-body-generation',
+        'geldar-skins',
+        'geldar-plans',
+        'geldar-seen',
+      ].map((b) => `$KV.${b}.>`),
+    ],
+    deny: [
+      'geldar.nf.kino.>',
+      'geldar.nf.blockowner.changed',
+      'geldar.nf.ctl.body.>',
+      'geldar.nf.helper.body.>',
+      'geldar.nf.state.*.level',
+      'geldar.nf.body.*.hearing',
+      'geldar.nf.provenance.>',
+      'geldar.nf.life.>',
+    ],
+    sub: [
+      'geldar.nf.body.>',
+      'geldar.nf.blockowner.changed',
+      'geldar.nf.state.*.level',
+      'geldar.nf.provenance.>',
+      '_INBOX.>',
+    ],
+  },
 };
 
 /** Whether a subject is one this shard's NATS may carry: geldar.nf.*, the inbox, $JS.FC, $JS.API.INFO, or a JetStream
@@ -133,7 +207,9 @@ function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
   if (['_INBOX.>', '_INBOX.human.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
   if (/^\$JS\.FC\.KV_geldar-(life-registry|skins)\.>$/.test(subject)) return true;
-  if (subject.startsWith('$KV.')) return BUCKETS.some((b) => subject.startsWith(`$KV.${b}.`));
+  // The rangers' MCP and body sets (the colo sets with s=nf) also name the presence and checkpoint buckets, and the JetStream wildcards.
+  if (['$JS.API.>', '$JS.ACK.>'].includes(subject)) return true;
+  if (subject.startsWith('$KV.')) return KV_NAMES.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
     const tokens = subject.split('.');
     const names = [...STREAMS, ...BUCKETS.map((b) => `KV_${b}`)];
@@ -359,7 +435,14 @@ describe.skipIf(!hasPwsh)(
       const declared = [...new Set(names)].sort();
       const deploy = deploySecretFiles().sort();
       expect(deploy.length, 'SECRET_FILES parsed').toBeGreaterThan(0);
-      expect(setDiff(generated, declared), 'generator vs nf-live.yml secrets').toEqual({
+      // The four ranger files are declared by compose/nf-live-rangers.yml (P4), which this list does not read yet.
+      expect(
+        setDiff(
+          generated.filter((f) => !RANGER_ONLY_FILES.includes(f)),
+          declared,
+        ),
+        'generator vs nf-live.yml secrets',
+      ).toEqual({
         onlyA: [],
         onlyB: [],
       });
@@ -407,7 +490,7 @@ describe.skipIf(!hasPwsh)(
         const out = `${run.stdout}${run.stderr}`;
         for (const f of NF_FILES.filter((x) => x !== 'nats-auth.conf')) {
           const value = readFileSync(join(fresh.dir, 'compose', 'secrets-nf', f), 'utf8');
-          expect(value.length, f).toBe(32);
+          expect(value.length, f).toBe(f === 'mcp-token-pepper.txt' ? 64 : 32);
           expect(out, f).not.toContain(value);
         }
       } finally {
