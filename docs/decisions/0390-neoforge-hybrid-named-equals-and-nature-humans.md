@@ -1,6 +1,6 @@
 # 0390. Marker-named operator accounts read as acts of nature; ordinary NeoForge humans are named equals (supersedes 0329 once accepted)
 
-- Status: Proposed (written 2026-11-19 from the coordinator's relay of the operator's model; the operator accepts or edits it). Supersedes 0329 once accepted; 0329 is not edited. Not in force. Every NF twin card and NF-F filter card stays frozen until it is accepted.
+- Status: Accepted (operator ruling, 2026-11-27, given in the sheet coordinator session; see [0289](0289-operator-rulings-2026-11-27-sheet.md)). Supersedes 0329; 0329 is not edited. Nothing is activated; NF twin and filter cards stay frozen until re-dispatched.
 - Date: 2026-11-19
 - Spec: none edited. Section 2 Principle 1 (no humans inside) and Principle 4 (everything is recorded) are read only; the spec text is the operator's to edit (0073).
 - Related: 0329, 0387 (item 5), 0388, 0137, 0059, 0058, 0068, 0375, 0385; [the plan and card table](../analysis/sheet/neoforge-hybrid-human-model.md)
@@ -18,14 +18,14 @@
 5. **Hand of god and serendipity stay deferred to v3** (`docs/ideas.md`). This record does not build or forbid it.
 6. **Wording.** Any agent-visible sentence about an unattributed cause ("something ...") is a labelled proposal in the plan note, not approved text.
 
-## Open questions (each has a proposed default in the plan note)
+## Questions (all answered 2026-11-27; each has a proposed default in the plan note)
 
-- Q-a. Refuse ordinary NeoForge players whose name contains a marker word (default yes; reserves such names for operator accounts, like 0387 item 5 does for agent-shaped names).
-- Q-b. A marker-named account's chat to agents (default suppressed entirely).
-- Q-c. How marker-named operator accounts connect to Paper, and who holds one (default: owner and the operator only, UUID allow-list, existing spectator route; acting needs a separate Principle 1 ruling).
-- Q-d. The intervention-recording mechanism (default: labelled session window and acts in operator-only storage, plus an operator note).
-- Q-e. Whether a name-keyed `PlayerActor` is needed for ordinary named humans (default: keep NF-2 as ruled; alternative: defer).
-- Q-f. Agents may attack ordinary named humans (confirm). Q-g. No Paper switch (default).
+- Q-a. Refuse ordinary NeoForge players whose name contains a marker word (default yes; reserves such names for operator accounts, like 0387 item 5 does for agent-shaped names). **ANSWERED, accepted: yes, refuse.**
+- Q-b. A marker-named account's chat to agents (default suppressed entirely). **ANSWERED, accepted: suppressed entirely.**
+- Q-c. How marker-named operator accounts connect to Paper, and who holds one (default: owner and the operator only, UUID allow-list, existing spectator route; acting needs a separate Principle 1 ruling). **ANSWERED, accepted: owner and operator only, UUID allow-list, spectator route; acting needs a separate Principle 1 ruling.**
+- Q-d. The intervention-recording mechanism (default: labelled session window and acts in operator-only storage, plus an operator note). **ANSWERED, accepted: labelled session window and operator-only storage, plus an operator note.**
+- Q-e. Whether a name-keyed `PlayerActor` is needed for ordinary named humans (default: keep NF-2 as ruled; alternative: defer). **ANSWERED, accepted: keep NF-2 as ruled.**
+- Q-f. Agents may attack ordinary named humans (confirm). Q-g. No Paper switch (default). **Q-f ANSWERED, accepted: agents may attack ordinary named humans. Q-g ANSWERED, accepted: no Paper switch.**
 
 ## Why
 

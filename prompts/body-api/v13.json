@@ -1,0 +1,322 @@
+{
+  "version": 13,
+  "description": "The allow-list of verbs and programs with one valid example each: v10 plus the break verb (dig the one block at a position) and the plan verb (add, replace or cancel a plan of block cells that the body works between thoughts). Both are verbs the agent chooses to use; the wording teaches what they do and what they refuse, and suggests no purpose (decision 0425). The programs are the same as v10. The examples are checked against the output validator by a test. Immutable once used: a change is a new vN file.",
+  "say": {
+    "summary": "Speak aloud, up to 256 characters.",
+    "example": {
+      "reasoning": "Greet.",
+      "say": "Hello, I am heading to the hills."
+    }
+  },
+  "verbs": [
+    {
+      "do": "goto",
+      "summary": "Walk to a position or a person.",
+      "fields": { "target": "{x,y,z} or name" },
+      "example": { "do": "goto", "target": { "x": 12, "y": 64, "z": -30 } }
+    },
+    {
+      "do": "mine",
+      "summary": "Dig nearest blocks of one kind.",
+      "fields": { "block": "block name", "count": "1 to 256" },
+      "example": { "do": "mine", "block": "oak_log", "count": 4 }
+    },
+    {
+      "do": "craft",
+      "summary": "Make an item from what you carry.",
+      "fields": { "item": "item name", "count": "1 to 64" },
+      "example": { "do": "craft", "item": "oak_planks", "count": 4 }
+    },
+    {
+      "do": "place",
+      "summary": "Place a block.",
+      "fields": { "block": "block name", "at": "{x,y,z} or feet" },
+      "example": { "do": "place", "block": "crafting_table", "at": "feet" }
+    },
+    {
+      "do": "eat",
+      "summary": "Eat food you carry.",
+      "fields": {},
+      "example": { "do": "eat" }
+    },
+    {
+      "do": "sleep",
+      "summary": "Sleep at night in a bed you placed, or rest in a sealed shelter.",
+      "fields": {},
+      "example": { "do": "sleep" }
+    },
+    {
+      "do": "open",
+      "summary": "Open a chest.",
+      "fields": { "at": "{x,y,z}" },
+      "example": { "do": "open", "at": { "x": 3, "y": 64, "z": 8 } }
+    },
+    {
+      "do": "till",
+      "summary": "Turn dirt, grass or a dirt path into farmland; needs a hoe you carry.",
+      "fields": { "at": "{x,y,z}" },
+      "example": { "do": "till", "at": { "x": 3, "y": 64, "z": 8 } }
+    },
+    {
+      "do": "deposit",
+      "summary": "Put items into a chest.",
+      "fields": { "at": "{x,y,z}", "item": "item name", "count": "1 to 64" },
+      "example": {
+        "do": "deposit",
+        "at": { "x": 3, "y": 64, "z": 8 },
+        "item": "cobblestone",
+        "count": 16
+      }
+    },
+    {
+      "do": "withdraw",
+      "summary": "Take items from a chest.",
+      "fields": { "at": "{x,y,z}", "item": "item name", "count": "1 to 64" },
+      "example": {
+        "do": "withdraw",
+        "at": { "x": 3, "y": 64, "z": 8 },
+        "item": "bread",
+        "count": 2
+      }
+    },
+    {
+      "do": "attack",
+      "summary": "Fight a nearby creature.",
+      "fields": { "target": "a name or entity type" },
+      "example": { "do": "attack", "target": "zombie" }
+    },
+    {
+      "do": "wait",
+      "summary": "Stand still.",
+      "fields": { "seconds": "1 to 600" },
+      "example": { "do": "wait", "seconds": 10 }
+    },
+    {
+      "do": "unstick",
+      "summary": "Get free when stuck.",
+      "fields": {},
+      "example": { "do": "unstick" }
+    },
+    {
+      "do": "give",
+      "summary": "Give items to a visible person.",
+      "fields": { "to": "person's name", "item": "item name", "count": "1 to 64" },
+      "example": { "do": "give", "to": "Pike", "item": "bread", "count": 2 }
+    },
+    {
+      "do": "note",
+      "summary": "Keep a private note.",
+      "fields": { "text": "the note" },
+      "example": { "do": "note", "text": "Iron is north." }
+    },
+    {
+      "do": "write_sign",
+      "summary": "Place a sign and write on it.",
+      "fields": { "text": "up to 60 characters" },
+      "example": { "do": "write_sign", "text": "Home. Knock first." }
+    },
+    {
+      "do": "edit_sign",
+      "summary": "Rewrite the text of an existing sign, in reach, at a block position.",
+      "fields": { "at": "{x,y,z}", "text": "up to 60 characters" },
+      "example": {
+        "do": "edit_sign",
+        "at": { "x": 3, "y": 64, "z": 8 },
+        "text": "Home. Knock first."
+      }
+    },
+    {
+      "do": "use",
+      "summary": "Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse; sleeping is the sleep verb.",
+      "fields": { "item": "name", "at": "{x,y,z}", "entity": "name:id" },
+      "example": { "do": "use", "at": { "x": 3, "y": 64, "z": 8 } }
+    },
+    {
+      "do": "break",
+      "summary": "Dig the one block at a position. You walk within reach and use a tool you carry; blocks you cannot reach or dig refuse.",
+      "fields": { "at": "{x,y,z}" },
+      "example": { "do": "break", "at": { "x": 3, "y": 64, "z": 8 } }
+    },
+    {
+      "do": "plan",
+      "summary": "Add or replace a plan of block placements, or cancel one plan (or all, with plan_id all). The body works an added plan between thoughts and pauses it for reflexes and foreground intents.",
+      "fields": {
+        "op": "add, replace or cancel",
+        "plan_id": "a name",
+        "palette": "names of blocks, each with a block name",
+        "steps": "box steps with pal, from and to cells"
+      },
+      "example": {
+        "do": "plan",
+        "op": "add",
+        "plan_id": "wall_1",
+        "palette": { "wall": { "block": "stone" } },
+        "steps": [
+          {
+            "op": "box",
+            "pal": "wall",
+            "from": { "x": 3, "y": 64, "z": 8 },
+            "to": { "x": 4, "y": 65, "z": 8 }
+          }
+        ]
+      }
+    }
+  ],
+  "programs": [
+    {
+      "program": "travel",
+      "summary": "Walk to a position or a person.",
+      "arguments": { "target": "{x,y,z} or name" },
+      "example": {
+        "goal": "reach_the_hills",
+        "program": "travel",
+        "arguments": { "target": { "x": 120, "y": 70, "z": -40 } },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 6000, "max_block_operations": 100 }
+      }
+    },
+    {
+      "program": "gather",
+      "summary": "Mine until you hold that many.",
+      "arguments": {
+        "block": "block name",
+        "count": "1 to 2304"
+      },
+      "example": {
+        "goal": "collect_wood",
+        "program": "gather",
+        "arguments": { "block": "oak_log", "count": 12 },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 12000, "max_block_operations": 200 }
+      }
+    },
+    {
+      "program": "craft",
+      "summary": "Craft until you hold that many.",
+      "arguments": { "item": "item name", "count": "1 to 576" },
+      "example": {
+        "goal": "make_pickaxe",
+        "program": "craft",
+        "arguments": { "item": "wooden_pickaxe", "count": 1 },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 2400, "max_block_operations": 20 }
+      }
+    },
+    {
+      "program": "rest",
+      "summary": "Recover health in a bed or shelter.",
+      "arguments": {
+        "until_health": "optional, 1 to 20"
+      },
+      "example": {
+        "goal": "recover_health",
+        "program": "rest",
+        "arguments": { "until_health": 20 },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 6000, "max_block_operations": 10 }
+      }
+    },
+    {
+      "program": "flee",
+      "summary": "Run from hostile mobs.",
+      "arguments": {
+        "distance": "optional, 8 to 64"
+      },
+      "example": {
+        "goal": "get_away",
+        "program": "flee",
+        "arguments": { "distance": 24, "max_legs": 4 },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 1200, "max_block_operations": 10 }
+      }
+    },
+    {
+      "program": "follow",
+      "summary": "Stay near a visible person.",
+      "arguments": {
+        "target": "person's name"
+      },
+      "example": {
+        "goal": "stay_with_pike",
+        "program": "follow",
+        "arguments": { "target": "Pike" },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 2400, "max_block_operations": 10 }
+      }
+    },
+    {
+      "program": "build",
+      "summary": "Build a shelter, wall or pillar.",
+      "arguments": { "blueprint": "shelter, wall or pillar", "block": "block name" },
+      "example": {
+        "goal": "build_shelter",
+        "program": "build",
+        "arguments": { "blueprint": "shelter", "block": "cobblestone" },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 3600, "max_block_operations": 40 }
+      }
+    },
+    {
+      "program": "explore",
+      "summary": "Walk in legs toward chunks you have not visited, avoiding water if asked. It stops when nothing new is near or danger is close.",
+      "arguments": {
+        "legs": "optional, 1 to 12",
+        "leg_blocks": "optional, 8 to 48",
+        "avoid_water": "optional, true or false"
+      },
+      "example": {
+        "goal": "explore_north",
+        "program": "explore",
+        "arguments": { "legs": 4, "leg_blocks": 16, "avoid_water": true },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 2400, "max_block_operations": 40 }
+      }
+    },
+    {
+      "program": "farm",
+      "summary": "Harvest ripe crops of yours within a set radius and replant them if asked. It does not touch crops that are not yours and does not till.",
+      "arguments": {
+        "radius": "optional, 4 to 24",
+        "max_cells": "optional, 1 to 32",
+        "replant": "optional, true or false"
+      },
+      "example": {
+        "goal": "harvest_wheat",
+        "program": "farm",
+        "arguments": { "radius": 12, "max_cells": 8, "replant": true },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 3600, "max_block_operations": 60 }
+      }
+    },
+    {
+      "program": "patrol",
+      "summary": "Walk a route of 2 to 8 block positions a set number of laps, returning to the start if looping.",
+      "arguments": {
+        "route": "2 to 8 positions, each {x,y,z}",
+        "laps": "optional, 1 to 5",
+        "loop": "optional, true or false"
+      },
+      "example": {
+        "goal": "patrol_gate",
+        "program": "patrol",
+        "arguments": {
+          "route": [{ "x": 10, "y": 64, "z": -4 }, { "x": 18, "y": 64, "z": -4 }],
+          "laps": 2,
+          "loop": true
+        },
+        "wake_on": ["goal_completed"],
+        "limits": { "max_world_ticks": 4800, "max_block_operations": 40 }
+      }
+    }
+  ],
+  "wake_on": {
+    "summary": "Interrupts an intent.",
+    "values": [
+      "directly_addressed",
+      "precondition_failed",
+      "unexpected_damage",
+      "goal_completed",
+      "new_agent_within_N (1 to 99 blocks)"
+    ]
+  }
+}
