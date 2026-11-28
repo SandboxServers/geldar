@@ -43,14 +43,8 @@ const NF_FILES = [
   'postgres-mcp.txt',
   'mcp-token-pepper.txt',
 ].sort();
-/** The four files only the rangers overlay (compose/nf-live-rangers.yml, P4) declares; the base declared set lacks them until then. */
-const RANGER_ONLY_FILES = [
-  'nats-mcp.txt',
-  'nats-ranger.txt',
-  'postgres-mcp.txt',
-  'mcp-token-pepper.txt',
-];
 const NF_PROBE = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
+const NF_RANGERS = readFileSync(join(ROOT, 'compose', 'nf-live-rangers.yml'), 'utf8');
 const NF_HUMAN = readFileSync(join(ROOT, 'compose', 'nf-live-human.yml'), 'utf8');
 /** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
 function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
@@ -425,24 +419,17 @@ describe.skipIf(!hasPwsh)(
 
     it('makes the generator output equal the secrets of nf-live.yml and the SECRET_FILES of nf-deploy.sh', () => {
       const generated = readdirSync(dirOf()).sort();
-      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts) and the human
-      // overlay's (nats-human.txt, which only the human lane mounts).
+      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts), the human
+      // overlay's (nats-human.txt, which only the human lane mounts) and the rangers overlay's (the four ranger files).
       const names = [
-        ...`${NF_LIVE}\n${NF_PROBE}\n${NF_HUMAN}`.matchAll(
+        ...`${NF_LIVE}\n${NF_PROBE}\n${NF_HUMAN}\n${NF_RANGERS}`.matchAll(
           /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g,
         ),
       ].map((m) => m[1] ?? '');
       const declared = [...new Set(names)].sort();
       const deploy = deploySecretFiles().sort();
       expect(deploy.length, 'SECRET_FILES parsed').toBeGreaterThan(0);
-      // The four ranger files are declared by compose/nf-live-rangers.yml (P4), which this list does not read yet.
-      expect(
-        setDiff(
-          generated.filter((f) => !RANGER_ONLY_FILES.includes(f)),
-          declared,
-        ),
-        'generator vs nf-live.yml secrets',
-      ).toEqual({
+      expect(setDiff(generated, declared), 'generator vs nf-live.yml secrets').toEqual({
         onlyA: [],
         onlyB: [],
       });

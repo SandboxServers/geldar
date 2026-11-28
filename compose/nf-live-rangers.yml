@@ -1,0 +1,210 @@
+# The opt-in rangers overlay for the live NeoForge shard (project geldar-nf). It renders TOGETHER with compose/nf-live.yml:
+#   docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml config --quiet
+# deploy/nf-deploy.sh adds it only with NF_RANGERS=on (deploy/nf-rangers-lib.sh). Off, nothing here is started.
+# It adds six long-running or one-shot services that share the project network nf and nothing else:
+#   geldar-mcp       the door a Mind calls (threshold/mcp); the only published port, 127.0.0.1:46788 -> 8788.
+#   ranger-yellow, ranger-green, ranger-blue, ranger-red, ranger-pink
+#                    one players-host Body per life (golem/src/players/main.ts), each with its own --player id.
+#   rangers-admin    a one-shot admin CLI (profile `admin`, which `up` never activates): owner, roster and token commands.
+# The Bodies reach RCON on the neoforge service name (the in-network opt-in, GELDAR_IN_NETWORK_HOSTS=1) and the game through
+# velocity. Nothing here joins nf-human, redeclares a base service, or publishes beyond loopback. The base file is unchanged.
+#
+# UNVERIFIED until a run: the Bodies' golem build accepts the neoforge RCON host only after the golem change (packet P1); the
+# shard file is nf-mind.yaml (P3); the MCP reads its database password from postgres-mcp.txt under the geldar_nf database.
+name: geldar-nf
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# The five Bodies share one block. Each service merges it and sets only its command (its life's player id).
+x-ranger-body: &ranger-body
+  build:
+    context: ..
+    dockerfile: golem/Dockerfile
+  image: ${NF_BODY_IMAGE:-geldar-body:nf-live}
+  entrypoint: ["node", "src/players/main.ts"]
+  # The service uid, not root: the 0600 secret files are the account's, so the image's uid 1000 cannot read them.
+  user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+  environment:
+    GELDAR_SHARD: nf
+    # The neoforge service name is accepted only with this opt-in (as the probe). The Body talks to Velocity and RCON to neoforge.
+    GELDAR_IN_NETWORK_HOSTS: "1"
+    GELDAR_MC_HOST: velocity
+    GELDAR_MC_PORT: "25565"
+    GELDAR_RCON_HOST: neoforge
+    GELDAR_RCON_PORT: "25575"
+    GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
+    GELDAR_NATS_URL: nats://nats:4222
+    GELDAR_NATS_USER: ranger
+    GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-ranger.txt
+  secrets: [rcon, nats-ranger.txt]
+  volumes:
+    # The Mind's shard file under the name the player host reads (its sovereign.players is the five lives).
+    - ../shards/nf-mind.yaml:/opt/geldar/shards/nf.yaml:ro
+  networks: [nf]
+  deploy:
+    resources:
+      limits:
+        cpus: "0.5"
+        memory: 512m
+        pids: 128
+  memswap_limit: 512m
+  pids_limit: 128
+  cpu_shares: 256  # relative CPU weight (default 1024 on colo): the rangers yield to the colo shard under contention
+  logging: *logging
+  labels:
+    geldar.project: geldar-nf
+    com.centurylinklabs.watchtower.enable: "false"
+  # unless-stopped: a Body comes back after a host reboot, as the colo players-host does.
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  stop_grace_period: 30s
+
+services:
+  geldar-mcp:
+    build:
+      context: ..
+      dockerfile: threshold/mcp/Dockerfile
+    image: ${NF_MCP_IMAGE:-geldar-mcp:nf-live}
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+    environment:
+      GELDAR_SHARD: nf
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      # The MCP reads its shard's database (config.ts defaults to geldar when this is unset).
+      POSTGRES_DB: geldar_nf
+      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/postgres-mcp.txt
+      GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
+      # Only inside the container may the server bind 0.0.0.0; the port is still published on loopback alone.
+      GELDAR_MCP_IN_CONTAINER: "1"
+      GELDAR_MCP_BIND: 0.0.0.0
+      # The Host values local clients send to the loopback port. No public host.
+      GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
+      GELDAR_MCP_TRUSTED_PROXIES: "127.0.0.1"
+      # The act budget is suspended and every act is metered (decision 0149), as on colo.
+      GELDAR_ACT_BUDGET_ENFORCE: "0"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: mcp
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
+    secrets: [postgres-mcp.txt, mcp-token-pepper.txt, nats-mcp.txt]
+    volumes:
+      - ../shards/nf-mind.yaml:/opt/geldar/shards/nf.yaml:ro
+    ports:
+      # The loopback MCP port (46788 is used nowhere else in compose/ or deploy/). Literal: loopback-ports.ts rejects interpolation.
+      - "127.0.0.1:46788:8788"
+    networks: [nf]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+          pids: 128
+    memswap_limit: 256m
+    pids_limit: 128
+    cpu_shares: 256  # relative CPU weight, as the rangers above
+    logging: *logging
+    labels:
+      geldar.project: geldar-nf
+      com.centurylinklabs.watchtower.enable: "false"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # A TCP connect to the published port inside the container (compose/mcp.yml and the colo geldar-mcp use the same probe).
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:net').connect(8788, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  ranger-yellow:
+    <<: *ranger-body
+    command: ["--player", "ag-turboyelo-01"]
+
+  ranger-green:
+    <<: *ranger-body
+    command: ["--player", "ag-turbogreen-01"]
+
+  ranger-blue:
+    <<: *ranger-body
+    command: ["--player", "ag-turboblue-01"]
+
+  ranger-red:
+    <<: *ranger-body
+    command: ["--player", "ag-turbored-01"]
+
+  ranger-pink:
+    <<: *ranger-body
+    command: ["--player", "ag-turbopink-01"]
+
+  # The admin one-shot (profile admin): one CLI, then exit. It publishes nothing. Token files go only to the bind mount below,
+  # which must already exist (create_host_path false): compose never creates a host directory for tokens.
+  rangers-admin:
+    profiles: ["admin"]
+    build:
+      context: ..
+      dockerfile: tools/admin/Dockerfile
+    image: ${NF_ADMIN_IMAGE:-geldar-admin:nf-live}
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+    restart: "no"
+    environment:
+      GELDAR_SHARD_FILE: /opt/geldar/shards/nf.yaml
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: geldar_nf
+    secrets: [postgres]
+    volumes:
+      - ../shards/nf-mind.yaml:/opt/geldar/shards/nf.yaml:ro
+      - type: bind
+        source: ${NF_TOKENS_DIR:-./tokens-nf}
+        target: /run/tokens
+        bind:
+          create_host_path: false
+    networks: [nf]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+          pids: 128
+    memswap_limit: 512m
+    pids_limit: 128
+    cpu_shares: 256
+    logging: *logging
+    labels:
+      geldar.project: geldar-nf
+      geldar.admin: "true"
+      com.centurylinklabs.watchtower.enable: "false"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+# Declared here so that the file renders alone: the nf network, and the rcon and postgres secrets as compose/nf-live.yml does.
+networks:
+  nf: {}
+
+secrets:
+  rcon:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/rcon.txt
+  postgres:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt
+  nats-ranger.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-ranger.txt
+  nats-mcp.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-mcp.txt
+  postgres-mcp.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres-mcp.txt
+  mcp-token-pepper.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/mcp-token-pepper.txt

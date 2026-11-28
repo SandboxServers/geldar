@@ -12,6 +12,7 @@
 #   | 46222     | nats       | 4222           | no        | reserved: NATS client port, never published here     |
 #   | 46432     | postgres   | 5432           | no        | reserved: Postgres, never published here             |
 #   | 46575     | neoforge   | 25575          | no        | reserved: RCON, never published here                 |
+#   | 46788     | geldar-mcp | 8788           | yes       | rangers overlay only (compose/nf-live-rangers.yml)   |
 #
 # Never 25565 or 25566 (deploy/README.md). The block collides with none of compose/*.yml, deploy/scratch/*.env, or the
 # scratch defaults (the repo-checks test nf-live-compose.test.ts reads them and fails on any shared host port).
