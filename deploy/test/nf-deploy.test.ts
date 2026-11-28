@@ -99,6 +99,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
+  copyFileSync(resolve(DEPLOY, 'nf-rangers-lib.sh'), join(repo, 'deploy', 'nf-rangers-lib.sh'));
   copyFileSync(
     resolve(DEPLOY, 'nf-extra-mods-lib.sh'),
     join(repo, 'deploy', 'nf-extra-mods-lib.sh'),

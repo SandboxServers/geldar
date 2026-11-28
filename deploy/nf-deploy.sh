@@ -63,6 +63,8 @@ TELEMETRY_OFF=0
 . "$(dirname "$0")/nf-human-lib.sh"
 # The optional extra mods (NF_EXTRA_MODS, deploy/nf-extra-mods-lib.sh): one overlay per enabled name, checked in gates().
 . "$(dirname "$0")/nf-extra-mods-lib.sh"
+# The rangers lane (geldar-mcp and the five players-host Bodies, NF_RANGERS=on only) lives in deploy/nf-rangers-lib.sh.
+. "$(dirname "$0")/nf-rangers-lib.sh"
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -91,6 +93,7 @@ dc() {
   elif [ "$TELEMETRY_OFF" = 1 ]; then
     set -- -f "$OFF_FILE" "$@"
   fi
+  if [ "$RANGERS" = 1 ]; then set -- -f "$RANGERS_FILE" "$@"; fi
   docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
@@ -131,6 +134,7 @@ case $verb in
   plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
   human-down) [ -z "$SERVICE" ] || die "human-down takes no service name" ;;
+  rangers-down) [ -z "$SERVICE" ] || die "rangers-down takes no service name" ;;
   refresh-secrets) [ -z "$SERVICE" ] || die "refresh-secrets takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
@@ -140,7 +144,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|rangers-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -427,6 +431,7 @@ gates() {
   check_telemetry
   check_extra_mods
   check_human_inputs
+  check_rangers_inputs
   check_operator
   check_telemetry_network
   check_service_uid
@@ -434,6 +439,8 @@ gates() {
   check_port
   check_human_port
   check_human_orphan
+  check_rangers_port
+  check_rangers_orphan
   check_inputs
   check_resources
   check_config
@@ -472,6 +479,7 @@ cmd_up() {
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
   if [ "$HUMAN" = 1 ] && ! act dc up -d --wait velocity-human; then human_fail "velocity-human did not become healthy"; fi
+  if [ "$RANGERS" = 1 ]; then rangers_up; fi
   say "up: project $PROJECT started (no volume removed)"
 }
 
@@ -655,4 +663,5 @@ case $verb in
   probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
   human-down) cmd_human_down ;;
+  rangers-down) cmd_rangers_down ;;
 esac
