@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/observation-event.schema.json",
   "title": "ObservationPayload",
-  "description": "An event a Body observed and reports to its own agent (AN-24, decision 0343). Proposed: the wording is unapproved (OD-E) and nothing publishes an observation yet. The actor is set only when a visible causal actor caused the event; otherwise the actor is absent and the event stays unattributed.",
+  "description": "An event a Body observed and reports to its own agent (AN-24, decision 0343). Owner-approved 2026-11-27 under decision 0450 (the wording, OD-E); nothing publishes an observation yet. The actor is set only when a visible causal actor caused the event; otherwise the actor is absent and the event stays unattributed.",
   "oneOf": [
     { "$ref": "#/$defs/GiftReceived" },
     { "$ref": "#/$defs/PropertyBroken" },
@@ -22,7 +22,11 @@
       "required": ["name", "life"],
       "properties": {
         "name": { "$ref": "#/$defs/ActorName" },
-        "life": { "$ref": "common.schema.json#/$defs/LifeId" }
+        "life": { "$ref": "common.schema.json#/$defs/LifeId" },
+        "basis": {
+          "description": "How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.",
+          "enum": ["seen", "spoke", "signed"]
+        }
       }
     },
     "GiftReceived": {

@@ -269,6 +269,17 @@
                 "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemName" }, { "type": "null" }]
               },
               "health_estimate": { "type": "string", "maxLength": 32 },
+              "pos": {
+                "description": "The other agent's block position, as the Body perceives it. Absent when the Body does not perceive the agent. Carries no id.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["x", "y", "z"],
+                "properties": {
+                  "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+                  "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+                  "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+                }
+              },
               "vertical": {
                 "description": "Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.",
                 "type": "string",

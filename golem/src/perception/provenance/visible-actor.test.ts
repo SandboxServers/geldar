@@ -35,6 +35,7 @@ describe('observedActor', () => {
     expect(observedActor(asBot(world), 'ag_chapman_01', (u) => `life_${u}`)).toEqual({
       name: 'ag_chapman_01',
       life: 'life_ag_chapman_01',
+      basis: 'seen',
     });
   });
 
@@ -113,6 +114,6 @@ describe('observedActor as the watchHurts resolver', () => {
     bot.emit('entityHurt', bot.entity, world.entities[2]);
     bot.health = 15;
     bot.emit('health');
-    expect(seen[0]?.actor).toEqual({ name: 'ag_ada_01', life: 'life_ag_ada_01' });
+    expect(seen[0]?.actor).toEqual({ name: 'ag_ada_01', life: 'life_ag_ada_01', basis: 'seen' });
   });
 });

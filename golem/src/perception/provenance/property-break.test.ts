@@ -75,7 +75,7 @@ describe('observeBreak', () => {
     const out = observeBreak(brk(SELF), ctxFor(world));
     expect(out).toEqual({
       kind: 'property_broken',
-      actor: { name: 'ag_capb_02', life: 'ag_capb_02' },
+      actor: { name: 'ag_capb_02', life: 'ag_capb_02', basis: 'seen' },
       block: 'cobblestone',
       key: 'brk:2064:1313:200:800:ag_capb_02',
     });
@@ -237,7 +237,7 @@ describe('observeBreak', () => {
       const out = observeBreak(brk(SELF, cell), ctxFor(world));
       expect(out).toEqual({
         kind: 'property_broken',
-        actor: { name: 'ag_capb_02', life: 'ag_capb_02' },
+        actor: { name: 'ag_capb_02', life: 'ag_capb_02', basis: 'seen' },
         block: 'cobblestone',
         key: `brk:2064:${cell.x}:${cell.y}:${cell.z}:ag_capb_02`,
       });
@@ -308,7 +308,7 @@ describe('observeBreak', () => {
     playerAt(world, 'ag_capb_02');
     expect(observeBreak(fixture.coreprotect_present, ctxFor(world, SELF))).toEqual({
       kind: 'property_broken',
-      actor: { name: 'ag_capb_02', life: 'ag_capb_02' },
+      actor: { name: 'ag_capb_02', life: 'ag_capb_02', basis: 'seen' },
       block: 'cobblestone',
       key: 'brk:411:1313:200:800:ag_capb_02',
     });

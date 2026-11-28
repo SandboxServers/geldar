@@ -19,7 +19,7 @@ import { PRESENT_HANDLERS, presentEvents } from './present-handlers/index.ts';
 const LIFE = 'ag_adam_01';
 const AT = '2026-11-20T10:00:00.000Z';
 /** The player the Body can see: named, with a life id that must never reach the player. */
-const VISIBLE = { name: 'Zack', life: 'ag_zack_01' };
+const VISIBLE = { name: 'Zack', life: 'ag_zack_01', basis: 'seen' };
 /** The name of a player out of sight: it must never reach the player. */
 const HIDDEN_NAME = 'Hidden_Walker';
 
@@ -64,7 +64,12 @@ function leaksOf(out: unknown[]): string[] {
 const observationsOf = (out: unknown[]): unknown[] =>
   out.filter((e) => {
     const type = (e as { type?: unknown }).type;
-    return type === 'gift_received' || type === 'property_broken';
+    return (
+      type === 'gift_received' ||
+      type === 'property_broken' ||
+      type === 'fight_seen' ||
+      type === 'container_taken'
+    );
   });
 
 /** A break of an owned block, in sight: the breaker is named (`observedActor`). From break-real.json. */
@@ -134,7 +139,7 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
     expect(leaksOf(presented(events).out)).toEqual([]);
   });
 
-  it('an injected life id in an observation is reported as a leak', () => {
+  it('an injected life id in an observation is never shown, and the gate still catches one', () => {
     const leaky = mind(
       'observation',
       {
@@ -146,7 +151,8 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
       },
       1,
     );
-    expect(leaksOf(presented([leaky]).out)).toContain('life id');
+    expect(leaksOf(presented([leaky]).out)).toEqual([]);
+    expect(leaksOf([{ text: 'ag_zack_01 broke your chest.' }])).toContain('life id');
   });
 
   it('an injected coordinate in an observation is reported as a leak', () => {
@@ -177,7 +183,7 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
 
 /*
  * AN-50b: the two rows the Body's subscription adds to the active set. A fight names its fighter only when
- * the fighter is visible; a take names its taker only when the taker is visible. Hidden here means the
+ * the fighter is visible; a take names its taker only when the taker is visible with a basis (decision 0450). Hidden here means the
  * observation carries no actor at all.
  */
 const FIGHT_VISIBLE = mind(
@@ -213,18 +219,61 @@ const TAKE_HIDDEN = mind(
 );
 
 describe('the leakage gate: fight_seen and container_taken (AN-50b)', () => {
-  // Both kinds are mapped but present no line: the observation handler sets no observationKind for them,
-  // and the presenter returns nothing for an observation without one (handlers/observation.test.ts).
-  it('a visible fighter and a visible taker present no line: mapped, not presented', () => {
+  // A fight or take names its actor only with a valid basis and a clean name (decision 0450).
+  it('a visible fighter and a visible taker, with a basis, present lines that name them', () => {
     const { sim, out } = presented([FIGHT_VISIBLE, TAKE_VISIBLE]);
     expect(sim).toHaveLength(2);
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(2);
+    expect(observationsOf(out).map((e) => (e as { text: string }).text)).toEqual([
+      'Zack fought a zombie nearby.',
+      'Zack took 8 cobblestone from your container.',
+    ]);
+    for (const event of observationsOf(out)) expect(event).not.toHaveProperty('actor');
+    expect(leaksOf(out)).toEqual([]);
   });
 
-  it('a hidden fighter and a hidden taker present no line either', () => {
+  it('without a basis, a digit name, a life id or a marker name, fight and take say Someone', () => {
+    const actors = [
+      { name: 'Zack', life: 'ag_zack_01' },
+      { name: 'Zack2', life: 'ag_zack_01', basis: 'seen' },
+      { name: 'ag_kestrel_01', life: 'ag_zack_01', basis: 'seen' },
+      { name: '12345678', life: 'ag_zack_01', basis: 'seen' },
+      { name: 'Watcher', life: 'ag_zack_01', basis: 'seen' },
+    ];
+    for (const actor of actors) {
+      const fight = mind(
+        'observation',
+        { kind: 'fight_seen', actor, target: 'zombie', key: 'fight:2631:ag_zack_01:zombie' },
+        2631,
+      );
+      const take = mind(
+        'observation',
+        {
+          kind: 'container_taken',
+          actor,
+          item: 'cobblestone',
+          count: 8,
+          key: 'take:3982:1314:200:800:ag_zack_01:cobblestone',
+        },
+        3982,
+      );
+      const { out } = presented([fight, take]);
+      expect(
+        observationsOf(out).map((e) => (e as { text: string }).text),
+        actor.name,
+      ).toEqual([
+        'Someone fought a zombie nearby.',
+        'Someone took 8 cobblestone from your container.',
+      ]);
+      expect(leaksOf(out), actor.name).toEqual([]);
+    }
+  });
+
+  it('a hidden fighter and a hidden taker present the same lines', () => {
     const { sim, out } = presented([FIGHT_HIDDEN, TAKE_HIDDEN]);
     expect(sim).toHaveLength(2);
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(2);
+    expect(leaksOf(out)).toEqual([]);
   });
 
   it('the mapped visible fight and take carry the visible name, and no life id, key or coordinate', () => {
@@ -246,7 +295,7 @@ describe('the leakage gate: fight_seen and container_taken (AN-50b)', () => {
       'observation',
       {
         kind: 'container_taken',
-        actor: { name: 'Zack', life: 'ag_zack_01' },
+        actor: { name: 'Zack', life: 'ag_zack_01', basis: 'seen' },
         item: 'cobblestone',
         count: 8,
         key: 'take:3982:1314:200:800:ag_zack_01:cobblestone',

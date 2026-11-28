@@ -93,9 +93,55 @@ describe('authorized entities', () => {
         health_estimate: 'unknown',
         vertical: 'level',
         in_reach: false,
+        pos: { x: 0, y: 64, z: 6 },
       },
     ]);
     expect(entities).toEqual([]);
+  });
+
+  it('gives a perceived agent its block pos, on every axis and sign', () => {
+    const world = new FakeWorld();
+    world.entities[1] = {
+      type: 'player',
+      username: 'Neg',
+      position: new Vec3(-3.5, 60.5, -4.5),
+      height: 1.8,
+    };
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pos',
+      position: new Vec3(3.5, 66.2, 4.5),
+      height: 1.8,
+    };
+    const { agents } = createPerception(world.bot).surroundings();
+    expect(agents.find((a) => a.name === 'Neg')?.pos).toEqual({ x: -4, y: 60, z: -5 });
+    expect(agents.find((a) => a.name === 'Pos')?.pos).toEqual({ x: 3, y: 66, z: 4 });
+  });
+
+  it('gives no agent entry, and so no pos, to a player the Body cannot see', () => {
+    const world = new FakeWorld();
+    world.entities[1] = {
+      type: 'player',
+      username: 'Hidden',
+      position: new Vec3(0.5, 64, -6.5),
+      height: 1.8,
+    };
+    world.set('stone', 0, 65, -3);
+    world.set('stone', 0, 64, -3);
+    expect(createPerception(world.bot).surroundings().agents).toEqual([]);
+  });
+
+  it('puts no id or life key in an agent entry', () => {
+    const world = new FakeWorld();
+    world.entities[1] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 6.5),
+      height: 1.8,
+    };
+    const { agents } = createPerception(world.bot).surroundings();
+    expect(agents[0]).not.toHaveProperty('life');
+    expect(JSON.stringify(agents)).not.toMatch(/ag_/);
   });
 
   it('gives an agent below within 3 blocks vertical below and in_reach true, a far level agent level and false', () => {
@@ -121,6 +167,7 @@ describe('authorized entities', () => {
         health_estimate: 'unknown',
         vertical: 'below',
         in_reach: true,
+        pos: { x: 2, y: 62, z: 0 },
       },
       {
         name: 'Far',
@@ -128,6 +175,7 @@ describe('authorized entities', () => {
         held_item: null,
         health_estimate: 'unknown',
         vertical: 'level',
+        pos: { x: 0, y: 64, z: 20 },
         in_reach: false,
       },
     ]);

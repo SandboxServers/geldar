@@ -70,7 +70,7 @@ describe('observeFight', () => {
     const out = observeFight(engaged(), ctxFor(world));
     expect(out).toEqual({
       kind: 'fight_seen',
-      actor: { name: 'ag_capb_02', life: 'ag_capb_02' },
+      actor: { name: 'ag_capb_02', life: 'ag_capb_02', basis: 'seen' },
       target: 'zombie',
       key: 'fight:1200:ag_capb_02:zombie',
     });
@@ -223,7 +223,7 @@ describe('observeFight', () => {
       const out = observeFight(msg, ctxFor(world, { self: 'ag_capb_02', world: 'world' }));
       expect(out).toEqual({
         kind: 'fight_seen',
-        actor: { name: 'ag_capa_01', life: 'ag_capa_01' },
+        actor: { name: 'ag_capa_01', life: 'ag_capa_01', basis: 'seen' },
         target: 'zombie',
         key: `fight:${msg.tick}:ag_capa_01:zombie`,
       });

@@ -12,6 +12,7 @@ import {
 } from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
+import { buildRoster, encodeRoster, writeRosterExport } from './roster-export.ts';
 import { checkExportTarget, ExportError, writeSkinExport } from './skin-export.ts';
 import { writeHeads } from './skin-heads.ts';
 import { describeSkin, openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
@@ -45,6 +46,8 @@ export const USAGE = `usage: players-cli skin set <player-id> <png> [--model cla
   --confirm-public   required with --visibility public, so a public listing is never by accident
   --export-json      also write the signed record as ranger-skins.json (mode 0600) to a new file outside the repo
   --no-store         do not write the bucket; needs --export-json, then \`skin import\` on the node stores it
+  roster export --out <path>: write every sovereign player as a flat {"<name>": "<life_id>"} JSON object (mode 0600,
+              at most 16 KiB) to a new file outside the repo. Operator-only: no agent or Body reads the file.
 `;
 
 /** `skin heads --skins-dir <dir> --out-dir <dir> [--map overworld]`: BlueMap player heads from skin files. */
@@ -64,6 +67,28 @@ function runHeads(args: readonly string[], deps: CliDeps): number {
     return 0;
   } catch (error) {
     deps.out(`error: ${error instanceof Error ? error.message : 'could not write the heads'}`);
+    return 1;
+  }
+}
+
+/** `roster export --out <path>`: the operator's flat name-to-life roster, written atomically to a new file. */
+async function runRosterExport(args: readonly string[], deps: CliDeps): Promise<number> {
+  const out = args.length === 2 && args[0] === '--out' ? args[1] : undefined;
+  if (out === undefined) {
+    deps.out(USAGE);
+    return 2;
+  }
+  try {
+    const target = await checkExportTarget(out, deps.repoRoot);
+    const roster = buildRoster(await deps.readShard());
+    const body = encodeRoster(roster);
+    await writeRosterExport(target, body);
+    deps.out(
+      `ok: exported ${Object.keys(roster).length} sovereign players to ${target} (${Buffer.byteLength(body)} bytes)`,
+    );
+    return 0;
+  } catch (error) {
+    deps.out(`error: ${error instanceof Error ? error.message : 'could not export the roster'}`);
     return 1;
   }
 }
@@ -92,6 +117,7 @@ export interface CliDeps {
 export async function runCli(argv: readonly string[], deps: CliDeps): Promise<number> {
   const [group, verb, player, file, ...rest] = argv;
   if (group === 'skin' && verb === 'heads') return runHeads(argv.slice(2), deps);
+  if (group === 'roster' && verb === 'export') return runRosterExport(argv.slice(2), deps);
   if (
     group === 'skin' &&
     verb === 'import' &&

@@ -1,6 +1,6 @@
 {
   "version": 13,
-  "description": "The allow-list of verbs and programs with one valid example each: v10 plus the break verb (dig the one block at a position) and the plan verb (add, replace or cancel a plan of block cells that the body works between thoughts). Both are verbs the agent chooses to use; the wording teaches what they do and what they refuse, and suggests no purpose (decision 0425). The programs are the same as v10. The examples are checked against the output validator by a test. Immutable once used: a change is a new vN file.",
+  "description": "The allow-list of verbs and programs with one valid example each: v10 plus the break verb (dig the one block at a position) and the plan verb (add, replace or cancel a plan of block cells that the body works between thoughts). Both are verbs the agent chooses to use; the wording teaches what they do and what they refuse, and suggests no purpose (decision 0425). The programs are those of v12 plus explore, farm and patrol. The examples are checked against the output validator by a test. Immutable once used: a change is a new vN file.",
   "say": {
     "summary": "Speak aloud, up to 256 characters.",
     "example": {
