@@ -178,6 +178,11 @@ describe('nf-live-rangers overlay: structure', () => {
     ]);
   });
 
+  it('takes the MCP trusted proxies from NF_MCP_TRUSTED_PROXIES, defaulting to 127.0.0.1', () => {
+    const mcp = (overlay.services as Doc)['geldar-mcp'].environment;
+    expect(mcp.GELDAR_MCP_TRUSTED_PROXIES).toBe(`\${NF_MCP_TRUSTED_PROXIES:-127.0.0.1}`);
+  });
+
   it('stays under the 500-line soft cap', () => {
     expect(RANGERS_TEXT.split('\n').length).toBeLessThan(500);
   });
@@ -231,5 +236,38 @@ describe.skipIf(!DOCKER)('nf-live-rangers overlay: render', () => {
     const b = JSON.parse(both.stdout).services;
     for (const name of Object.keys(a)) expect(b[name], name).toEqual(a[name]);
     expect(Object.keys(b).sort()).toEqual([...Object.keys(a), ...OVERLAY_SERVICES].sort());
+  });
+
+  // The MCP's trusted proxies as the overlay renders them, with NF_MCP_TRUSTED_PROXIES set to value (undefined: unset).
+  const renderedProxies = (value: string | undefined): string => {
+    const env: NodeJS.ProcessEnv = { ...process.env, NF_SECRETS_DIR: dir };
+    delete env.NF_MCP_TRUSTED_PROXIES;
+    if (value !== undefined) env.NF_MCP_TRUSTED_PROXIES = value;
+    const res = spawnSync(
+      'docker',
+      [
+        'compose',
+        '-p',
+        'geldar-nf',
+        '-f',
+        BASE_PATH,
+        '-f',
+        RANGERS_PATH,
+        'config',
+        '--format',
+        'json',
+      ],
+      { cwd: join(ROOT, 'compose'), encoding: 'utf8', env },
+    );
+    expect(res.status, res.stderr).toBe(0);
+    return JSON.parse(res.stdout).services['geldar-mcp'].environment.GELDAR_MCP_TRUSTED_PROXIES;
+  };
+
+  it('renders geldar-mcp trusted proxies as 127.0.0.1 when the variable is unset', () => {
+    expect(renderedProxies(undefined)).toBe('127.0.0.1');
+  });
+
+  it('renders geldar-mcp trusted proxies from a set NF_MCP_TRUSTED_PROXIES', () => {
+    expect(renderedProxies('192.0.2.1')).toBe('192.0.2.1');
   });
 });

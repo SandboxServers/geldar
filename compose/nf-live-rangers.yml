@@ -5,6 +5,8 @@
 #   geldar-mcp       the door a Mind calls (threshold/mcp); the only published port, 127.0.0.1:46788 -> 8788.
 #   ranger-yellow, ranger-green, ranger-blue, ranger-red, ranger-pink
 #                    one players-host Body per life (golem/src/players/main.ts), each with its own --player id.
+# NF_MCP_TRUSTED_PROXIES (optional; default 127.0.0.1): the proxy address(es) geldar-mcp trusts for x-geldar-client-ip. Set it to
+#                    the geldar-nf bridge gateway when the host Caddy reaches the loopback port; deploy/nf-rangers-lib.sh checks it.
 #   rangers-admin    a one-shot admin CLI (profile `admin`, which `up` never activates): owner, roster and token commands.
 # The Bodies reach RCON on the neoforge service name (the in-network opt-in, GELDAR_IN_NETWORK_HOSTS=1) and the game through
 # velocity. Nothing here joins nf-human, redeclares a base service, or publishes beyond loopback. The base file is unchanged.
@@ -87,7 +89,8 @@ services:
       GELDAR_MCP_BIND: 0.0.0.0
       # The Host values local clients send to the loopback port. No public host.
       GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
-      GELDAR_MCP_TRUSTED_PROXIES: "127.0.0.1"
+      # The node env (deploy/README.md): the geldar-nf gateway when the host Caddy reaches the loopback port; 127.0.0.1 unset.
+      GELDAR_MCP_TRUSTED_PROXIES: "${NF_MCP_TRUSTED_PROXIES:-127.0.0.1}"
       # The act budget is suspended and every act is metered (decision 0149), as on colo.
       GELDAR_ACT_BUDGET_ENFORCE: "0"
       GELDAR_NATS_URL: nats://nats:4222
