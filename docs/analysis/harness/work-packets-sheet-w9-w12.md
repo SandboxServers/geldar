@@ -430,6 +430,7 @@ export interface EffectiveSheet { life_id: string; revision: number; sheet: Char
 - **Step 0 (stop if any fails).** Read `sql/0051_character_audit.sql` (the `character_sheet_adoptions` columns and the inline `source` CHECK) and `sql/0050_character_sheet_xp.sql` (`agents_sheet_immutable`). If the trigger does not allow a NULL to value change of `character_sheet`, `sheet_hash` and `sheet_adopted_at` together, stop and report.
 - **Steps.**
   1. **SQL 0057 (additive except one widening).** `character_sheet_adoptions.source` allows only `config`, `roster`, `birth` (0051). Widen it to add `conversion`: drop and re-add the named CHECK `character_sheet_adoptions_source_check` in one transaction. No row changes, no column changes, no new table. This is the only non-additive statement in the card; the test below proves existing rows pass.
+     **Why it is acceptable.** The statement only relaxes the constraint: the new value set is a strict superset of the old one, so no existing row fails and no existing writer is refused. No row, column or table changes, so no data changes. Every existing writer keeps its behaviour, and the one new value is written only by the new apply path, so the change is additive in effect. Cost: the drop and re-add takes an `ACCESS EXCLUSIVE` lock on `character_sheet_adoptions` for the transaction. The table holds one row per adoption and is small, so the lock is brief; run it in the migration step, not during a live adoption.
   2. **Plan.** Reuse S12-04a's planner unchanged. Only `would-adopt` lives (baseline NULL) are written. `same`, `conflict`, `dead`, `not-found` and `refused` write nothing.
   3. **Sheet.** Only `STANDARD_SHEET` (the `"standard"` token). Any other value in `--sheets` is refused by the apply even when the planner accepts it.
   4. **Write, one transaction per life.** Insert one `events` row (the same insert `player add` uses in `players.ts`; reuse it), then `UPDATE agents SET character_sheet, sheet_hash, sheet_adopted_at WHERE agent_id = $1 AND sheet_hash IS NULL AND died_at IS NULL`, then the audit row with `source = 'conversion'`. Zero rows updated rolls the transaction back and reports `skipped`.
@@ -472,6 +473,28 @@ export interface EffectiveSheet { life_id: string; revision: number; sheet: Char
 - **id** S12-07 **repo** geldar **status** BLOCKED (S12-06, OD-11) **replaces** AN-36. Reconcile every feature claim against its evidence (a default-off feature needs code and test evidence, not a live run); docs sweep; retro; ledger and RESUME; the owner's enable, opt-in, tune or stop ruling; rollback shown without deleting schema or history. **commit** `docs(sheet): campaign review and rollout close`.
 
 ---
+
+## GX-NATS: NATS rows for the sheet life subjects (geldar.ps1)
+
+- **id** GX-NATS **repo** geldar **branch** `phase1/gx-nats-sheet-acl` **depends-on** AN-28c (merged, #817) **size** 15k **status** Writing; ready to code once this card is reviewed; the live apply is not part of it.
+- **may-edit** `geldar.ps1` (`Get-NatsUsers` only: the `eventsink`, `body` and `paper` entries); `tools/repo-checks/src/nats-auth.test.ts`; `threshold/mcp/test/nats-auth.it.test.ts` (the live table; ops runs it); the worknote `GX-NATS.md`.
+- **must-not-edit** the `supervisor`, `register` and `helper` entries (their rows stay byte-identical); `compose/secrets/` and `skins/` (never read or printed).
+- **Path.** `geldar.ps1` is not a colo-images path: the `paths:` filter in `.github/workflows/colo-images.yml` does not list it. Merging it alone does not rebuild the images or restart the Bodies.
+- **Changes.**
+  1. `eventsink` Pub gains `geldar.$s.life.*.sheet`. The prefix `geldar.$s.` is assumed, as for every other subject in the table; the subject name is not defined in the repo yet, so confirm it against the publisher's card before merge.
+  2. `body` PubDeny gains `geldar.$s.life.>`, and `paper` PubDeny gains `geldar.$s.life.>`. Both already publish `geldar.$s.>`, so the deny is what stops them publishing the life subtree; `eventsink` is the only publisher.
+- **AN-28c provenance rules (kept, not changed).** `body` PubDeny keeps `geldar.$s.provenance.>` (a Body cannot forge provenance) and `body` Sub keeps `geldar.$s.provenance.>` (a Body hears it). Both are already in `Get-NatsUsers` from AN-28c. This card must not remove or narrow either; the tests below assert both with `$s` = `colo`.
+- **Users.** `supervisor`, `register` and `helper` keep their rows (C7-03b1, C7-03c1) unchanged. Their password files are created only through the owner-approved key path, never in the repo; this card creates none, and the test reads the user list only.
+- **Tests and revert checks** (`nats-auth.test.ts`, on the parsed `Get-NatsUsers` output, as the file already does).
+  - `eventsink can publish geldar.colo.life.<id>.sheet` (revert: drop the eventsink Pub entry; fails).
+  - `body cannot publish geldar.colo.life.<id>.sheet` (revert: drop the body PubDeny `life.>` entry; fails).
+  - `paper cannot publish geldar.colo.life.<id>.sheet` (revert: drop the paper PubDeny `life.>` entry; fails).
+  - `body PubDeny and Sub both carry geldar.colo.provenance.>` (revert: remove either entry; fails).
+  - `supervisor, register and helper rows equal the expected table` (revert: add one Pub to `register`; fails).
+  - `nats-auth.it.test.ts` mirrors the same table against the live server. It is written here and run by ops; CI does not run it.
+- **Checks.** `./geldar.ps1 pnpm test tools/repo-checks/src/nats-auth`; `./geldar.ps1 pnpm check:repo`; `git diff --check`.
+- **Apply to live is a separate ops run.** Writing the regenerated NATS config to the Colo is not this card. The operator does it when told, with `cat new > live` (the live file keeps its mode and ownership); never `mv`. The Colo manual apply stays held per RESUME until the operator says so.
+- **Commit** `feat(sheet): NATS rows for the sheet life subjects (GX-NATS)`.
 
 ## Wave close (W9 to W12)
 

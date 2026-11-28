@@ -75,8 +75,8 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-21a | idle choice, weighted pick among known means | kit-b (kit repo) | HC-18 | 45k | FixNeeded (recipe and seen-block inputs are not in `Observation`; not covered by 0324) |
 | HC-21b | habits | kit-b (kit repo) | HC-21a, HC-20 | 25k | Writing (re-verify) |
 | HC-22 | novelty from authorized knowledge | kit-b (kit repo) | HC-18, HC-46 | 35k | FixNeeded (read the 0324 position fields) |
-| HC-23a | the sanity veto inside `packages/mind-loop` | kit-b (kit repo) | HC-10, HC-11 (merged), HC-17b | 45k | Writing (unblocked; OD-B wording unapproved, ships inactive) |
-| HC-23b | veto parameters on descriptor 4 | kit-b (kit repo) | HC-19, HC-23a, HC-26c | 25k | BlockedDependency (HC-26c; veto sentences not approved, 0289 item 3; card in `sheet/kit-cards-2026-11-28.md`, ships inactive) |
+| HC-23a | the sanity veto inside `packages/mind-loop` | kit-b (kit repo) | HC-10, HC-11 (merged), HC-17b | 45k | Writing (unblocked; OD-B approved 2026-11-27, 0289 follow-up; ships inactive) |
+| HC-23b | veto parameters on descriptor 4 | kit-b (kit repo) | HC-19, HC-23a, HC-26c | 25k | BlockedDependency (HC-26c; veto sentences approved 2026-11-27, 0289 follow-up; card in `sheet/kit-cards-2026-11-28.md`, ships inactive) |
 | HC-24 | HW2 integration against a fake world, wave close | kit-b (kit repo) | HC-17a to HC-23b, HC-25, HC-26c | 45k plus ops | BlockedDependency (last; card in `sheet/kit-cards-2026-11-28.md`: `GELDAR_INSTINCT_SANITY` defaults off, byte-identical when off) |
 | HC-25 | sheet-to-persona generator | kit-b (kit repo) | HC-17b | 40k | BlockedDecision (OD-A) |
 | HC-26a | host side of sheet delivery | kit-b (kit repo) | HC-25 | 38k | Writing (re-verify; message file naming) |
@@ -148,7 +148,8 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | S12-02 | cohort metrics core | sheet W9-W12 | S12-01 | 50k | BlockedDependency |
 | S12-03 | control equivalence proof (all-3 equals today's bot) | sheet W9-W12 | AN-12 | 35k | Done (#780; silent record when no roll was drawn, S12-03b #795) |
 | S12-04a | roster conversion: loader and dry run | sheet W9-W12 | AN-05, AN-04b | | Done (#786; dry-run plan, inactive) |
-| S12-04b | roster conversion: write (SQL 0057), all-3 only | sheet W9-W12 | S12-04a | | Card rewritten 2026-11-28 (`work-packets-sheet-w9-w12.md`); code READY after S12-04a; any apply on a live agent held (0328) |
+| S12-04b | roster conversion: write (SQL 0057, CHECK widening only, the card's one non-additive statement), all-3 only | sheet W9-W12 | S12-04a | | Card rewritten 2026-11-28 (`work-packets-sheet-w9-w12.md`); code READY after S12-04a; any apply on a live agent held (0328) |
+| GX-NATS | NATS generator: eventsink `life.*.sheet` publish; body and paper deny `life.>`; AN-28c provenance rules kept | sheet W9-W12 | AN-28c (merged #817) | 15k | Writing (card in `work-packets-sheet-w9-w12.md`; apply to live is a separate ops run) |
 | HC-45 | per-player sheet and instinct switch, staged enable, rollback | sheet W9-W12 | HC-19, HC-26 | 35k | FixNeeded (no exact file named) |
 | S12-05 | staged enable per ranger and rollback | sheet W9-W12 | S12-03, S12-04, HC-45 | 30k docs | BlockedDecision (OD-11; per-ranger approval, 0328) |
 | S12-06 | run protocol, fixtures and run evidence | sheet W9-W12 | S12-02, S12-03, HC-38, HC-37b | 45k | BlockedDecision (OD-11) |

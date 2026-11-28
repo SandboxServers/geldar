@@ -11,7 +11,7 @@ The owner gave these rulings directly, in the geldar-sheet session, on 2026-11-2
 
 1. **0390 is accepted, all of Q-a to Q-g at their proposed defaults.** (a) Refuse ordinary NeoForge players whose name contains a marker word. (b) A marker-named account's chat to agents is suppressed entirely. (c) Marker-named operator accounts on Paper are held by the owner and the operator only, on a UUID allow-list through the existing spectator route; acting through one needs a separate Principle 1 ruling. (d) Each intervention is recorded as a labelled session window and acts in operator-only storage, plus an operator note. (e) Keep the name-keyed `PlayerActor` for ordinary named humans as 0329 ruled. (f) Agents may attack ordinary named humans. (g) No Paper switch. 0390 supersedes 0329.
 2. **OD-A.** The sheet's temperament may reach an agent only as generated persona text (card HC-25), and the owner reviews and approves the template before anything is delivered. Nothing is delivered until then.
-3. **OD-B.** A vetoed act gets a neutral fact sentence. The sentence is NOT approved yet: the coordinator drafts it and the owner approves it before it ships.
+3. **OD-B.** A vetoed act gets a neutral fact sentence. The owner approved four sentences on 2026-11-27; see the follow-up section below.
 4. **OD-10 test shard.** Mixed sheets (some named, some all-3) on the TEST shard only; nothing on the live shard. 0328 is unchanged for live agents.
 5. **Memory spine (0391 D0).** The first test-shard run is scripted, then real agents if it passes. The spend ceiling for the test shard is about 50 US dollars (OD-11 spend only; the numeric success bars are still open). The held-live ruling stands.
 6. **Agent positions (`agents[].pos`).** Decision 0391 item 4 is sufficient approval. Ids are never told to agents.
@@ -25,4 +25,15 @@ These close the questions the sheet coordinator had parked for the owner, so the
 
 - 0390 is Accepted and supersedes 0329; banners on 0329, `neoforge-delta.md`, the sheet RESUME and the ledger are updated. The twins stay frozen until their cards are re-dispatched; nothing is activated.
 - Cards GX-ROSTER and `agents[].pos` are not yet written.
-- The OD-B sentence and the OD-A template need owner approval before they ship.
+- The OD-A template needs owner approval before it ships. The OD-B sentences are approved (follow-up below).
+
+## Follow-up: OD-B approved (2026-11-27)
+
+The owner approved the sanity veto sentences for item 3 (OD-B) on 2026-11-27 (decision 0289 follow-up, OD-B). These four sentences are the approved text, verbatim:
+
+1. It is night and you have no shelter.
+2. You are hungry and you carry food.
+3. You are badly hurt.
+4. Your pack is full.
+
+Nothing else is approved by this follow-up. OD-A is unchanged.

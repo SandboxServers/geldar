@@ -42,7 +42,7 @@ Every sheet feature stays held on the live server until the whole campaign is co
 
 ## Held (operator)
 - AN-45a and AN-45b: held for the operator's approval of the `INTENT_WHY` sentences and the body-api v11 program summaries (note #787). Not dispatched.
-- D-CS-06 (activation of every provenance feature), OD-E (observation sentences), OD-11 (cohort, spend, success bars), OD-A, OD-B. (OD-C ruled by 0320; OD-D moot after GX-04a.)
+- D-CS-06 (activation of every provenance feature), OD-E (observation sentences), OD-11 (cohort, spend, success bars), OD-A. (OD-B approved 2026-11-27: the four veto sentences, decision 0289 follow-up; OD-C ruled by 0320; OD-D moot after GX-04a.)
 - D-CS-04 (non-combat rows, crop list, torchflower and pitcher gap), D-CS-05 (incl. aggression-5 unarmed row), D-CS-14, D-CS-15.
 - Decision 0390 (NeoForge hybrid named equals and nature humans, Accepted) questions (a) to (g): (a) refuse ordinary players whose name contains a marker word; (b) a marker-named account's chat to agents; (c) how marker-named operator accounts connect to Paper and who holds one; (d) the intervention-recording mechanism; (e) whether a name-keyed `PlayerActor` is needed for ordinary named humans; (f) agents may attack ordinary named humans; (g) no Paper switch. All seven were accepted at their proposed defaults on 2026-11-27 (decision 0289); banners updated.
 - Colo manual apply of the plugin jar and the body NATS rule per `docs/runbooks/nats-auth-inplace.md`: NOT to be applied until the operator says so.
