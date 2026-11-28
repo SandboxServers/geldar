@@ -636,10 +636,12 @@ describe('nf-deploy.sh seed-bundle', () => {
 
 describe('nf-deploy.sh secret list', () => {
   it('keeps its secret file list in sync with the secrets block of compose/nf-live.yml', () => {
-    // The declared set is nf-live.yml's secrets block plus the probe overlay's (nats-body.txt, mounted only by the probe).
+    // The declared set is nf-live.yml's secrets block plus the probe overlay's (nats-body.txt, mounted only by the probe) plus
+    // the rangers overlay's (the four ranger files, mounted only with NF_RANGERS=on). SECRET_FILES lists the union.
     const probeText = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
+    const rangersText = readFileSync(join(ROOT, 'compose', 'nf-live-rangers.yml'), 'utf8');
     const declared = [
-      ...`${NF_COMPOSE_TEXT}\n${probeText}`.matchAll(
+      ...`${NF_COMPOSE_TEXT}\n${probeText}\n${rangersText}`.matchAll(
         /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/(\S+)$/gm,
       ),
     ].map((m) => m[1]);

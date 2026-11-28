@@ -577,6 +577,7 @@ cmd_probe() {
   check_no_colo_labels
   check_human_switch
   check_human_orphan
+  check_rangers_orphan
   check_secrets
   check_probe_up
   check_extra_mods_drop

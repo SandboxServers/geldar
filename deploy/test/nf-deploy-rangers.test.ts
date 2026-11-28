@@ -233,4 +233,21 @@ describe('nf-deploy.sh rangers lane (NF_RANGERS)', () => {
     expect(compose.length).toBeGreaterThan(0);
     for (const line of compose) expect(line).toMatch(RANGERS_CALL);
   });
+
+  // probe and refresh-secrets run the same off-refusal as up: a ranger container left in the project must stop them before any
+  // project compose call (an off-run would leave the Bodies running with no overlay).
+  it.each(['probe', 'refresh-secrets'])(
+    'off refuses %s while a ranger container exists (no project compose call)',
+    (verb) => {
+      const repo = makeRepo();
+      const res = run(repo, {
+        env: { NF_RANGERS: undefined },
+        rows: `${LIVE_ROW}\nranger-red`,
+        args: [verb],
+      });
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toMatch(/a rangers container exists/);
+      expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
+    },
+  );
 });
