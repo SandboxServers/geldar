@@ -22,7 +22,11 @@
       "required": ["name", "life"],
       "properties": {
         "name": { "$ref": "#/$defs/ActorName" },
-        "life": { "$ref": "common.schema.json#/$defs/LifeId" }
+        "life": { "$ref": "common.schema.json#/$defs/LifeId" },
+        "basis": {
+          "description": "How the agent could know the name (decision 0450): seen in view, spoke in chat, or signed a sign. The observation sentence names the actor only when basis is present; absent, the sentence says Someone.",
+          "enum": ["seen", "spoke", "signed"]
+        }
       }
     },
     "GiftReceived": {

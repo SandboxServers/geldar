@@ -6,7 +6,9 @@ import { definePresentHandler } from './types.ts';
  */
 export const observationPresenter = definePresentHandler('observation', (e, base) => {
   if (e.observationKind === undefined) return [];
-  const actor = e.actor !== undefined ? { actor: { name: e.actor } } : {};
+  // The fight and take sentences are actor-free (decision 0391): no name rides on those lines.
+  const anonymous = e.observationKind === 'fight_seen' || e.observationKind === 'container_taken';
+  const actor = e.actor !== undefined && !anonymous ? { actor: { name: e.actor } } : {};
   const item = e.item !== undefined ? { item: e.item } : {};
   const count = e.count !== undefined ? { count: e.count } : {};
   const block = e.block !== undefined ? { block: e.block } : {};

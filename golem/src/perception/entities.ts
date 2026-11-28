@@ -250,6 +250,11 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
         held_item: held && ITEM.test(held) ? held : null,
         health_estimate: 'unknown',
         ...agentStance(here, entity.position, distance),
+        pos: {
+          x: Math.floor(entity.position.x),
+          y: Math.floor(entity.position.y),
+          z: Math.floor(entity.position.z),
+        },
         sort: name,
       });
       continue;

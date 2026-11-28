@@ -89,6 +89,75 @@ describe('observed-actor contract (AN-24, decision 0343)', () => {
     expect(observationSentence({ kind: 'other' })).toBe('Something happened.');
   });
 
+  it('an actor with basis seen, spoke or signed validates; basis heard fails', () => {
+    for (const basis of ['seen', 'spoke', 'signed']) {
+      expect(validateObservationPayload({ ...GIFT, actor: { ...KESTREL, basis } })).toBe(true);
+    }
+    expect(validateObservationPayload({ ...GIFT, actor: { ...KESTREL, basis: 'heard' } })).toBe(
+      false,
+    );
+  });
+
+  it('names the actor in every kind when basis is present', () => {
+    const named = { ...KESTREL, basis: 'seen' };
+    expect(observationSentence({ kind: 'property_broken', block: 'chest', actor: named })).toBe(
+      'Kestrel broke your chest.',
+    );
+    expect(
+      observationSentence({ kind: 'container_taken', item: 'bread', count: 3, actor: named }),
+    ).toBe('Kestrel took 3 bread from your container.');
+    expect(observationSentence({ kind: 'fight_seen', target: 'zombie', actor: named })).toBe(
+      'Kestrel fought a zombie nearby.',
+    );
+    for (const basis of ['spoke', 'signed']) {
+      expect(
+        observationSentence({
+          kind: 'property_broken',
+          block: 'chest',
+          actor: { ...KESTREL, basis },
+        }),
+      ).toBe('Kestrel broke your chest.');
+    }
+  });
+
+  it('says Someone in every kind when basis is absent or not a basis', () => {
+    expect(observationSentence({ kind: 'property_broken', block: 'chest', actor: KESTREL })).toBe(
+      'Someone broke your chest.',
+    );
+    expect(
+      observationSentence({
+        kind: 'container_taken',
+        item: 'bread',
+        count: 3,
+        actor: { ...KESTREL, basis: 'heard' },
+      }),
+    ).toBe('Someone took 3 bread from your container.');
+    expect(observationSentence({ kind: 'fight_seen', target: 'zombie', actor: KESTREL })).toBe(
+      'Someone fought a zombie nearby.',
+    );
+  });
+
+  it('a marker-named actor gives the Someone form even with basis', () => {
+    for (const name of ['Observer1', 'Streamer']) {
+      const actor = { name, life: 'ag_kestrel_01', basis: 'seen' };
+      expect(observationSentence({ kind: 'property_broken', block: 'chest', actor })).toBe(
+        'Someone broke your chest.',
+      );
+    }
+  });
+
+  it('a named sentence shows no life id, UUID or digit beyond the count', () => {
+    const actor = { ...KESTREL, basis: 'seen' };
+    for (const sentence of [
+      observationSentence({ kind: 'property_broken', block: 'chest', actor }),
+      observationSentence({ kind: 'container_taken', item: 'bread', count: 3, actor }),
+      observationSentence({ kind: 'fight_seen', target: 'zombie', actor }),
+    ]) {
+      expect(sentence).not.toMatch(/ag_|[0-9a-f]{8}-[0-9a-f]{4}/);
+      expect(sentence.replace(/[^0-9]/g, '')).toMatch(/^(3)?$/);
+    }
+  });
+
   it('a marker word in an item or block gives the generic sentence', () => {
     expect(observationSentence({ kind: 'gift_received', item: 'amethyst_shard', count: 1 })).toBe(
       'Something happened.',

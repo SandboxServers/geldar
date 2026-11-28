@@ -80,6 +80,27 @@ describe('observation events on the player log', () => {
     ]);
   });
 
+  it('names a visible actor with basis, and says Someone without basis or for a marked name', () => {
+    const seen = { name: 'Zack', life: 'ag_zack_01', basis: 'seen' };
+    expect(presented(event('observation', { ...BREAK, actor: seen }))).toEqual([
+      {
+        seq: 3,
+        tick: 100,
+        type: 'property_broken',
+        text: 'Zack broke your chest.',
+        actor: { name: 'Zack' },
+        block: 'chest',
+      },
+    ]);
+    expect(presented(event('observation', { ...BREAK, actor: ZACK }))[0]?.text).toBe(
+      'Someone broke your chest.',
+    );
+    const marked = { name: 'Watcher', life: 'ag_zack_01', basis: 'seen' };
+    expect(presented(event('observation', { ...BREAK, actor: marked }))[0]?.text).toBe(
+      'Someone broke your chest.',
+    );
+  });
+
   it('a name failing the pattern or holding a marked word is dropped and the event kept', () => {
     for (const name of ['Zack Two', 'Ab', 'Abcdefghijklmnopq', 'Watcher']) {
       const out = presented(event('observation', { ...GIFT, actor: { name, life: 'ag_zack_01' } }));
@@ -162,11 +183,32 @@ describe('observation events on the player log', () => {
     ]);
   });
 
-  it('a fight_seen or container_taken observation maps and presents no line', () => {
+  it('a fight_seen or container_taken observation presents the approved actor-free sentence', () => {
     const fight = { kind: 'fight_seen', target: 'zombie', key: 'fight:100:zombie:0' };
-    const taken = { kind: 'container_taken', item: 'bread', count: 3, key: 'ctr:100:zack:bread:3' };
-    expect(presented(event('observation', fight))).toEqual([]);
-    expect(presented(event('observation', taken))).toEqual([]);
+    const owl = { kind: 'fight_seen', actor: ZACK, target: 'enderman', key: 'fight:100:e:0' };
+    const taken = {
+      kind: 'container_taken',
+      actor: ZACK,
+      item: 'bread',
+      count: 3,
+      key: 'ctr:100:zack:bread:3',
+    };
+    expect(presented(event('observation', fight))).toEqual([
+      { seq: 3, tick: 100, type: 'fight_seen', text: 'Someone fought a zombie nearby.' },
+    ]);
+    expect(presented(event('observation', owl))).toEqual([
+      { seq: 3, tick: 100, type: 'fight_seen', text: 'Someone fought an enderman nearby.' },
+    ]);
+    expect(presented(event('observation', taken))).toEqual([
+      {
+        seq: 3,
+        tick: 100,
+        type: 'container_taken',
+        text: 'Someone took 3 bread from your container.',
+        item: 'bread',
+        count: 3,
+      },
+    ]);
   });
 
   it('the presented event serialised holds no ag_ id, no key, no provenance and no coordinates', () => {
