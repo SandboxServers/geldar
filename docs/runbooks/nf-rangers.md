@@ -26,8 +26,8 @@ geldar-69. Never run two steps at once, and never skip ahead.
 - Never print the contents of a secret file. Use `test -s`, `stat -c '%a %U'`, or `sha256sum` to check a file.
 - Never run `docker compose down`, anything with `--volumes`, or any recreate that names `neoforge`, `postgres` or `nats`.
   Never use a pattern kill (`pkill`, `killall`).
-- A repo change does not reach the node by itself. `compose/**`, `deploy/**` and `shards/**` arrive only by a manual checkout
-  update in N3.
+- A repo change does not reach the node by itself. `compose/**`, `deploy/**` and `shards/**` arrive only by the tree update in
+  N3a (the export) and N3b (the P1 commit).
 - Every `plan`, `up`, `rangers-admin` and `probe` command carries the same `NF_HUMAN`, `NF_TELEMETRY` and `NF_EXTRA_MODS` as the
   live run. Take the values from the live run (`NF_TELEMETRY` and `NF_EXTRA_MODS` from the ops env file, `NF_HUMAN` from the shell;
   never print the file). The `<same as the live run>` placeholders are not shell syntax: replace each with the live value. Omitting
@@ -187,6 +187,8 @@ sibling is owned by another uid, stop and tell geldar-69 before you create anyth
    docker run --rm --pull never --network none --read-only --entrypoint nats-server -v "$STAGE/nats-auth.new.conf:/etc/nats/nats-auth.conf:ro" nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde -t -c /etc/nats/nats-auth.conf
    ```
    Expected: exit 0 and a line saying the configuration is valid (the wording is UNVERIFIED). Any error: STOP.
+   **This validation is the gate.** Steps 7 to 9 do not run unless this step exits 0, and the comma in step 5 is accepted or
+   rejected here, not by the diff.
 
 7. Redacted diff. Passwords are masked, and the diff must show only the expected change, or STOP:
    ```sh
@@ -195,8 +197,9 @@ sibling is owned by another uid, stop and tell geldar-69 before you create anyth
    ```
    Expected: the diff has one `<` line (the old last user line) and three `>` lines: that same line with a trailing comma, then the
    `ranger` line, then the `mcp` line. Nothing else, no other hunk. The two `http:` lines are equal. Any other difference: STOP.
-   (The comma on the old last line is the one change to an existing line. The array needs it; the brief's "only the two added
-   lines" cannot hold for an appended array entry. Whether NATS accepts the comma is UNVERIFIED until step 6 passes.)
+   (The comma on the old last line is the one change to an existing line. The generator `deploy/nats-auth-nf.ps1` joins the user
+   entries with `,` and no trailing comma, so its users array has a comma between entries; the appended entry needs the same.
+   Whether NATS accepts that comma is UNVERIFIED until step 6 passes.)
 
 8. Backup the live conf with a timestamp (the rollback uses it). Record its inode before the write in step 9:
    ```sh
@@ -251,6 +254,27 @@ docker kill --signal=HUP <nf nats container>
 The four new password files may stay; the extra users are harmless unused. If the reload fails and the conf will not load,
 roll back and tell geldar-69; the fallback is a restart path that recreates neoforge and needs a notice and an owner go.
 
+## N1b. KV buckets `geldar-presence` and `geldar-skins` (read only first)
+
+The Bodies watch `geldar-presence`, and the skins step writes `geldar-skins`. UNVERIFIED whether the nf project has either
+bucket: the repo has no nf step that creates them. `tools/admin/admin.sh` has an `ensure-skins-bucket` verb (it runs
+`golem/src/ensure-skins-bucket.ts`), and no runbook calls it yet. Read first, and create nothing until the read shows a gap:
+
+```sh
+docker exec <nf nats container> wget -qO- 'http://127.0.0.1:8222/jsz?streams=1' | grep -o 'KV_geldar-[a-z-]*'
+```
+
+Expected (UNVERIFIED on nf): the names of the existing KV streams. If `KV_geldar-skins` is listed, the skins bucket exists; if
+`KV_geldar-presence` is listed, the presence bucket exists. If one is missing, and only then, run the admin verb one-shot (the
+`rangers-admin` entrypoint accepting `ensure-skins-bucket` is UNVERIFIED; if it does not, STOP and tell geldar-69):
+
+```sh
+NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin ensure-skins-bucket
+```
+
+Expected: a one-line OK, then the same read again showing the bucket. **Rollback.** None needed: an empty bucket holds no world data.
+Deleting a bucket is a stream delete, which the `mcp` user is denied.
+
 ## N1a. Tokens directory (before N2)
 
 The `rangers-admin` one-shot mounts a host directory for token files (`compose/nf-live-rangers.yml`, `create_host_path: false`).
@@ -269,14 +293,22 @@ Expected: `700 1001 /etc/geldar/tokens-nf` (the uid is `NF_SERVICE_UID`). `N2` t
 
 ## N2. Database (additive)
 
-Needs N3's admin image, so run N3 first if it is not built. Take a `pg_dump` of `geldar_nf` through an owner-approved path first:
+Needs the admin image `geldar-admin:nf-live` from N3a, so run N3a first if it is not built. Take a `pg_dump` of `geldar_nf` through an owner-approved path first:
 that dump is the real rollback.
 
 ```sh
 NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate --dry-run
 ```
 
-Expected: exactly `0067` and `0068` pending. Then apply without `--dry-run`:
+Expected: the dry run lists five pending files, `0031`, `0053`, `0057`, `0067` and `0068`, all additive. Stop if it lists any other
+file. Read only, before the apply: the database already holds the `mcp_*` tables (empty), and the roles exist. Only `geldar` can log in;
+`geldar_mcp` is NOLOGIN until the second command below sets its password:
+
+```sh
+docker exec <nf postgres container> psql -U geldar -d geldar_nf -Atc "select tablename from pg_tables where tablename like 'mcp_%' order by 1; select rolname, rolcanlogin from pg_roles where rolname in ('geldar','geldar_mcp') order by 1"
+```
+
+Expected: the `mcp_*` names (no rows, or empty tables), then `geldar|t` and `geldar_mcp|f`. Then apply without `--dry-run`:
 
 ```sh
 NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY=<same as the live run> NF_EXTRA_MODS=<same as the live run> docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml --profile admin run --rm --no-deps rangers-admin migrate
@@ -294,25 +326,78 @@ Expected: `0068` and `t`.
 **Rollback.** Migrations are forward only. `ALTER ROLE geldar_mcp NOLOGIN` restores the role state. The real rollback is the
 `pg_dump` taken first, restored by the owner.
 
-## N3. Build and render
+## N3a. Build the images and re-export the tree (allowed before P1)
 
-**Prerequisite P1 (hard gate).** Golem must accept `neoforge` as an RCON host. That change is on branch
-`phase1/nf-rangers-golem-host` and is held until geldar-69 merges it together with the Body recreation. Do not start N3
-or N4 before P1 is merged and the five ranger Bodies are recreated from it. Without P1 the Bodies crash-loop under
+The node's source tree is an old exported commit: `compose/nf-live-rangers.yml` and `deploy/nf-rangers-lib.sh` are not on it.
+N3a brings the tree to merge commit `d8a4f21e1caad9c696663891c4ffb250303f07bd` or later and builds the images. It starts and
+recreates no container.
+
+**Which path.** The supported path is the SAFE-EXPORT procedure in [nf-live-project.md](nf-live-project.md) (`git archive` of the
+commit, the path check, extraction into an empty directory outside any checkout). `deploy/colo-cd.sh` is the Colo CD and reads its
+own src extract; it is not the path for this lane, and no nf CD is verified in the repo (UNVERIFIED).
+
+1. Check what the node tree is (read only):
+   ```sh
+   test -d <node checkout>/.git && git -C <node checkout> rev-parse HEAD || echo 'export (no .git)'
+   test -e <node checkout>/compose/nf-live-rangers.yml && echo 'rangers overlay present' || echo 'rangers overlay absent'
+   ```
+   Expected on the old tree: `rangers overlay absent`. If `present` and the commit is `d8a4f21e` or later, skip to step 5.
+
+2. On the trusted machine, export the commit. Keep the archive and the export outside any checkout. Run the same steps in pwsh 7
+   on the desktop (its `tar` is bsdtar). Stop at the first failed step:
+   ```sh
+   ARCH="$HOME/nf-export/d8a4f21e.tar"; LIST="$HOME/nf-export/d8a4f21e.list"; EXP="$HOME/nf-export/d8a4f21e"
+   mkdir -p "$EXP" && test -z "$(ls -A "$EXP")"
+   git archive -o "$ARCH" d8a4f21e1caad9c696663891c4ffb250303f07bd
+   tar -tf "$ARCH" > "$LIST" && ! grep -E '^/|^[A-Za-z]:|(^|/)\.\.(/|$)' "$LIST"
+   tar -xf "$ARCH" -C "$EXP" && test -e "$EXP/compose/nf-live-rangers.yml" && test -e "$EXP/deploy/nf-rangers-lib.sh"
+   ```
+   Expected: the path grep prints nothing (a hit fails the chain and stops), and the last `test` passes. Never pipe the archive
+   into `tar`.
+
+3. Back up the old tree, then copy the export over it. The secrets are not in the archive and stay where they are (`NF_SECRETS_DIR`).
+   The copy channel from the trusted machine to the node is not named in the repo (UNVERIFIED): use the channel the owner approved.
+   ```sh
+   cp -a <node checkout> <node checkout>.bak-$(date -u +%Y%m%dT%H%M%SZ)
+   ```
+   Then copy `$EXP` over `<node checkout>`. Check one file by hash on both sides, read only:
+   `sha256sum <node checkout>/compose/nf-live-rangers.yml` must equal `sha256sum "$EXP/compose/nf-live-rangers.yml"`.
+
+   Rollback: move the new tree aside and the backup back (UNVERIFIED that no running container mounts a path under the checkout;
+   check `docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' <nf neoforge container>` before the move).
+
+4. (Only if the node tree is a git checkout instead: `git -C <node checkout> fetch` then `git -C <node checkout> merge --ff-only d8a4f21e1caad9c696663891c4ffb250303f07bd`.)
+
+5. Build the three images. `build` starts no container. The first command records any existing tags:
+   ```sh
+   docker images -q geldar-mcp:nf-live geldar-body:nf-live geldar-admin:nf-live
+   docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml build geldar-mcp ranger-yellow rangers-admin
+   docker images | grep -E 'geldar-(mcp|body|admin):nf-live'
+   ```
+   Expected: the first command prints nothing (if it prints IDs, record them). `build` finishes for three images, each from its
+   Dockerfile: `geldar-mcp:nf-live` from `threshold/mcp/Dockerfile`, `geldar-body:nf-live` from `golem/Dockerfile` (the ranger
+   Body image, `NF_BODY_IMAGE`; the other four ranger services share it), and `geldar-admin:nf-live` from `tools/admin/Dockerfile`
+   (`NF_ADMIN_IMAGE`). All three contexts are the repo root (`context: ..`). `docker images` lists the three tags with a new
+   creation time.
+
+   **Rollback.** If the first command printed nothing, `docker rmi geldar-mcp:nf-live geldar-body:nf-live geldar-admin:nf-live`.
+   If it printed IDs, re-tag those IDs back to the tags. Do not remove any other image.
+
+## N3b. P1 gate and config (before N4)
+
+**Prerequisite P1 (hard gate).** Golem must accept `neoforge` as an RCON host. That change is PR #988, and it is held until
+geldar-69 merges it together with the Body recreation. `check_rangers_inputs` refuses `plan` and `up` without it. Do not start N4
+before P1 is merged and the five ranger Bodies are recreated from it. Without P1 the Bodies crash-loop under
 `restart: unless-stopped`, because they cannot reach RCON on `neoforge`.
 
+If the tree must move to the P1 merge commit (`<P1 merge commit>`, UNVERIFIED sha), repeat N3a steps 2 and 3 at that commit, or
+step 4 on a git checkout. Then check the config, read only:
+
 ```sh
-git -C <node checkout> fetch
-git -C <node checkout> merge --ff-only <merged commit>
 docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml config --quiet
-docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-rangers.yml build geldar-mcp ranger-yellow rangers-admin
-docker images | grep -E 'geldar-(mcp|body|admin):nf-live'
 ```
 
-Expected: `config --quiet` prints nothing. `build` finishes for three images: `geldar-mcp:nf-live`, `geldar-body:nf-live` and
-`geldar-admin:nf-live`. The other four ranger services share the body image. `docker images` lists the three tags.
-
-**Rollback.** `docker rmi` the three new tags only. Do not remove any other image.
+Expected: nothing printed. Rollback: as N3a step 3, with the old backup.
 
 ## N4. Bring the rangers up
 
@@ -348,12 +433,24 @@ NeoForge 26.1.2 shard; the P0 probe is the evidence for it (`docs/analysis/neofo
    docker logs <ranger container> 2>&1 | grep -i -E 'error|exception|join' | tail -n 20
    ```
    Expected: no error lines. Repeat for the five rangers, one command each.
-3. Check that `sovereign_call` reaches players-host. Run it from a ranger container (read only):
+3. Check the door and the Bodies are connected (read only). `sovereign_call` is not a Body call. geldar-mcp publishes it as an
+   audit event on `geldar.<shard>.sovereign_call`, one per MCP tool call (`threshold/mcp/src/record/sovereign-call.ts`). Nothing
+   publishes one before a Mind calls a tool, so do not wait for one:
    ```sh
-   docker logs <ranger container> 2>&1 | grep 'sovereign_call' | tail -n 5
+   docker logs --tail 20 geldar-nf-geldar-mcp-1 2>&1
+   docker logs --tail 20 <ranger container> 2>&1
    ```
-   Expected: `sovereign_call` lines with no `unreachable` or `refused`. The exact log text is UNVERIFIED on nf: if the grep finds
-   nothing, do not guess; report what you see.
+   Expected: the geldar-mcp tail shows no NATS or Postgres error (the container name `geldar-nf-geldar-mcp-1` is UNVERIFIED until it
+   runs; use the name from `docker ps`). The ranger tail shows JSON lines with a `life_id`.
+
+   The MCP-to-Body path is NATS request/reply on `geldar.nf.body.<life>.{snapshot,plan,book,image,view,plan_check,survey}`, served
+   by `golem/src/mind-link/server.ts` in players-host. UNVERIFIED that players-host wires it in. Confirm it by a Body answer: a
+   read-only `snapshot` request for one life, from the `mcp` user (the client check in N1 step 12), must get a reply. No reply
+   within the timeout means STOP and tell geldar-69.
+
+   **Ordering, UNVERIFIED consequence.** `rangers_up` has no `depends_on` between geldar-mcp, which creates `geldar-presence`, and
+   the five Bodies, which watch it. A Body may retry until the bucket exists. Check the ranger log for retries, and the bucket
+   (N1b), before you call the join check failed.
 
 **If any join check fails, tell geldar-69 before anything else, and do not start a Mind.**
 
@@ -373,6 +470,21 @@ NF_TOKENS_DIR=/etc/geldar/tokens-nf NF_HUMAN=<same as the live run> NF_TELEMETRY
 
 Repeat `roster add` and `player-add` for each of the five rangers. `<owner id>` and `<harness>` are owner inputs; the harness
 value is UNVERIFIED. Expected: `players-status` lists five players and prints no token value.
+
+### What each N5 input needs (the coordinator asks the owner)
+
+| Input | Value | Source | Read-only check |
+|---|---|---|---|
+| owner id | the owner's id; `owner-add <owner id> --cap 5` creates it | the owner | an existing id, if the owner already has one: `docker exec <nf postgres container> psql -U geldar -d geldar_nf -Atc "select tablename from pg_tables where tablename like 'owner%'"`, then select from that table (its name is UNVERIFIED) |
+| harness | `copilot` (`--harness`) | the owner's brief | UNVERIFIED that `copilot` is an accepted value; read the `player-add` parser in `tools/admin` before the run |
+| life ids | `ag_turboyelo_01`, `ag_turbogreen_01`, `ag_turboblue_01`, `ag_turbored_01`, `ag_turbopink_01` | `shards/nf-mind.yaml` | `grep -n 'ag_turbo' shards/nf-mind.yaml` |
+| kit player ids | `ag-turboyelo-01`, `ag-turbogreen-01`, `ag-turboblue-01`, `ag-turbored-01`, `ag-turbopink-01` | `sovereign.players` in `shards/nf-mind.yaml` | `grep -n 'ag-turbo' shards/nf-mind.yaml` |
+| skin model per ranger | `classic` or `slim` (`skin set --model`) | the owner (gate G3) | see below |
+
+**Skin model.** Default `classic`; the five PNGs are 64x64 RGBA classic-format files unless the owner says slim. To tell them
+apart: a classic arm is four pixels wide, a slim (Alex) arm is three, and the fourth column of each arm block is transparent on a
+slim skin. Read the alpha of the arm columns in the PNG with any image tool; no repo tool reads it (UNVERIFIED). The owner confirms
+each skin's model before the upload; do not guess it from the file name.
 
 **Rollback.** `token-revoke` for each player, then retire per [retire-an-agent.md](retire-an-agent.md). No world effect.
 
