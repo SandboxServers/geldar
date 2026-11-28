@@ -83,8 +83,8 @@ describe('observed-actor contract (AN-24, decision 0343)', () => {
     expect(observationSentence({ kind: 'gift_received', item: 'bread', count: 3 })).toBe(
       'You received 3 bread.',
     );
-    expect(observationSentence({ kind: 'property_broken', block: 'chest' })).toBe(
-      'Someone broke one of your blocks (chest).',
+    expect(observationSentence({ kind: 'property_broken', block: 'oak_door' })).toBe(
+      'Someone broke your oak door.',
     );
     expect(observationSentence({ kind: 'other' })).toBe('Something happened.');
   });
