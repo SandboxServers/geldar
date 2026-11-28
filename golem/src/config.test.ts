@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig, loadStackConfig, readRconPassword, repoRoot } from './config.ts';
+import { hostAllowed, loadConfig, loadStackConfig, readRconPassword, repoRoot } from './config.ts';
 
 describe('loadConfig', () => {
   it('defaults to the loopback Velocity ingress and the RCON port', () => {
@@ -47,6 +47,28 @@ describe('loadConfig', () => {
     const env = { GELDAR_IN_NETWORK_HOSTS: '1', GELDAR_RCON_HOST: 'paper' };
     expect(loadConfig(env).rconHost).toBe('paper');
     expect(() => loadConfig({ GELDAR_RCON_HOST: 'paper' })).toThrow(/GELDAR_RCON_HOST/);
+  });
+
+  it('accepts the neoforge service name for RCON only with the in-network opt-in', () => {
+    const env = { GELDAR_IN_NETWORK_HOSTS: '1', GELDAR_RCON_HOST: 'neoforge' };
+    expect(loadConfig(env).rconHost).toBe('neoforge');
+    expect(() => loadConfig({ GELDAR_RCON_HOST: 'neoforge' })).toThrow(/GELDAR_RCON_HOST/);
+  });
+
+  it('admits neoforge as an in-network host only with the opt-in, and keeps the other service names', () => {
+    expect(hostAllowed('neoforge', { GELDAR_IN_NETWORK_HOSTS: '1' })).toBe(true);
+    expect(hostAllowed('neoforge', {})).toBe(false);
+    expect(hostAllowed('neoforge', { GELDAR_IN_NETWORK_HOSTS: '0' })).toBe(false);
+    expect(hostAllowed('paper', { GELDAR_IN_NETWORK_HOSTS: '1' })).toBe(true);
+    expect(hostAllowed('velocity', { GELDAR_IN_NETWORK_HOSTS: '1' })).toBe(true);
+  });
+
+  it('refuses a host that only looks like the neoforge service name', () => {
+    const env = { GELDAR_IN_NETWORK_HOSTS: '1' };
+    expect(hostAllowed('neoforge.example', env)).toBe(false);
+    expect(() => loadConfig({ ...env, GELDAR_RCON_HOST: 'neoforge.example' })).toThrow(
+      /GELDAR_RCON_HOST/,
+    );
   });
 
   it('refuses an arbitrary RCON host even with the in-network opt-in', () => {
