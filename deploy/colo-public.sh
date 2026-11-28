@@ -1,8 +1,8 @@
 #!/bin/bash
 # Installs, switches and removes the Geldar public sites in the shared Caddy (decisions 0071, 0094; card C2-07).
 # Usage: colo-public.sh install [site...] | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp nf-mcp)
-# install with no site installs all of map glass mcp nf-mcp (all become live); nf-mcp then needs GELDAR_NF_MCP_UPSTREAM. install mcp names sites: only those get their live file and
-# rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
+# install with no site installs map glass mcp (all become live). nf-mcp is opt-in: only `install nf-mcp` by name installs it, and it then needs GELDAR_NF_MCP_UPSTREAM.
+# install <site> names sites: only those get their live file and rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
 # Caddy is a host-network container that serves other sites. It is validated here and, per GELDAR_PUBLIC_APPLY=reload|restart|none,
 # reloaded (default) or, with its admin API off (R39), restarted ONCE and only when GELDAR_PUBLIC_RESTART_OK=1; never recreated or started. Its Caddyfile gets one `import /config/geldar/*.caddy` line.
 # Caddy substitutes {$VAR} from its own process environment, which cannot change without a restart, so install renders
@@ -15,6 +15,8 @@ set -euo pipefail
 . "$(dirname "$0")/common.sh"
 
 SITES="map glass mcp nf-mcp"
+# The sites a bare install (no site name) installs. nf-mcp is left out: it is opt-in by name.
+BARE_SITES="map glass mcp"
 SRC=${GELDAR_PUBLIC_SRC:-$DEPLOY_DIR/caddy}
 IMPORT_LINE='import /config/geldar/*.caddy'
 CADDYFILE_IN_CONTAINER=/etc/caddy/Caddyfile
@@ -27,12 +29,16 @@ require_env() {
 }
 
 usage() {
-  die "usage: colo-public.sh install [map|glass|mcp|nf-mcp ...] (no site = all four go live) | off <map|glass|mcp|nf-mcp|all> | on <map|glass|mcp|nf-mcp|all> | remove | status"
+  die "usage: colo-public.sh install [map|glass|mcp|nf-mcp ...] (no site = map glass mcp go live; nf-mcp only by name) | off <map|glass|mcp|nf-mcp|all> | on <map|glass|mcp|nf-mcp|all> | remove | status"
 }
 
 site_list() {
   case ${1:-} in
-    all) echo "$SITES" ;;
+    # all = every installed site: nf-mcp joins only once it is installed, so off/on all on a node without it still works.
+    all)
+      echo "$BARE_SITES"
+      if [ -f "$GEL_DIR/store/nf-mcp.caddy" ]; then echo nf-mcp; fi
+      ;;
     map | glass | mcp | nf-mcp) echo "$1" ;;
     *) usage ;;
   esac
@@ -185,7 +191,7 @@ restore_geldar() {
 # Validates the site names given to install (none = every site) into $INSTALL_SITES.
 install_site_list() {
   INSTALL_SITES=""
-  if [ "$#" -eq 0 ]; then INSTALL_SITES=$SITES; return 0; fi
+  if [ "$#" -eq 0 ]; then INSTALL_SITES=$BARE_SITES; return 0; fi
   for s in "$@"; do
     case $s in
       map | glass | mcp | nf-mcp) ;;

@@ -13,8 +13,8 @@ shard's MCP, its kill switch, and the one restart that applies them. Nothing els
 - **Reload as an alternative is UNVERIFIED.** `docker exec board-proxy caddy reload` may work with the admin API off, or may fail.
   Test it only with a validation first (Step 3 pattern), never on the live site as the first try. Do not write it into the
   apply step as if it were known to work.
-- **Bare `install` now includes nf-mcp.** After this change `colo-public.sh install` with no site names makes all four sites live,
-  so it needs `GELDAR_NF_MCP_UPSTREAM` too. Use `install nf-mcp` (named) for this change.
+- **A bare `install` leaves nf-mcp alone.** `colo-public.sh install` with no site names makes only `map`, `glass` and `mcp`
+  live, as before. nf-mcp is opt-in: use `install nf-mcp` (named), which needs `GELDAR_NF_MCP_UPSTREAM`.
 - **DNS first.** The owner creates the `mcp.neoforge` record (a CNAME to `<edge-target>`, the same target as the `mcp` record: look
   it up at packet time). Caddy cannot issue the certificate until the record resolves. Do Step 0 before the apply.
 

@@ -199,16 +199,16 @@ describe('colo-public.sh install <site...>', () => {
     expect(f.calls().some((c) => c.includes('caddy reload'))).toBe(false);
   });
 
-  it('bare install still makes all four live, and the trusted-proxy refusal applies to a named install', () => {
+  it('bare install makes map glass mcp live and leaves nf-mcp alone, and the trusted-proxy refusal applies to a named install', () => {
     const r = rig();
     expect(r.run(['install']).status).toBe(0);
     expect(readdirSync(r.geldar).sort()).toEqual([
       'glass.caddy',
       'map.caddy',
       'mcp.caddy',
-      'nf-mcp.caddy',
       'store',
     ]);
+    expect(readdirSync(join(r.geldar, 'store')).some((n) => n.startsWith('nf-mcp'))).toBe(false);
     const p = rig();
     const res = p.run(['install', 'mcp'], {
       GELDAR_MCP_TRUSTED_PROXIES: '',
@@ -232,14 +232,37 @@ describe('colo-public.sh install <site...>', () => {
     expect(live).not.toContain('{$');
   });
 
-  it('install nf-mcp refuses without GELDAR_NF_MCP_UPSTREAM, and a bare install needs it too', () => {
+  it('install nf-mcp refuses without GELDAR_NF_MCP_UPSTREAM, and a bare install does not need it', () => {
     const r = rig(DEFAULT_ENV.replace('GELDAR_NF_MCP_UPSTREAM=127.0.0.1:46788', ''));
     const named = r.run(['install', 'nf-mcp']);
     expect(named.status).not.toBe(0);
     expect(named.out).toContain('GELDAR_NF_MCP_UPSTREAM is missing from the env file');
     expect(existsSync(r.geldar)).toBe(false);
-    expect(r.run(['install']).status).not.toBe(0);
+    expect(r.run(['install']).status).toBe(0);
     expect(r.run(['install', 'mcp']).status).toBe(0);
+  });
+
+  it('off nf-mcp by name switches its live file to the off twin', () => {
+    const r = rig();
+    expect(r.run(['install', 'nf-mcp']).status).toBe(0);
+    expect(r.run(['off', 'nf-mcp']).status).toBe(0);
+    expect(readFileSync(join(r.geldar, 'nf-mcp.caddy'), 'utf8')).toBe(
+      readFileSync(join(r.geldar, 'store', 'nf-mcp-off.caddy'), 'utf8'),
+    );
+  });
+
+  it('off all leaves an uninstalled nf-mcp alone, and switches an installed one too', () => {
+    const bare = rig();
+    expect(bare.run(['install']).status).toBe(0);
+    expect(bare.run(['off', 'all']).status).toBe(0);
+    expect(existsSync(join(bare.geldar, 'nf-mcp.caddy'))).toBe(false);
+    const all = rig();
+    expect(all.run(['install']).status).toBe(0);
+    expect(all.run(['install', 'nf-mcp']).status).toBe(0);
+    expect(all.run(['off', 'all']).status).toBe(0);
+    expect(readFileSync(join(all.geldar, 'nf-mcp.caddy'), 'utf8')).toBe(
+      readFileSync(join(all.geldar, 'store', 'nf-mcp-off.caddy'), 'utf8'),
+    );
   });
 
   it('install nf-mcp refuses before any change when its kill-switch file is missing', () => {

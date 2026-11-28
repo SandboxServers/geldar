@@ -142,7 +142,6 @@ describe('colo-public.sh install', () => {
       'glass.caddy',
       'map.caddy',
       'mcp.caddy',
-      'nf-mcp.caddy',
       'store',
     ]);
   });
