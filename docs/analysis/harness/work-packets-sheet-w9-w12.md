@@ -422,6 +422,34 @@ export interface EffectiveSheet { life_id: string; revision: number; sheet: Char
 - **revert-checks** drop `AND character_sheet IS NULL`: "conflict changes nothing" fails (the 0050 trigger raises). Default to apply: "dry run writes nothing" fails. Remove the standard-only refusal: "apply refuses a named sheet" fails. Leave `conversion` out of the CHECK: the schema check fails.
 - **worknote** `S12-04b.md`. **commit** `feat(sheet): one-time adoption of sheets for existing agents (0057)`.
 
+### S12-04b card (prescriptive, 2026-11-28; replaces the summary above for dispatch)
+
+- **id** S12-04b **repo** geldar **branch** `phase1/s12-04b-adopt-sheets-apply` **depends-on** S12-04a (merged, #786) **size** 40k **status** code READY; any run of `--apply` on a live agent is an operator act behind the held-live ruling (0328), never part of this card.
+- **Numbers.** SQL **0057**: free on `origin/main` (`d5eaf9ae`; sql files exist for 0053 and from 0060 on). Decision **0287** is named for this card in the registry and in 0328, so this card's coder writes it in this branch; the registry says 0286 to 0288 stay with S12. The docs packet that wrote this card writes none of 0286 to 0288.
+- **Files (may edit).** `sql/0057_character_sheet_adoptions_conversion.sql` (new); `sql/test/check-schema-adopt-sheets.sql` (new); `.github/workflows/ci.yml` (append ` -f sql/test/check-schema-adopt-sheets.sql` to the one psql line, after the S12-01a entry, serially); `tools/mcp-tokens/src/adopt-apply.ts` (new, the apply; not `utils`); `tools/mcp-tokens/src/adopt-apply.test.ts` (new); `tools/mcp-tokens/src/cli.ts` (replace the two-line `--apply` refusal in `runAdoptSheets` with one call and one flag; add no other line); `docs/decisions/0287-*.md` (new, the adoption record, cites 0328); the worknote `S12-04b.md`. **Must not edit** `players.ts` beyond S12-04a's export, `geldar.ps1`, `compose/*.yml`, `shards/*.yaml`, `pnpm-lock.yaml`. Paths are colo-images paths: merge only in the colo-images batch window.
+- **Step 0 (stop if any fails).** Read `sql/0051_character_audit.sql` (the `character_sheet_adoptions` columns and the inline `source` CHECK) and `sql/0050_character_sheet_xp.sql` (`agents_sheet_immutable`). If the trigger does not allow a NULL to value change of `character_sheet`, `sheet_hash` and `sheet_adopted_at` together, stop and report.
+- **Steps.**
+  1. **SQL 0057 (additive except one widening).** `character_sheet_adoptions.source` allows only `config`, `roster`, `birth` (0051). Widen it to add `conversion`: drop and re-add the named CHECK `character_sheet_adoptions_source_check` in one transaction. No row changes, no column changes, no new table. This is the only non-additive statement in the card; the test below proves existing rows pass.
+  2. **Plan.** Reuse S12-04a's planner unchanged. Only `would-adopt` lives (baseline NULL) are written. `same`, `conflict`, `dead`, `not-found` and `refused` write nothing.
+  3. **Sheet.** Only `STANDARD_SHEET` (the `"standard"` token). Any other value in `--sheets` is refused by the apply even when the planner accepts it.
+  4. **Write, one transaction per life.** Insert one `events` row (the same insert `player add` uses in `players.ts`; reuse it), then `UPDATE agents SET character_sheet, sheet_hash, sheet_adopted_at WHERE agent_id = $1 AND sheet_hash IS NULL AND died_at IS NULL`, then the audit row with `source = 'conversion'`. Zero rows updated rolls the transaction back and reports `skipped`.
+  5. **Dry run is the default.** Without `--apply` the verb prints the S12-04a plan and writes nothing (no statement other than the planner's `SELECT`).
+  6. **`--apply` needs an operator flag.** `--apply` without `--operator-confirm` exits 2 and writes nothing. The flag has no default and no environment fallback.
+- **Tests and revert checks.**
+  - `dry run writes nothing` (revert: skip the dry-run guard; the write statements run; fails).
+  - `--apply without --operator-confirm exits 2 and writes nothing` (revert: drop the flag check).
+  - `apply writes the STANDARD_SHEET hash to a NULL-baseline live life and one audit row with source conversion` (revert: write the hash from the `--sheets` value; the hash assertion fails).
+  - `a named sheet value is refused and nothing is written` (revert: allow named values).
+  - `a life with a baseline is conflict and gets no write` (revert: overwrite; the baseline assertion fails).
+  - `a dead life gets no write` (revert: drop the `died_at` predicate).
+  - `second apply is a no-op with no second audit row` (revert: drop `sheet_hash IS NULL`; the audit count goes to two).
+  - `a failed audit insert rolls back the events row` (error path; revert: no transaction; the orphan events row remains).
+  - SQL (`check-schema-adopt-sheets.sql`): `conversion` is accepted, `bogus` is rejected, an existing `config` row still passes, and an audit row without its events row is rejected (revert: 0057 not applied; `conversion` is rejected).
+- **Checks.** `./geldar.ps1 pnpm exec vitest run tools/mcp-tokens/src/adopt-apply.test.ts tools/mcp-tokens/src/convert-sheets.test.ts`; the SQL file runs in CI; `./geldar.ps1 check`; `git diff --check`; `./geldar.ps1 pnpm check:repo`. Record the line count of `cli.ts` (it is already over the soft cap; no new logic lives there).
+- **Exit criteria.** Tests pass; each revert-check recorded with the one line mutated; `cli.ts` line count recorded; no `--apply` run against any agent; 0287 written in this branch only; 0286 and 0288 untouched.
+- **Commit** `feat(sheet): one-time adoption of sheets for existing agents (0057)`.
+- **Inert.** Nothing in CI or in the operator's default path writes. Stage 2 (a named sheet for a life that holds the all-3 baseline) is not in this card (see Open items 2).
+
 ## HC-45: per-player sheet and instinct switch (kit)
 
 - **id** HC-45 (proposed) **repo** kit **status** BLOCKED: HC-19 (kit-b supervisor) is not merged and names the settings file this card edits; until then the may-edit list cannot name an exact file. **size** 35k. **branch** `scriptorium/hc-45-stage-switch`.

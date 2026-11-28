@@ -76,12 +76,13 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-21b | habits | kit-b (kit repo) | HC-21a, HC-20 | 25k | Writing (re-verify) |
 | HC-22 | novelty from authorized knowledge | kit-b (kit repo) | HC-18, HC-46 | 35k | FixNeeded (read the 0324 position fields) |
 | HC-23a | the sanity veto inside `packages/mind-loop` | kit-b (kit repo) | HC-10, HC-11 (merged), HC-17b | 45k | Writing (unblocked; OD-B wording unapproved, ships inactive) |
-| HC-23b | veto parameters on descriptor 4 | kit-b (kit repo) | HC-19, HC-23a, HC-26c | 25k | BlockedDependency |
-| HC-24 | HW2 integration against a fake world, wave close | kit-b (kit repo) | HC-17a to HC-23b, HC-25, HC-26c | 45k plus ops | BlockedDependency (last) |
+| HC-23b | veto parameters on descriptor 4 | kit-b (kit repo) | HC-19, HC-23a, HC-26c | 25k | BlockedDependency (HC-26c; veto sentences not approved, 0289 item 3; card in `sheet/kit-cards-2026-11-28.md`, ships inactive) |
+| HC-24 | HW2 integration against a fake world, wave close | kit-b (kit repo) | HC-17a to HC-23b, HC-25, HC-26c | 45k plus ops | BlockedDependency (last; card in `sheet/kit-cards-2026-11-28.md`: `GELDAR_INSTINCT_SANITY` defaults off, byte-identical when off) |
 | HC-25 | sheet-to-persona generator | kit-b (kit repo) | HC-17b | 40k | BlockedDecision (OD-A) |
 | HC-26a | host side of sheet delivery | kit-b (kit repo) | HC-25 | 38k | Writing (re-verify; message file naming) |
-| HC-26b | deliver the sheet into the supervisor volume | kit-b (kit repo) | HC-26a, HC-18 | 35k | Writing (re-verify) |
-| HC-26c | supervisor-side sheet reading; the model never sees it | kit-b (kit repo) | HC-26b, HC-19 | 35k | Writing (re-verify) |
+| HC-26b | deliver the sheet and roster into the supervisor volume | sheet W6-W8 (kit card rewritten 2026-11-28) | HC-26a, HC-18 | 38k | Writing (card `sheet/kit-cards-2026-11-28.md`; adds `roster.json`) |
+| HC-26c | supervisor-side sheet reading; the model never sees it | sheet W6-W8 (kit card rewritten 2026-11-28) | HC-26b, HC-19 | 35k | Writing (card `sheet/kit-cards-2026-11-28.md`) |
+| HC-46b | agent `pos` and supervisor-side name roster (kit half) | sheet W6-W8 (kit card rewritten 2026-11-28) | HC-46a, HC-26b; geldar `players-cli roster export` (on main, d5eaf9ae) | 22k | Writing (card `sheet/kit-cards-2026-11-28.md`; ships inactive) |
 | HC-33 | promises and due wakes (question card) | sheet W3-W5 (kit C copy is history) | none | 15k | Ready (docs only; D-HC-06 deferred) |
 | HC-46 | kit observation carries positions and ids (`observe.ts` and the world output it parses), per 0324 | new card (being written; title to confirm) | HC-18 | | Writing |
 | AN-24 | observed-actor contract | sheet W5 | AN-12, contract slot 1 | 40k | Done (#782) |
@@ -119,7 +120,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |
 | AN-45c | actor basis on ObservedActor (`seen`, `spoke`, `signed`); named sentence only when present (0450 item 6) | sheet W6-W8 | PR #955 merged; AN-46; serial contract slot; `phase1/sheet-presenter-rows` | 30-35k | BlockedDependency (#955; colo-images batch window; inert, held-live) |
 | AN-51c | `agents[].pos` for perceived agents, never ids (0391 item 4; 0451 if a record is needed) | sheet W6-W8 | AN-45c (next contract slot); AN-51b | 30-40k | BlockedDependency (AN-45c; owner wording; inert, held-live) |
-| GX-ROSTER | operator-only `players-cli` verb exports `roster.json` as flat name-to-life JSON, max 16 KiB, never shown to the model (0289) | sheet W6-W8 | tools/players-cli (colo-images) | 20-25k | BlockedDependency (colo-images batch window) |
+| GX-ROSTER | operator-only `players-cli` verb exports `roster.json` as flat name-to-life JSON, max 16 KiB, never shown to the model (0289) | sheet W6-W8 | tools/players-cli (colo-images) | 20-25k | Done on geldar main (`roster export --out`, `d5eaf9ae`; 0289 item 7); delivery is kit card HC-26b |
 | AN-50a | evidence registration: sink `case` arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, `combat_fact` awards, inert) |
 | AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Done (#832, merge `f03ab6e1`; last link of the chain; take and combat subjects subscribed, `fight_seen` and `container_taken` map but present no line; live items pending operator approval) |
 | S9-00a | `turn_records` joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
@@ -147,7 +148,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | S12-02 | cohort metrics core | sheet W9-W12 | S12-01 | 50k | BlockedDependency |
 | S12-03 | control equivalence proof (all-3 equals today's bot) | sheet W9-W12 | AN-12 | 35k | Done (#780; silent record when no roll was drawn, S12-03b #795) |
 | S12-04a | roster conversion: loader and dry run | sheet W9-W12 | AN-05, AN-04b | | Done (#786; dry-run plan, inactive) |
-| S12-04b | roster conversion: write (SQL 0057), all-3 only | sheet W9-W12 | S12-04a | | BlockedDecision (held-live ruling; 0328) |
+| S12-04b | roster conversion: write (SQL 0057), all-3 only | sheet W9-W12 | S12-04a | | Card rewritten 2026-11-28 (`work-packets-sheet-w9-w12.md`); code READY after S12-04a; any apply on a live agent held (0328) |
 | HC-45 | per-player sheet and instinct switch, staged enable, rollback | sheet W9-W12 | HC-19, HC-26 | 35k | FixNeeded (no exact file named) |
 | S12-05 | staged enable per ranger and rollback | sheet W9-W12 | S12-03, S12-04, HC-45 | 30k docs | BlockedDecision (OD-11; per-ranger approval, 0328) |
 | S12-06 | run protocol, fixtures and run evidence | sheet W9-W12 | S12-02, S12-03, HC-38, HC-37b | 45k | BlockedDecision (OD-11) |
