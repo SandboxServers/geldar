@@ -80,6 +80,19 @@ function byDistance<T extends { distance: number }>(a: T, b: T, nameA: string, n
 }
 
 /** Distance to one decimal, so the sentence a prompt builds from it is byte-stable. */
+/**
+ * An agent's floored block position, or undefined when it falls outside the snapshot schema
+ * (y -64 to 320, x and z within ±30000000). The agent is still listed without it.
+ */
+function agentPos(position: Vec3): { x: number; y: number; z: number } | undefined {
+  const x = Math.floor(position.x);
+  const y = Math.floor(position.y);
+  const z = Math.floor(position.z);
+  const inRange =
+    x >= -30000000 && x <= 30000000 && z >= -30000000 && z <= 30000000 && y >= -64 && y <= 320;
+  return inRange ? { x, y, z } : undefined;
+}
+
 function tenths(distance: number): number {
   return Math.round(distance * 10) / 10;
 }
@@ -244,17 +257,14 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
       const name = entity.username ?? '';
       if (name.length < 1 || name.length > 32 || name === bot.username) continue;
       const held = entity.heldItem?.name;
+      const pos = agentPos(entity.position);
       agents.push({
         name,
         distance: tenths(distance),
         held_item: held && ITEM.test(held) ? held : null,
         health_estimate: 'unknown',
         ...agentStance(here, entity.position, distance),
-        pos: {
-          x: Math.floor(entity.position.x),
-          y: Math.floor(entity.position.y),
-          z: Math.floor(entity.position.z),
-        },
+        ...(pos !== undefined ? { pos } : {}),
         sort: name,
       });
       continue;
