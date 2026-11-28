@@ -101,9 +101,9 @@ Plus the shared names above.
 | Name | Meaning | Evidence |
 |---|---|---|
 | `EVENTSINK_BATCH_SIZE`, `EVENTSINK_FETCH_WAIT_MS` | Consumer batch size and fetch wait. | `eventsink/src/config.ts` |
-| `GELDAR_SHEET_SHARD` | The shard for the opt-in state service; not `GELDAR_SHARD`. | `compose/opt-in/sheet-sink.yml` line 6 |
-| `GELDAR_XP` | Set to `1` to turn on the XP ledger. | `compose/opt-in/sheet-sink.yml` line 7 |
-| `GELDAR_PROFICIENCY_THRESHOLDS` | Proficiency thresholds; needs `GELDAR_XP=1`. | as above |
+| `GELDAR_SHEET_SHARD` | The shard for the state service and outbox publisher; blank or unset is off. Not `GELDAR_SHARD`. | `compose/colo.yml` eventsink (node env file); `compose/opt-in/sheet-sink.yml` line 11 |
+| `GELDAR_XP` | Set to `1` to turn on the XP ledger; blank or unset is off. | `compose/colo.yml` eventsink; `compose/opt-in/sheet-sink.yml` line 12 |
+| `GELDAR_PROFICIENCY_THRESHOLDS` | Proficiency thresholds; needs `GELDAR_XP=1`. | as above; `compose/opt-in/sheet-sink.yml` line 13 |
 
 Plus the shared NATS, Postgres and telemetry names.
 

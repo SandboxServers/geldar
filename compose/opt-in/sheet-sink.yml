@@ -1,6 +1,8 @@
-# AN-12b, opt-in: the eventsink's state service, outbox publisher and XP ledger. Not part of any default compose file set:
-# colo.yml and phase0.yml leave these variables out, so the eventsink runs as before. Use it only with:
-#   docker compose -f compose/colo.yml -f compose/opt-in/sheet-sink.yml up -d eventsink
+# AN-12b, opt-in: the eventsink's state service, outbox publisher and XP ledger. compose/colo.yml already passes these
+# three variables through from the node env file (empty when unset), so colo needs no overlay: set GELDAR_SHEET_SHARD in
+# the node env file and recreate eventsink. This overlay gives the same pass-throughs to a stack whose file leaves them out.
+# Use it only with (the same three keys are then set twice, with the same value, which is harmless):
+#   docker compose -f compose/phase0.yml -f compose/opt-in/sheet-sink.yml up -d eventsink
 # It sits outside compose/*.yml on purpose: the CI compose lane and geldar.ps1 check validate each of those standalone.
 # Each variable is passed from the host environment when it is set, and left out of the container when it is not.
 # GELDAR_SHEET_SHARD names the shard. It is not GELDAR_SHARD, the ambient operator variable.

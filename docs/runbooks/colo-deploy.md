@@ -173,6 +173,15 @@ A compose-only or env-only change restarts nothing. To apply it, recreate those 
 deploy do it. If an upstream change to `compose/colo.yml` drops the pass-through lines, telemetry turns off for `eventsink`
 and `geldar-mcp` without any error, so keep them.
 
+## Sheet state service on the node (AN-47e)
+
+The eventsink's state service and outbox publisher are off by default. To turn them on, set `GELDAR_SHEET_SHARD=colo` in
+the node env file (the same file as `GELDAR_TELEMETRY_URL`), then recreate eventsink through `dc()` in `deploy/common.sh`
+so the change reaches the container. Do not use an overlay for this: `dc()` merges only the nats-auth and secrets files, and
+a CD recreate of eventsink drops any overlay passed by hand. `GELDAR_XP` stays unset until the XP producers are on. A blank
+value is the same as unset (state service off, XP off, default thresholds). `compose/colo.yml` passes all three variables
+through empty, so keep those lines.
+
 ## Body metrics on the player hosts
 
 A player host (`geldar-colo-players-host-<player-id>`) pushes Body metrics only when `GELDAR_TELEMETRY_URL` is set in the
