@@ -171,7 +171,7 @@ describe('player adopt-sheets (dry run)', () => {
     expect(sql.calls).toHaveLength(1);
   });
 
-  it('refuses --apply with exit 2 until S12-04b lands', async () => {
+  it('refuses --apply without --operator-confirm with exit 2 and connects to nothing', async () => {
     const { shard, sheetsFile } = await fixture({ [LIVES[0] as string]: 'standard' });
     const out = capture();
     const env = { shardFile: shard, secretDir: '' } as unknown as Env;
@@ -181,6 +181,6 @@ describe('player adopt-sheets (dry run)', () => {
       env,
     );
     expect(code).toBe(2);
-    expect(out.errs).toEqual(['adopt-sheets: --apply is S12-04b']);
+    expect(out.errs).toEqual(['adopt-sheets: --apply needs --operator-confirm']);
   });
 });
