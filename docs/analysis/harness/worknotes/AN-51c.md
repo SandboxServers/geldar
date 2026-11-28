@@ -6,6 +6,6 @@
 
 **Where agents[] is built.** `golem/src/perception/entities.ts`, `observeEntities`. It is the only producer of `agents` on the Body. Each player passes the line-of-sight check (`canSeeBody`) before it becomes an entry, so an entry exists only for an agent the Body perceives. `pos` is the block position (`Math.floor` of the entity position on each axis).
 
-**Held live.** The field is absent in production until the held-live ruling of 2026-11-15 is lifted. The owner's approval of the wording is not recorded in this worktree.
+**Emitted.** `pos` is emitted whenever the Body perceives an agent; nothing gates it, by owner ruling (decision 0391 item 4, 0289 item 6). **Clamp:** an agent whose floored y is outside -64..320, or whose x or z is outside ±30000000, is still listed but without `pos`, so the snapshot stays within `contract/schemas/snapshot.schema.json`.
 
 **No ids.** The entry carries no `life`, no `ag_` id and no UUID. The contract's `pos` object rejects extra keys, so an id cannot ride along in it.

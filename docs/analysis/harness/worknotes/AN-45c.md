@@ -13,10 +13,12 @@
 
 ## Checks
 
-- `contract/test/observation.test.ts` already covers the shape cases ('Zack Two', 'Ab', a 17-character
-  name, 'Zack\nx' with basis `seen`) and `actor: null`, so no contract test was added.
+- `contract/test/observation.test.ts` gained about 100 lines of shape cases ('Zack Two', 'Ab', a 17-character
+  name, 'Zack\nx' with basis `seen`) and `actor: null`.
+- Formatting: the long test literals were wrapped for Biome in a432f4cb, and `biome ci` runs on the changed files.
+- The damage handler (`threshold/mcp/src/events/handlers/damage.ts`) now uses the same guard, `observedActorName`.
 - Leakage gate: `threshold/mcp/src/events/leakage.test.ts` (18 tests) passes on the fix.
-- Formatting, `check:repo` and typecheck results are in the report for this packet.
+- `check:repo` and typecheck results are in the report for this packet.
 
 ## Revert-checks
 
