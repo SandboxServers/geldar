@@ -42,7 +42,10 @@ export interface FrontDoorOptions {
   ) => McpServer;
   /** Receives each log line after `frontLog` has cut it to safe fields. Default: JSON on stderr. */
   log?: (line: Record<string, string | number>) => void;
-  /** Receives each 401 or 503 refusal of a bearer: the closed reason and the status, nothing else (T-06d2). */
+  /**
+   * Receives each refusal once: the closed reason and the HTTP status, nothing else (T-06d2). Every
+   * refused request reaches it, not only the 401 and 503 of a bearer.
+   */
   onRefusal?: ((refusal: { reason: string; status: number }) => void) | undefined;
   /** Clock in milliseconds. Default Date.now. */
   now?: () => number;
@@ -68,6 +71,23 @@ const MAX_CONNECTIONS = 320;
 /** A missing or malformed client-address header is logged once in this long (with a count held back). */
 const CLIENT_HEADER_LOG_MS = 60_000;
 const MAX_CONNECTIONS_PER_ADDRESS = 80;
+/**
+ * The refusals the MCP mock makes itself (no session, a bad path or body). It logs each one once, under
+ * its event, with the status; the front door reports it under the same name. Every other refusal is
+ * reported where it is made.
+ */
+const MOCK_REFUSAL_EVENTS: readonly string[] = [
+  'missing_session',
+  'origin_rejected',
+  'session_superseded',
+  'session_not_found',
+  'not_found',
+  'host_rejected',
+  'method_not_allowed',
+  'body_too_large',
+  'body_timeout',
+  'parse_error',
+];
 
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
@@ -195,9 +215,41 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       // The span is lost; the refusal stands.
     }
   };
+  // Each refusal path below reports itself once, here or at its return, then sends the same answer as before.
+  const openFull = (): Refusal => {
+    refused('too_many_open_requests', 429);
+    return tooManyOpen();
+  };
+  const goneRefusal = (): Refusal => {
+    refused('client_gone', 499);
+    return clientGone();
+  };
+  const limited = (retryAfterSec: number, event: string): AuthDecision => {
+    refused('rate_limited', 429);
+    return limitedAnswer(retryAfterSec, event);
+  };
+  const callLimit = (retryAfterSec: number | undefined): Refusal | undefined => {
+    if (retryAfterSec !== undefined) refused('rate_limited', 429);
+    return refusedRateLimit(retryAfterSec);
+  };
   // Authenticated requests, so the call hook can read the owner of the player it serves.
   const players = new WeakMap<IncomingMessage, PlayerRecord>();
   let port = options.http.port;
+  const frontSink = frontLog(options.log ?? stderrSink);
+  // The mock's log: a refusal it made itself is reported once, then the line goes on as before.
+  const mockLog = (line: Record<string, unknown>): void => {
+    const { event, status } = line;
+    if (
+      typeof event === 'string' &&
+      MOCK_REFUSAL_EVENTS.includes(event) &&
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500
+    ) {
+      refused(event, status);
+    }
+    frontSink(line);
+  };
 
   const mock: MockHttp = createMockHttp({
     // The token store checks bearers; the mock's own table is not used on this path.
@@ -205,7 +257,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     createSession: options.createSession,
     // Read only for an authenticated connection: the session is made after `authenticate` has passed it.
     connectionSource: (req) => connectionSource(req, options.instinctKey),
-    log: frontLog(options.log ?? stderrSink),
+    log: mockLog,
     maxBodyBytes: options.http.maxBodyBytes ?? BODY_LIMIT_BYTES,
     limits: {
       maxConnections: options.http.maxConnections ?? MAX_CONNECTIONS,
@@ -221,8 +273,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // The kill switch answers every public request before anything else is read or counted. It is the
       // startup config: it takes effect on restart, and the immediate cut is `deploy/colo-public.sh off mcp`.
-      if (pub.killSwitch) return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
+      if (pub.killSwitch) {
+        refused('kill_switch', 503);
+        return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
+      }
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
+      // (The mock refuses an Origin before this hook runs; its `origin_rejected` line is reported below.)
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
       const client = clientAddress(req, trusted, clientIpHeader);
       // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
@@ -231,6 +287,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       const address = client.address;
       const waitSec = publicLimit?.take(clientKey(address), now());
       if (waitSec !== undefined) {
+        refused('rate_limited', 429);
         return {
           outcome: 'answered',
           status: 429,
@@ -245,11 +302,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         token !== null &&
         (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
       const blockedSec = cached ? undefined : gates.authBlocked(address, now());
-      if (blockedSec !== undefined) return limitedAnswer(blockedSec, 'rate_limited');
+      if (blockedSec !== undefined) return limited(blockedSec, 'rate_limited');
       // A bounded number of uncached lookups may be in flight at once: this protects Postgres, and
       // unlike a global failed-auth bucket an attacker cannot use it to lock out valid users for long.
       const lookup = token !== null && !cached;
       if (lookup && !gates.acquireLookup()) {
+        refused('lookup_busy', 503);
         return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       }
       let verdict: BearerVerdict;
@@ -278,7 +336,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         // GET and DELETE never reach the POST hook, so the handshake bucket meters them here.
         if (req.method === 'GET' || req.method === 'DELETE') {
           const waitSec = gates.handshake(verdict.player.playerId, now());
-          if (waitSec !== undefined) return limitedAnswer(waitSec, 'rate_limited');
+          if (waitSec !== undefined) return limited(waitSec, 'rate_limited');
         }
         players.set(req, verdict.player);
         return { outcome: 'ok' };
@@ -286,7 +344,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       // A missing or refused token flags the address; a wrong-player 403 is a valid token, not a failure.
       if (verdict.outcome === 'unauthorized') failures.record(clientKey(address), now());
       const retryAfterSec = gates.failedAuth(address, now());
-      if (retryAfterSec !== undefined) return limitedAnswer(retryAfterSec, 'rate_limited');
+      if (retryAfterSec !== undefined) return limited(retryAfterSec, 'rate_limited');
       if (verdict.outcome === 'unauthorized') {
         refused(verdict.reason, 401);
         // One 401 for a missing, malformed or unknown token (0090); the reason is for the log only.
@@ -299,6 +357,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           reason: verdict.reason,
         };
       }
+      refused(verdict.reason, 403);
       return { outcome: verdict.outcome, reason: verdict.reason };
     },
     // Takes the open slots before the body is read, so a slow body holds one like any open request.
@@ -307,38 +366,44 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     beforeBody(playerId, req, res): Refusal | undefined {
       const address = addressOf(req);
       const ownerId = players.get(req)?.ownerId ?? playerId;
-      if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
+      if (!gates.acquireAddress(address, maxPerAddress)) return openFull();
       if (!gates.acquireOwner(ownerId, maxPerAddress)) {
         gates.releaseAddress(address);
-        return tooManyOpen();
+        return openFull();
       }
       if (!gates.acquire(playerId)) {
         gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
-        return tooManyOpen();
+        return openFull();
       }
       const held = releaseOnClose(res, () => {
         gates.release(playerId);
         gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
       });
-      return held ? undefined : clientGone();
+      return held ? undefined : goneRefusal();
     },
     // A GET stream takes the per-address slot only: a player's streams are not counted as its POSTs.
     beforeStream(_playerId, req, res): Refusal | undefined {
       const address = addressOf(req);
-      if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
+      if (!gates.acquireAddress(address, maxPerAddress)) return openFull();
       const held = releaseOnClose(res, () => gates.releaseAddress(address));
-      return held ? undefined : clientGone();
+      return held ? undefined : goneRefusal();
     },
     onToolCall(playerId, body, res): Refusal | undefined {
-      if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
+      if (Array.isArray(body)) {
+        refused('batch_not_allowed', 400);
+        return { status: 400, message: 'batch_not_allowed' };
+      }
       const player = players.get(res.req);
-      if (player === undefined) return { status: 401, message: 'unauthorized' };
+      if (player === undefined) {
+        refused('unauthorized', 401);
+        return { status: 401, message: 'unauthorized' };
+      }
       // Every other method (initialize, resources/read, ...) takes only from the handshake bucket:
       // handshake traffic draws no call token, so it cannot use up an agent's or an owner's calls.
-      if (!isToolCall(body)) return refusedRateLimit(gates.handshake(playerId, now()));
-      return refusedRateLimit(gates.call(playerId, player.ownerId, now()));
+      if (!isToolCall(body)) return callLimit(gates.handshake(playerId, now()));
+      return callLimit(gates.call(playerId, player.ownerId, now()));
     },
   });
 
