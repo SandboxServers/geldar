@@ -52,7 +52,7 @@ PROJECT="scratch-$suffix"
 PLATFORM=${SCRATCH_PLATFORM:-paper}
 
 # Host ports for this project come from deploy/scratch/<suffix>.env, which this script parses itself (never sourced, so
-# nothing in it runs). Only the port keys are accepted (the four, SCRATCH_RCON_PORT for neoforge, SCRATCH_MCP_PORT for the mind),
+# nothing in it runs). Only the port keys are accepted (SCRATCH_RCON_PORT for paper and neoforge, SCRATCH_MCP_PORT for the mind),
 # with digit values 1 to 65535; anything else exits 2. A variable the operator already set wins over the file. The file is required for telemetry and optional otherwise.
 load_ports() {
   portfile="$ROOT/deploy/scratch/$suffix.env"
