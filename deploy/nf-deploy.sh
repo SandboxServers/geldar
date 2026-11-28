@@ -39,7 +39,7 @@ COMPOSE_FILE=$ROOT/compose/nf-live.yml
 PROBE_FILE=$ROOT/compose/nf-live-probe.yml
 SERVICES="nats postgres eventsink identity-seed velocity neoforge"
 # The secret files compose/nf-live.yml declares under ${NF_SECRETS_DIR:-./secrets-nf}. A test keeps this list in sync.
-SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt nats-mcp.txt nats-ranger.txt postgres-mcp.txt mcp-token-pepper.txt"
+SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt"
 # The one published host port (127.0.0.1:46565, velocity). Nothing else may listen on it.
 PORT=46565
 # Memory: the sum of the memory caps in compose/nf-live.yml, in MiB (neoforge 12288, postgres 2048, velocity 1024, nats 512,
@@ -198,11 +198,13 @@ check_no_colo_labels() {
 # stdout and returns 1. Called only once a listener is found.
 # Generalised for the human lane: $1 is the service (velocity, or velocity-human), $2 the bind address and $3 the host port; the
 # one published mapping must be exactly $2:$3->25565/tcp. Only rows of service $1 count; the other services' rows are ignored.
+# $4 is the container port (default 25565; the rangers' geldar-mcp publishes 8788).
 own_service_on_port() {
+  cport=${4:-25565}
   rows=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" \
     --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Ports}}') ||
     { echo "docker ps failed"; return 1; }
-  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->25565/tcp" '
+  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->$cport/tcp" '
     NF == 0 { next }
     NF != 3 { bad = 1; next }
     { all++ }
@@ -234,7 +236,7 @@ check_listener() {
   listeners=$(ss -Hltn "sport = :$1") || die "cannot read the listening sockets (ss)"
   [ -n "$listeners" ] || return 0
   if printf '%s\n' "$listeners" | awk -v want="$2:$1" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
-    reason=$(own_service_on_port "$3" "$2" "$1") && return 0
+    reason=$(own_service_on_port "$3" "$2" "$1" "${4:-25565}") && return 0
   else
     reason="ss socket not $2:$1"
   fi
@@ -244,7 +246,7 @@ check_listener() {
 check_secrets() {
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   [ -d "$secdir" ] || die "secrets directory missing: $secdir (the per-shard NF secrets step writes it; see the runbook)"
-  for f in $SECRET_FILES; do
+  for f in $SECRET_FILES $(rangers_secret_files); do
     p=$secdir/$f
     [ -f "$p" ] || die "secret file missing: $f"
     [ -s "$p" ] || die "secret file empty: $f"
@@ -412,9 +414,11 @@ check_resources() {
     '' | *[!0-9]*) die "cannot read free RAM from free(1)" ;;
   esac
   mib=$((kb / 1024))
-  need_mib=$((MEM_CAPS_MIB + MEM_MARGIN_MIB))
+  caps=$MEM_CAPS_MIB
+  if [ "$RANGERS" = 1 ]; then caps=$((caps + RANGERS_MEM_CAPS_MIB)); fi
+  need_mib=$((caps + MEM_MARGIN_MIB))
   [ "$mib" -ge "$need_mib" ] ||
-    die "free RAM ${mib} MiB is below $need_mib MiB (the project's caps of $MEM_CAPS_MIB MiB plus a $MEM_MARGIN_MIB MiB margin)"
+    die "free RAM ${mib} MiB is below $need_mib MiB (the project's caps of $caps MiB plus a $MEM_MARGIN_MIB MiB margin)"
   disk=$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')
   case $disk in
     '' | *[!0-9]*) die "cannot read free disk space for $ROOT" ;;
@@ -467,7 +471,10 @@ cmd_plan() {
     say "NF_HUMAN=on: the first on-run recreates nats, eventsink and neoforge (their network set changes). An off-run is refused while velocity-human exists (human-down first)."
   fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
-  say "golem-body and players-host are not in this project and are never started"
+  say "golem-body is not in this project and is never started"
+  if [ "$RANGERS" = 1 ]; then
+    say "rangers (NF_RANGERS=on, after the steps above): up -d --wait --no-deps geldar-mcp and the five ranger Bodies (ranger-yellow ranger-green ranger-blue ranger-red ranger-pink); geldar-mcp publishes 127.0.0.1:$RANGERS_PORT, the Bodies publish nothing"
+  fi
   say "all gates passed"
 }
 
@@ -519,6 +526,8 @@ cmd_down() {
   check_operator
   check_human_switch
   check_no_colo_labels
+  check_rangers_switch
+  check_rangers_orphan
   if [ "$VOLUMES" = 1 ]; then
     printf 'Type the project name (%s) to remove its volumes too: ' "$PROJECT" >&2
     typed=
@@ -651,6 +660,7 @@ cmd_refresh_secrets() {
     die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
   act dc up -d --wait --force-recreate --no-deps neoforge ||
     die "neoforge did not recreate or become healthy"
+  if [ "$RANGERS" = 1 ]; then rangers_refresh; fi
   say "refresh-secrets: project $PROJECT refreshed (no volume removed, postgres not touched)"
 }
 

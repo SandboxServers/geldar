@@ -8,6 +8,8 @@ RANGERS_SHARD=$ROOT/shards/nf-mind.yaml
 RANGERS_PORT=46788
 RANGER_SERVICES="ranger-yellow ranger-green ranger-blue ranger-red ranger-pink"
 RANGER_SECRETS="nats-ranger.txt nats-mcp.txt postgres-mcp.txt mcp-token-pepper.txt"
+# The rangers' memory caps in MiB (geldar-mcp and the five Bodies). Added to the project's caps by check_resources, on only.
+RANGERS_MEM_CAPS_MIB=2816
 RANGERS=0
 
 check_rangers_switch() {
@@ -16,6 +18,13 @@ check_rangers_switch() {
     on) RANGERS=1 ;;
     *) die "NF_RANGERS must be on or off (default off); refusing" ;;
   esac
+}
+
+# The ranger secret files, on only (they are not in SECRET_FILES): check_secrets reads this list with the base list.
+rangers_secret_files() {
+  check_rangers_switch
+  if [ "$RANGERS" = 1 ]; then echo "$RANGER_SECRETS"; fi
+  return 0
 }
 
 # Proves the deployed nats-auth.conf names the two users the overlay logs in as, ranger and mcp, once each (names only: the file
@@ -48,7 +57,7 @@ check_rangers_inputs() {
 # On: the rangers port is free, or held only by geldar-mcp's own mapping on the loopback address.
 check_rangers_port() {
   [ "$RANGERS" = 1 ] || return 0
-  check_listener "$RANGERS_PORT" 127.0.0.1 geldar-mcp
+  check_listener "$RANGERS_PORT" 127.0.0.1 geldar-mcp 8788
 }
 
 # Off: plan, up, refresh-secrets and probe refuse while a ranger or geldar-mcp container exists in the project, before any compose
@@ -69,6 +78,13 @@ check_rangers_orphan() {
 # must already be healthy (cmd_up runs them first).
 rangers_up() {
   act dc up -d --wait --no-deps geldar-mcp $RANGER_SERVICES
+}
+
+# refresh-secrets, rangers lane on: a bind-mounted secret follows its inode, so geldar-mcp and the five Bodies are force-recreated
+# too (the same --no-deps set as rangers_up, never a plain down or rm).
+rangers_refresh() {
+  act dc up -d --wait --force-recreate --no-deps geldar-mcp $RANGER_SERVICES ||
+    die "geldar-mcp or the five ranger Bodies did not recreate or become healthy; refresh-secrets stopped here (run it again)"
 }
 
 # rangers-down: stops and removes geldar-mcp and the five Bodies only. The overlay is always included, so it works with NF_RANGERS

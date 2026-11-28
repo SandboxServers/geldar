@@ -50,12 +50,14 @@ const NF_HUMAN = readFileSync(join(ROOT, 'compose', 'nf-live-human.yml'), 'utf8'
 function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
   return { onlyA: a.filter((f) => !b.includes(f)), onlyB: b.filter((f) => !a.includes(f)) };
 }
-/** The SECRET_FILES list of deploy/nf-deploy.sh (the files the operator script requires before any start). */
+/** The SECRET_FILES of deploy/nf-deploy.sh plus RANGER_SECRETS of deploy/nf-rangers-lib.sh (the ranger files, required with NF_RANGERS=on). */
 function deploySecretFiles(): string[] {
-  const m = /^SECRET_FILES="([^"]+)"/m.exec(
-    readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8'),
-  );
-  return (m?.[1] ?? '').split(' ').filter((f) => f !== '');
+  const words = (src: string, name: string): string[] =>
+    (new RegExp(`^${name}="([^"]+)"`, 'm').exec(src)?.[1] ?? '').split(' ').filter((f) => f !== '');
+  return [
+    ...words(readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8'), 'SECRET_FILES'),
+    ...words(readFileSync(join(ROOT, 'deploy', 'nf-rangers-lib.sh'), 'utf8'), 'RANGER_SECRETS'),
+  ];
 }
 const STREAMS = ['GELDAR_EVENTS', 'GELDAR_EVENTS_NF'];
 const BUCKETS = ['geldar-life-registry', 'geldar-skins'];

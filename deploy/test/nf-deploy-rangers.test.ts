@@ -24,6 +24,9 @@ const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
 const RANGERS_LIB_SRC = resolve(DEPLOY, 'nf-rangers-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
+// The four ranger files: required only with NF_RANGERS=on, so they are read from the lib, not from SECRET_FILES.
+const RANGER_SECRETS =
+  /^RANGER_SECRETS="([^"]+)"$/m.exec(readFileSync(RANGERS_LIB_SRC, 'utf8'))?.[1].split(' ') ?? [];
 const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const MOD_SHA = createHash('sha256').update(JAR_BYTES).digest('hex');
 const RANGER_CONF =
@@ -37,17 +40,19 @@ const STUB_SCRIPTS: Record<string, string> = {
     'echo "docker $*" >>"$STUB_LOG"',
     'case "$1" in',
     '  ps) case "$*" in *compose.service*) printf "%s\\n" "$DOCKER_PS_ROWS" ;; esac; exit 0 ;;',
+    '  compose) case "$*" in *" ps "*) printf "%s\\n" "$COMPOSE_PS" ;; esac; exit 0 ;;',
     '  volume) exit 0 ;;',
     '  run) exit 0 ;;',
     'esac',
     'exit 0',
   ].join('\n'),
-  // The listener of each host port: 46565 is the live velocity port, 46566 the human port.
+  // The listener of each host port: 46565 is the live velocity port, 46566 the human port, 46788 the rangers' geldar-mcp.
   ss: [
     '#!/bin/sh',
     'case "$*" in',
     '  *46565*) [ -n "$SS_LIVE" ] && printf "%s\\n" "$SS_LIVE" ;;',
     '  *46566*) [ -n "$SS_HUMAN" ] && printf "%s\\n" "$SS_HUMAN" ;;',
+    '  *46788*) [ -n "$SS_RANGERS" ] && printf "%s\\n" "$SS_RANGERS" ;;',
     'esac',
     'exit 0',
   ].join('\n'),
@@ -68,6 +73,17 @@ const STUB_SCRIPTS: Record<string, string> = {
 };
 
 const LIVE_ROW = 'geldar-nf|velocity|127.0.0.1:46565->25565/tcp';
+// geldar-mcp's own mapping (container port 8788), the listener the rangers port check reads, and a healthy project for refresh.
+const MCP_ROW = 'geldar-nf|geldar-mcp|127.0.0.1:46788->8788/tcp';
+const RANGERS_SS = 'LISTEN 0 4096 127.0.0.1:46788 0.0.0.0:*';
+const UP_PS = [
+  'nats running healthy',
+  'postgres running healthy',
+  'velocity running healthy',
+  'eventsink running ',
+  'neoforge running healthy',
+  'identity-seed exited 0',
+].join('\n');
 
 const made: string[] = [];
 afterEach(() => {
@@ -96,7 +112,7 @@ function makeRepo(opts: { shard?: boolean } = {}): string {
   for (const f of ['nf-live.yml', 'nf-live-rangers.yml']) {
     copyFileSync(join(ROOT, 'compose', f), join(repo, 'compose', f));
   }
-  for (const f of SECRET_FILES) {
+  for (const f of [...SECRET_FILES, ...RANGER_SECRETS]) {
     const body = f === 'nats-auth.conf' ? RANGER_CONF : `${f}\n`;
     writeFileSync(join(repo, 'compose', 'secrets-nf', f), body);
   }
@@ -126,6 +142,8 @@ function run(repo: string, opts: Opts = {}) {
     DOCKER_PS_ROWS: opts.rows ?? LIVE_ROW,
     SS_LIVE: '',
     SS_HUMAN: '',
+    SS_RANGERS: '',
+    COMPOSE_PS: UP_PS,
     FREE_KB: '100000000',
     DISK_KB: '100000000',
     STAT_MODE: '600',
@@ -250,4 +268,113 @@ describe('nf-deploy.sh rangers lane (NF_RANGERS)', () => {
       expect(calls(repo).some((l) => l.startsWith('docker compose -p'))).toBe(false);
     },
   );
+
+  it('the port check accepts geldar-mcp on 127.0.0.1:46788 with its mapping 8788/tcp', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { SS_RANGERS: RANGERS_SS }, rows: `${LIVE_ROW}\n${MCP_ROW}` });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/all gates passed/);
+  });
+
+  it('the port check refuses a 46788 listener whose mapping is not 127.0.0.1:46788->8788/tcp', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      env: { SS_RANGERS: RANGERS_SS },
+      rows: `${LIVE_ROW}\ngeldar-nf|geldar-mcp|127.0.0.1:46788->25565/tcp`,
+    });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/published mapping is not exactly 127\.0\.0\.1:46788->8788\/tcp/);
+  });
+
+  it('the ranger secret files are required only with NF_RANGERS=on', () => {
+    const repo = makeRepo();
+    for (const f of RANGER_SECRETS) rmSync(join(repo, 'compose', 'secrets-nf', f));
+    const off = run(repo, { env: { NF_RANGERS: undefined } });
+    expect(off.status).toBe(0);
+    const on = run(repo);
+    expect(on.status).not.toBe(0);
+    expect(on.stderr).toMatch(/is missing or empty in the NF secrets directory/);
+  });
+
+  it('the memory gate adds the rangers caps (2816 MiB) only with NF_RANGERS=on', () => {
+    // Off needs 16640 + 8192 = 24832 MiB; on needs 24832 + 2816 = 27648 MiB.
+    const repo = makeRepo();
+    const env = { FREE_KB: String(26000 * 1024) };
+    const on = run(repo, { env });
+    expect(on.status).not.toBe(0);
+    expect(on.stderr).toMatch(/free RAM 26000 MiB is below 27648 MiB/);
+    const off = run(repo, { env: { ...env, NF_RANGERS: undefined } });
+    expect(off.status).toBe(0);
+  });
+
+  it('plan prints the rangers step with NF_RANGERS=on and no longer says players-host is never started', () => {
+    const repo = makeRepo();
+    const on = run(repo);
+    expect(on.status).toBe(0);
+    expect(on.stdout).toMatch(
+      /rangers \(NF_RANGERS=on.*up -d --wait --no-deps geldar-mcp and the five/,
+    );
+    expect(on.stdout).not.toMatch(/players-host[^\n]*never started/);
+    const off = run(repo, { env: { NF_RANGERS: undefined } });
+    expect(off.stdout).not.toMatch(/geldar-mcp/);
+  });
+
+  it('up with NF_RANGERS=on runs geldar-mcp and the five Bodies with --no-deps and names no other service', () => {
+    const repo = makeRepo();
+    const res = run(repo, { args: ['up', '--local'] });
+    expect(res.status).toBe(0);
+    const lines = calls(repo).filter((l) => / up -d --wait --no-deps geldar-mcp /.test(l));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      / up -d --wait --no-deps geldar-mcp ranger-yellow ranger-green ranger-blue ranger-red ranger-pink$/,
+    );
+  });
+
+  it('rangers-down removes geldar-mcp and the five Bodies with rm -sf and never runs down', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { NF_RANGERS: undefined }, args: ['rangers-down', '--local'] });
+    expect(res.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    expect(compose).toHaveLength(1);
+    expect(compose[0]).toMatch(
+      / rm -sf ranger-yellow ranger-green ranger-blue ranger-red ranger-pink geldar-mcp$/,
+    );
+    expect(compose.some((l) => / down( |$)/.test(l))).toBe(false);
+  });
+
+  it('down with NF_RANGERS off refuses while a ranger container exists (no down call)', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      env: { NF_RANGERS: undefined },
+      rows: `${LIVE_ROW}\nranger-red`,
+      args: ['down', '--local'],
+    });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/a rangers container exists/);
+    expect(calls(repo).some((l) => / down( |$)/.test(l))).toBe(false);
+  });
+
+  it('refresh-secrets with NF_RANGERS=on force-recreates geldar-mcp and the five Bodies after neoforge', () => {
+    const repo = makeRepo();
+    const res = run(repo, { args: ['refresh-secrets', '--local'] });
+    expect(res.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    const mcp = compose.findIndex((l) =>
+      / up -d --wait --force-recreate --no-deps geldar-mcp ranger-yellow ranger-green ranger-blue ranger-red ranger-pink$/.test(
+        l,
+      ),
+    );
+    const neoforge = compose.findIndex((l) =>
+      / up -d --wait --force-recreate --no-deps neoforge$/.test(l),
+    );
+    expect(mcp).toBeGreaterThan(-1);
+    expect(mcp).toBeGreaterThan(neoforge);
+  });
+
+  it('refresh-secrets with NF_RANGERS off recreates no ranger service', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { NF_RANGERS: undefined }, args: ['refresh-secrets', '--local'] });
+    expect(res.status).toBe(0);
+    expect(calls(repo).some((l) => /geldar-mcp|ranger-yellow/.test(l))).toBe(false);
+  });
 });
