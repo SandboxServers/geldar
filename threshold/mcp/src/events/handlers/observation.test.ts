@@ -117,7 +117,13 @@ describe('observation events on the player log', () => {
     const named = { name: 'Zack', life: 'ag_zack_01' };
     const line = presented(event('observation', { ...BREAK, actor: named }));
     expect(line).toEqual([
-      { seq: 3, tick: 100, type: 'property_broken', text: 'Someone broke your chest.', block: 'chest' },
+      {
+        seq: 3,
+        tick: 100,
+        type: 'property_broken',
+        text: 'Someone broke your chest.',
+        block: 'chest',
+      },
     ]);
     expect(line[0]).not.toHaveProperty('actor');
   });
@@ -127,7 +133,13 @@ describe('observation events on the player log', () => {
       const actor = { name, life: 'ag_kestrel_01', basis: 'seen' };
       const line = presented(event('observation', { ...BREAK, actor }));
       expect(line, name).toEqual([
-        { seq: 3, tick: 100, type: 'property_broken', text: 'Someone broke your chest.', block: 'chest' },
+        {
+          seq: 3,
+          tick: 100,
+          type: 'property_broken',
+          text: 'Someone broke your chest.',
+          block: 'chest',
+        },
       ]);
     }
   });
