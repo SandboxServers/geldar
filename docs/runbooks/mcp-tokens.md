@@ -80,3 +80,23 @@ Node, through the admin container:
 The thoughts flag has a 10-second window: a second thoughts change within 10 seconds of the last one is refused
 (exit 3, nothing changed, so wait 10 seconds and run it again). The camera flag has no window. An unknown player
 exits 4, a retired player exits 4, and every call writes one `register_audit` row (actor `operator`, action `player.flags`).
+
+## Sheet adoption: plan, then apply (S12-04b)
+
+The plan shows, for each life the shard file names (the `mind.lives` tier table and the rangers in `sovereign.players`),
+whether its character sheet would be adopted. It changes nothing.
+
+    deploy/colo-admin.sh adopt-sheets-plan
+
+It prints one line per life, `<life-id>: <verdict>`, then one line `plan: <12 hex>`. The 12 hex digits are the plan hash:
+a hash of the verdict lines, so it changes when any verdict changes. No sheet value is printed.
+
+    deploy/colo-admin.sh adopt-sheets-apply --operator-confirm --plan <12 hex>
+
+Give the hash that the plan printed, in that order. The apply runs the plan again inside the admin container. If the hash
+differs from the one you give, it prints `plan changed (expected <your hash>, now <new hash>)` and writes nothing: read the
+plan again and decide on the new one. A plan that fails, or a bad argument, also writes nothing. Run the plan first; do
+not give a hash you have not read. `DEPLOY_DRY_RUN=1` prints the command and starts no container.
+
+Until the apply is built into the CLI, the apply step ends with `adopt-sheets: --apply is S12-04b` and exit 2, and
+nothing is written. The plan works now.

@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-21 at the mc-sql fix 2 commit this prints 49 numbers from 0001 to 0068. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-21 at the mc-sql fix 2 commit this prints 49 numbers from 0001 to 0068. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0056, 0058 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch. Number 0057 now has a file (`0057_character_sheet_adoptions_conversion.sql`, S12-04b), so the same count on 0057's branch is 50 numbers.
 
 ## Migrations
 
@@ -162,7 +162,8 @@ Design: decisions 0075 and 0100; the [Glass and Kino reference](glass-and-kino.m
 | `proficiency` | 0050 | `(life_id, domain)` | `domain` (`combat`, `farming`, `mining`, `building`, `crafting`, `exploring`, `social`), `xp` (>= 0), `level` (0 to 3), `updated_tick` | none |
 | `xp_evidence` | 0050 | `(life_id, domain, evidence_key)` | `evidence_key` (1 to 200), `source_event_id`, `world_tick`, `awarded_at` | none |
 | `proficiency_outbox` | 0050 | `outbox_id`; unique `(life_id, domain, level)` | `domain`, `level` (1 to 3), `xp`, `version`, `created_at`, `published_at` | none |
-| `character_sheet_adoptions` | 0051 | `adoption_id`; unique `source_event_id` (references `events`) | `life_id`, `sheet_hash` (64 hex), `sheet`, `source` (`config`, `roster`, `birth`), `result` (`adopted`, `same`, `conflict`), `recorded_at` | none |
+| `character_sheet_adoptions` | 0051 | `adoption_id`; unique `source_event_id` (references `events`) | `life_id`, `sheet_hash` (64 hex), `sheet`, `source` (`config`, `roster`, `birth`, `conversion`), `result` (`adopted`, `same`, `conflict`), `recorded_at` | none |
+| `character_sheet_adoptions` `source` CHECK | 0057 | none (constraint only) | widens `source` to add `conversion`; no row, column or table changes | none | `player adopt-sheets --apply` (S12-04b) |
 | `rolls` | 0051 | `source_event_id` (references `events`); unique `(life_id, decision_id, draw_index)` | `world_tick`, `decision_id`, `draw_index`, `engine_version`, `producer` (`body`, `kit`), `fx`, `score` (1 to 5), `proficiency` (0 to 3), `dc`, `mode` (`dis`, `flat`, `adv`), `dice` (1 or 2), `kept`, `bonus`, `total`, `success`, `inputs` | none |
 | `decisions` | 0051 | `source_event_id` (references `events`); unique `(life_id, decision_id)` | `world_tick`, `decision_id`, `engine_version`, `producer`, `fx`, `kind` (`d20`, `uniform`, `deterministic`, `audit_gap`), `policy`, `inputs`, `result`, `roll_event_ids`, `thought_id`, `action_id`, `intent_id`, `dropped`, `since_tick` | none |
 

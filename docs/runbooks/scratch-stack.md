@@ -62,11 +62,13 @@ script reads itself (it never sources the file; only the four `SCRATCH_*_PORT` k
 accepted, anything else exits 2, and a variable you already set in your environment wins over the file). The file is
 required for `telemetry` (a missing file exits 2) and optional for every other suffix, which then gets the defaults:
 
-| Project | Postgres | NATS | NATS monitor | Minecraft (Velocity) |
-| --- | --- | --- | --- | --- |
-| `scratch-a` and other suffixes (defaults) | 15432 | 14222 | 18222 | 35565 |
-| `scratch-telemetry` (`telemetry.env`, defaults + 10000) | 25432 | 24222 | 28222 | 45565 |
-| `scratch-nf` (`nf.env`, defaults + 20000, NeoForge; RCON 55575) | 35432 | 34222 | 38222 | 55565 |
+| Project | Postgres | NATS | NATS monitor | Minecraft (Velocity) | RCON (Paper or NeoForge, loopback) |
+| --- | --- | --- | --- | --- | --- |
+| `scratch-a` and other suffixes (defaults) | 15432 | 14222 | 18222 | 35565 | 35575 |
+| `scratch-telemetry` (`telemetry.env`, defaults + 10000) | 25432 | 24222 | 28222 | 45565 | 45575 |
+| `scratch-nf` (`nf.env`, defaults + 20000, NeoForge) | 35432 | 34222 | 38222 | 55565 | 55575 |
+
+RCON is published on `127.0.0.1` only, on `SCRATCH_RCON_PORT` (container port 25575), by the Paper overlay `compose/opt-in/scratch.yml` and by the NeoForge overlay. The game port is never published. The password is the run's own `rcon.txt` secret.
 
 ## Running as an account whose uid differs from the image's uid
 
@@ -136,7 +138,7 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
   (3072m, 1.5 CPUs). Ports come from `deploy/scratch/nf.env`, loopback only.
 - The first start is slow: it downloads the mod and the installer, runs the installer, and waits for the health check's
   15 minute start period. Allow about 15 to 18 minutes before `up` returns (the 15 minute start period plus the health retries).
-- RCON is published only in this variant, on `127.0.0.1:55575`, with the run's own `rcon.txt` secret. The live tests use
+- RCON is published on every scratch Paper or NeoForge stack, on `127.0.0.1` only (`SCRATCH_RCON_PORT`; 55575 here), with the run's own `rcon.txt` secret. The live tests use
   `GELDAR_RCON_PORT=55575`, `GELDAR_RCON_PASSWORD_FILE` set to the path of that `rcon.txt` (a path, never the value),
   `GELDAR_MC_PORT=55565`, `GELDAR_NATS_URL` on 127.0.0.1 port 34222, and `GELDAR_MC_HOST` and `GELDAR_RCON_HOST` 127.0.0.1.
 

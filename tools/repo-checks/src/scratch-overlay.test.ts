@@ -51,7 +51,11 @@ function hostPort(mapping: string): number {
 }
 
 describe('scratch overlay: ports', () => {
-  it('replaces the ports of postgres, nats and velocity with exact loopback mappings', () => {
+  it('replaces the ports of postgres, nats, paper and velocity with exact loopback mappings', () => {
+    expect(OVERLAY.services.paper?.ports).toEqual({
+      override: true,
+      items: [`127.0.0.1:\${SCRATCH_RCON_PORT:-35575}:25575`],
+    });
     expect(OVERLAY.services.postgres?.ports).toEqual({
       override: true,
       items: [`127.0.0.1:\${SCRATCH_PG_PORT:-15432}:5432`],
@@ -69,16 +73,28 @@ describe('scratch overlay: ports', () => {
     });
   });
 
-  it('gives paper and eventsink no ports key, so they publish nothing', () => {
-    expect(OVERLAY.services.paper).not.toHaveProperty('ports');
+  it('publishes only RCON from paper, and gives eventsink no ports key', () => {
     expect(OVERLAY.services.eventsink).not.toHaveProperty('ports');
+    const paperPorts = OVERLAY.services.paper?.ports;
+    const items = paperPorts && !Array.isArray(paperPorts) ? paperPorts.items : [];
+    expect(items).toHaveLength(1);
+    expect(items.join(' ')).not.toMatch(/25565/);
+    expect(items.join(' ')).not.toMatch(/25575:25575/);
   });
 
-  it('uses the four defaults the runbook names, and none of them is a phase0 host port', () => {
+  it('gives RCON a scratch port: not 25575, not a live default, and not a phase0 host port', () => {
+    const rcon = Number(/SCRATCH_RCON_PORT:-(\d+)/.exec(OVERLAY_TEXT)?.[1]);
+    expect(rcon).toBe(35575);
+    expect([4222, 5432, 25565, 25575]).not.toContain(rcon);
+    const phase0Hosts = Object.values(BASE.services).flatMap((s) => (s.ports ?? []).map(hostPort));
+    expect(phase0Hosts).not.toContain(rcon);
+  });
+
+  it('uses the five defaults the runbook names, and none of them is a phase0 host port', () => {
     const defaults = [...OVERLAY_TEXT.matchAll(/\$\{SCRATCH_[A-Z_]+:-(\d+)\}/g)].map((m) =>
       Number(m[1]),
     );
-    expect(defaults.sort((a, b) => a - b)).toEqual([14222, 15432, 18222, 35565]);
+    expect(defaults.sort((a, b) => a - b)).toEqual([14222, 15432, 18222, 35565, 35575]);
     const phase0Hosts = Object.values(BASE.services).flatMap((s) => (s.ports ?? []).map(hostPort));
     expect(phase0Hosts).toContain(5432);
     for (const port of defaults) expect(phase0Hosts).not.toContain(port);

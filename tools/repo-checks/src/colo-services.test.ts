@@ -129,7 +129,7 @@ describe('compose/colo.yml: the Body service (C1-03)', () => {
 // Every colo service, not only the Body and the Mind: the per-service budget (the default of each variable), no swap,
 // the pids limit in both forms (compose needs deploy.resources.limits.pids beside pids_limit), and log rotation.
 const SHARED_CAPS: Record<string, [string, string, string, number]> = {
-  paper: ['PAPER', '3', '8192m', 512],
+  paper: ['PAPER', '8', '15360m', 512],
   velocity: ['VELOCITY', '0.5', '1024m', 256],
   postgres: ['POSTGRES', '1', '2048m', 256],
   nats: ['NATS', '0.5', '512m', 256],

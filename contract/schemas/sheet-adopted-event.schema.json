@@ -10,6 +10,6 @@
     "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
     "sheet": { "$ref": "character-sheet.schema.json" },
     "sheet_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "source": { "enum": ["config", "roster", "birth"] }
+    "source": { "enum": ["config", "roster", "birth", "conversion"] }
   }
 }

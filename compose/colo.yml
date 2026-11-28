@@ -91,14 +91,14 @@ services:
     restart: unless-stopped
 
   paper:
-    # Budget: 3 CPUs, 8192m (no swap, 512 pids). The heap (MEMORY below) is 6G. Measured in C1-10.
+    # Budget: 8 CPUs, 15360m (no swap, 512 pids), raised from 3 and 8192m on 2026-11-15 (D1). The heap (MEMORY below) is 10G.
     deploy:
       resources:
         limits:
-          cpus: "${GELDAR_COLO_PAPER_CPUS:-3}"
-          memory: "${GELDAR_COLO_PAPER_MEM:-8192m}"
+          cpus: "${GELDAR_COLO_PAPER_CPUS:-8}"
+          memory: "${GELDAR_COLO_PAPER_MEM:-15360m}"
           pids: 512
-    memswap_limit: "${GELDAR_COLO_PAPER_MEM:-8192m}"
+    memswap_limit: "${GELDAR_COLO_PAPER_MEM:-15360m}"
     pids_limit: 512
     logging: *logging
     labels: *colo-labels
@@ -114,7 +114,7 @@ services:
       VERSION: "26.1.2"
       PAPER_BUILD: "74"
       # Heap, a first guess below the memory limit (C1-10 measures it). The JVM needs headroom above the heap.
-      MEMORY: 6G
+      MEMORY: ${GELDAR_COLO_PAPER_HEAP:-10G}
       # The seed of the colo world. It is not in shards/colo.yaml (the shard-config schema has no seed key).
       SEED: "8675309"
       ONLINE_MODE: "FALSE"
@@ -135,7 +135,7 @@ services:
       # Agent skin PNGs (<agent_id>.png) for the BlueMap skin provider (GX-07). Read-only mount below; the plugin falls back to its default skin when a file is missing.
       GELDAR_AGENT_SKINS_DIR: /data/skins
       # On 2026-11-15 the owner moved the colo border to radius 9500 (diameter 19000) for the spawn-town cutover. shards/colo-mind.yaml world_border_radius must match.
-      RCON_CMDS_STARTUP: "worldborder set 19000\ngamerule keep_inventory false\ngamerule players_sleeping_percentage 50\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
+      RCON_CMDS_STARTUP: "worldborder set 19000\ngamerule keep_inventory false\ngamerule players_sleeping_percentage 10\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
       - paper-data:/data
@@ -182,8 +182,8 @@ services:
       - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
     ports:
       # The colo bot ingress. Not 25565 (the production game server's port on this node) and never 25566.
-      # A compose value must be literal: the loopback rule rejects interpolation, so the host port is fixed here
-      # and shards/colo.yaml must say the same (geldar.ps1 checks it).
+      # The loopback rule allows an allowlisted GELDAR_PORT_* interpolation whose default is the port listed here;
+      # shards/colo.yaml must say the same (geldar.ps1 checks it).
       - "127.0.0.1:${GELDAR_PORT_BOT:-25567}:25565"
     networks: [colo]
     depends_on:

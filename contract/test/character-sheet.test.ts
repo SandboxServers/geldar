@@ -92,7 +92,7 @@ describe('sheet-adopted payload', () => {
   });
 
   it('accepts an adoption from each source', () => {
-    for (const source of ['config', 'roster', 'birth']) {
+    for (const source of ['config', 'roster', 'birth', 'conversion']) {
       expect(validateSheetAdoptedPayload(adopted({ source })).ok).toBe(true);
     }
   });
@@ -104,6 +104,12 @@ describe('sheet-adopted payload', () => {
 
   it('refuses an unknown source', () => {
     expect(validateSheetAdoptedPayload(adopted({ source: 'manual' })).ok).toBe(false);
+  });
+
+  it('refuses a near-miss source spelling, so only the four listed values pass', () => {
+    for (const source of ['conversions', 'CONVERSION', 'converted']) {
+      expect(validateSheetAdoptedPayload(adopted({ source })).ok).toBe(false);
+    }
   });
 
   it('refuses an embedded sheet that carries proficiency', () => {

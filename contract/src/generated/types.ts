@@ -12852,7 +12852,7 @@ export interface SheetAdoptedPayload {
   life_id: string;
   sheet: CharacterSheet;
   sheet_hash: string;
-  source: "config" | "roster" | "birth";
+  source: "config" | "roster" | "birth" | "conversion";
 }
 
 export interface SnapshotRequest {
