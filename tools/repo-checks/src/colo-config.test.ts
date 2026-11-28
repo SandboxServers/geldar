@@ -143,6 +143,7 @@ const CASES: Record<string, string | null> = {
   committed: null,
   comments: '# note\n\ncpu_limit: 14.6   # cores\nmemory_limit: 25088m\nminecraft_port: 25567\n',
   heap: GOOD.replace('25088m', '7000m'),
+  heapMid: GOOD.replace('25088m', '10000m'),
   memSum: GOOD.replace('25088m', '20480m'),
   cpuSum: GOOD.replace('cpu_limit: 14.6\n', 'cpu_limit: 8\n'),
   unknownKey: `${GOOD}telemetry_urll: http://example.invalid\n`,
@@ -235,6 +236,12 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
     const result = outcome('heap');
     expect(result.ok).toBe(false);
     expect(result.error).toContain("below Paper's heap (10G) plus 1 GiB");
+  });
+
+  it('refuses a memory total between the heap and the heap plus 1 GiB (10000m)', () => {
+    const result = outcome('heapMid');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("below Paper's heap (10G)");
   });
 
   it('refuses a memory total below the sum of the per-service memory budgets', () => {

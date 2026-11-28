@@ -147,7 +147,7 @@ A flat file: `key: value` lines only. `geldar.ps1` refuses unknown keys, a repea
 | `bind_address` | No | Must be `127.0.0.1` (the default). | Optional; `format: ipv4`; default `127.0.0.1`. |
 | `telemetry_url` | Not accepted | Refused as an unknown key. | Optional; `format: uri`. |
 
-On 2026-11-16 at `1b114276` the file sets `cpu_limit: 10.6` and `memory_limit: 19968m`, and the per-service budgets in `compose/colo.yml` sum to 10.6 CPUs and 19968m over 14 services. Re-derive the sums the way `Read-ColoConfig` does (first reference per service):
+The file sets `cpu_limit: 14.6` and `memory_limit: 25088m`, and the per-service budgets in `compose/colo.yml` sum to 14.6 CPUs and 25088m over 13 services (Paper 8 CPUs and 15360m after D1). Re-derive the sums the way `Read-ColoConfig` does (first reference per service):
 
 ```powershell
 $t = Get-Content -Raw compose/colo.yml; $c=@{}; $m=@{}

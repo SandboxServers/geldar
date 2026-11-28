@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -12,6 +13,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const COLO = 'compose/colo.yml';
 const NATS = 'compose/nats-auth.yml';
 const AGENTS = 'compose/opt-in/colo-paper-agents.yml';
+const KINO = 'compose/colo-kino.yml';
 const TIMEOUT_MS = 60_000;
 /** Variables this check sets or clears; a developer's shell must not change the render. */
 const CLEARED_VARS = [
@@ -31,6 +33,7 @@ const AGENT_TARGETS = [
 interface Mount {
   source?: string;
   target?: string;
+  read_only?: boolean;
   bind?: { create_host_path?: boolean };
 }
 interface Paper {
@@ -106,6 +109,39 @@ function selectedOverlay(value: string | undefined): string {
   });
 }
 
+/**
+ * The argument list deploy/common.sh's dc hands to docker for `dc config`, with GELDAR_COLO_EXTRA_OVERLAY set to
+ * value (unset when undefined). A fake docker on PATH prints each argument on its own line, so no daemon is needed.
+ */
+function composeArgv(value: string | undefined): string[] {
+  const bin = mkdtempSync(join(tmpdir(), 'fake-docker-'));
+  try {
+    writeFileSync(join(bin, 'docker'), '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', { mode: 0o755 });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of CLEARED_VARS) delete env[name];
+    delete env.GELDAR_MC_BIND;
+    delete env.GELDAR_MC_PORT;
+    delete env.HOLD_PUBLIC;
+    if (value !== undefined) env.GELDAR_COLO_EXTRA_OVERLAY = value;
+    const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
+    env[pathKey] = `${bin}${delimiter}${env[pathKey] ?? ''}`;
+    const out = execFileSync('sh', ['-c', '. "$0"; dc config', 'deploy/common.sh'], {
+      cwd: ROOT,
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return out.split('\n').filter((line) => line !== '');
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
+/** The file named after each -f, in argument order. */
+function filesOf(argv: string[]): string[] {
+  return argv.flatMap((arg, i) => (arg === '-f' ? [argv[i + 1] ?? ''] : []));
+}
+
 describe.skipIf(!dockerOk)('colo paper agents (docker compose config)', () => {
   it(
     'without the overlay, the rendered paper has no Ledger or OTel agent',
@@ -120,7 +156,7 @@ describe.skipIf(!dockerOk)('colo paper agents (docker compose config)', () => {
   );
 
   it(
-    'with the overlay, the rendered paper has the agent env and all four mounts',
+    'with the overlay, the rendered paper has the agent env and all four read-only mounts',
     () => {
       const doc = render([AGENTS]);
       const paper = paperOf(doc);
@@ -134,6 +170,7 @@ describe.skipIf(!dockerOk)('colo paper agents (docker compose config)', () => {
           .map((mount) => mount.target)
           .sort(),
       ).toEqual([...AGENT_TARGETS].sort());
+      for (const mount of agentMounts(doc)) expect(mount.read_only).toBe(true);
     },
     TIMEOUT_MS,
   );
@@ -147,6 +184,39 @@ describe.skipIf(!shOk)('colo overlay selection (deploy/common.sh)', () => {
 
   it('a set GELDAR_COLO_EXTRA_OVERLAY selects that file', () => {
     expect(selectedOverlay(AGENTS)).toBe(AGENTS);
+  });
+});
+
+describe.skipIf(!shOk)('colo overlay files passed to docker compose (dc in deploy/common.sh)', () => {
+  it('one selected file adds one -f before the subcommand', () => {
+    const argv = composeArgv(AGENTS);
+    expect(filesOf(argv)).toHaveLength(4);
+    expect(filesOf(argv).slice(-1)).toEqual([AGENTS]);
+    expect(argv[argv.length - 1]).toBe('config');
+  });
+
+  it('colo-kino.yml and the paper agents overlay each get one -f, in the order given', () => {
+    const argv = composeArgv(`${KINO}:${AGENTS}`);
+    expect(filesOf(argv)).toHaveLength(5);
+    expect(filesOf(argv).slice(-2)).toEqual([KINO, AGENTS]);
+    expect(argv[argv.length - 1]).toBe('config');
+  });
+
+  it('a blank selection adds no overlay, as unset does', () => {
+    for (const value of ['', undefined]) {
+      const files = filesOf(composeArgv(value));
+      expect(files).toHaveLength(3);
+      expect(files[files.length - 1]).toMatch(/compose\.secrets\.yml$/);
+    }
+  });
+
+  it('empty entries between colons add no -f', () => {
+    expect(filesOf(composeArgv(`:${AGENTS}:`))).toEqual([
+      expect.stringMatching(/\bcolo\.yml$/),
+      expect.stringMatching(/nats-auth\.yml$/),
+      expect.stringMatching(/compose\.secrets\.yml$/),
+      AGENTS,
+    ]);
   });
 });
 
@@ -175,14 +245,25 @@ describe('the live settings in compose/colo.yml', () => {
 });
 
 describe('the opt-in agent overlay file', () => {
-  it('each agent mount refuses to create a missing host source (create_host_path false)', () => {
+  it('each agent mount refuses to create a missing host source and is read-only', () => {
     // compose config drops a false bind option (it renders `bind: {}`), so the overlay file itself is read.
     const overlay = parse(readFileSync(resolve(ROOT, AGENTS), 'utf8')) as Rendered;
     const mounts = (overlay.services?.paper?.volumes ?? []).filter((mount) =>
       AGENT_TARGETS.includes(mount.target ?? ''),
     );
     expect(mounts).toHaveLength(4);
-    for (const mount of mounts) expect(mount.bind?.create_host_path).toBe(false);
+    for (const mount of mounts) {
+      expect(mount.bind?.create_host_path).toBe(false);
+      expect(mount.read_only).toBe(true);
+    }
+  });
+
+  it('the paper env sets the three agent values (read from the YAML, no docker)', () => {
+    const overlay = parse(readFileSync(resolve(ROOT, AGENTS), 'utf8')) as Rendered;
+    const env = paperOf(overlay).environment;
+    expect(env?.JAVA_AGENTS).toBe('/opt/otel/opentelemetry-javaagent.jar');
+    expect(env?.OTEL_JAVAAGENT_CONFIGURATION_FILE).toBe('/opt/otel/otel-agent.properties');
+    expect(env?.OTEL_SDK_DISABLED).toBe('false');
   });
 
   it('each agent mount reads a source that the node provides (the sources confirmed on the node, 2026-11-28)', () => {

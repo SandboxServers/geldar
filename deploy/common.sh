@@ -68,15 +68,42 @@ dc() {
   public_overlay
   # colo-up.sh sets HOLD_PUBLIC=1 until the stack is healthy: the port is published by the last `up` only.
   if [ "${HOLD_PUBLIC:-0}" = 1 ]; then PUBLIC_OVERLAY=; fi
-  if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
-  elif [ -n "$PUBLIC_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
-  elif [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" "$@"
+  compose_call -- "$@"
+}
+
+# Runs docker compose for the project with, in order: the three base files, PUBLIC_OVERLAY when set, then one -f for
+# each EXTRA_OVERLAY entry (entries are colon-separated, `a.yml:b.yml`; blank adds none). Arguments before -- are
+# global options (for example --profile admin) and go after the files; the arguments after -- are the subcommand.
+compose_call() {
+  _opts=0
+  while [ "$1" != -- ]; do
+    set -- "$@" "$1"
+    shift
+    _opts=$((_opts + 1))
+  done
+  shift
+  _args=$(($# - _opts))
+  set -- "$@" -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY"
+  if [ -n "${PUBLIC_OVERLAY:-}" ]; then set -- "$@" -f "$PUBLIC_OVERLAY"; fi
+  if [ -n "${EXTRA_OVERLAY:-}" ]; then
+    _ifs=$IFS
+    IFS=:
+    set -f
+    for _entry in $EXTRA_OVERLAY; do
+      if [ -n "$_entry" ]; then set -- "$@" -f "$_entry"; fi
+    done
+    set +f
+    IFS=$_ifs
   fi
+  # Move the subcommand arguments to the end, behind the files and options.
+  _i=0
+  while [ "$_i" -lt "$_args" ]; do
+    _first=$1
+    shift
+    set -- "$@" "$_first"
+    _i=$((_i + 1))
+  done
+  docker compose "$@"
 }
 
 # The public Minecraft port overlay (compose/colo-public.yml) is merged only when the node env sets both
