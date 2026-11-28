@@ -3,6 +3,7 @@ import { markedWords } from '../src/agent-text.ts';
 import { validateHurtPayload } from '../src/generated/validators.js';
 import {
   observationSentence,
+  observedActorName,
   provenanceBreakSubject,
   provenancePickupSubject,
   provenanceWildcard,
@@ -144,6 +145,32 @@ describe('observed-actor contract (AN-24, decision 0343)', () => {
         'Someone broke your chest.',
       );
     }
+  });
+
+  it('a life id, a name with a digit, or a number as the name gives the Someone form', () => {
+    for (const name of ['ag_kestrel_01', 'Zack2', '12345678']) {
+      const actor = { name, life: 'ag_kestrel_01', basis: 'seen' };
+      expect(observationSentence({ kind: 'property_broken', block: 'chest', actor })).toBe(
+        'Someone broke your chest.',
+      );
+    }
+  });
+
+  it('a name outside the Minecraft name shape gives the Someone form', () => {
+    for (const name of ['Zack Two', 'Ab', 'Abcdefghijklmnopq', 'Zack\nx']) {
+      const actor = { name, basis: 'seen' };
+      expect(observationSentence({ kind: 'property_broken', block: 'chest', actor })).toBe(
+        'Someone broke your chest.',
+      );
+    }
+  });
+
+  it('a non-object actor, null included, counts as absent', () => {
+    expect(observedActorName(null)).toBeUndefined();
+    expect(observedActorName('Zack')).toBeUndefined();
+    expect(observationSentence({ kind: 'property_broken', block: 'chest', actor: null })).toBe(
+      'Someone broke your chest.',
+    );
   });
 
   it('a named sentence shows no life id, UUID or digit beyond the count', () => {

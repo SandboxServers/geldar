@@ -6,7 +6,8 @@ import { definePresentHandler } from './types.ts';
  */
 export const observationPresenter = definePresentHandler('observation', (e, base) => {
   if (e.observationKind === undefined) return [];
-  // The fight and take sentences are actor-free (decision 0391): no name rides on those lines.
+  // The fight and take lines carry no actor field (decision 0391). Their sentence may still name a
+  // basis-backed actor (decision 0450), so the name is in the text, not in this structured field.
   const anonymous = e.observationKind === 'fight_seen' || e.observationKind === 'container_taken';
   const actor = e.actor !== undefined && !anonymous ? { actor: { name: e.actor } } : {};
   const item = e.item !== undefined ? { item: e.item } : {};

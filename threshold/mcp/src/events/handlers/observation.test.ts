@@ -26,9 +26,10 @@ function event(type: string, payload: unknown, tick = 100): MindEvent {
 }
 
 const ZACK = { name: 'Zack', life: 'ag_zack_01' };
+const ZACK_SEEN = { ...ZACK, basis: 'seen' };
 const GIFT = {
   kind: 'gift_received',
-  actor: ZACK,
+  actor: ZACK_SEEN,
   item: 'bread',
   count: 3,
   key: 'gift:100:zack:bread:3:0',
@@ -110,6 +111,25 @@ describe('observation events on the player log', () => {
     }
     expect(visibleActorName('Zack')).toBe('Zack');
     expect(visibleActorName('Watcher')).toBeUndefined();
+  });
+
+  it('a property_broken with no basis presents with no actor key at all', () => {
+    const named = { name: 'Zack', life: 'ag_zack_01' };
+    const line = presented(event('observation', { ...BREAK, actor: named }));
+    expect(line).toEqual([
+      { seq: 3, tick: 100, type: 'property_broken', text: 'Someone broke your chest.', block: 'chest' },
+    ]);
+    expect(line[0]).not.toHaveProperty('actor');
+  });
+
+  it('a life id, a name with a digit, or a number as the name is never shown', () => {
+    for (const name of ['ag_kestrel_01', 'Zack2', '12345678']) {
+      const actor = { name, life: 'ag_kestrel_01', basis: 'seen' };
+      const line = presented(event('observation', { ...BREAK, actor }));
+      expect(line, name).toEqual([
+        { seq: 3, tick: 100, type: 'property_broken', text: 'Someone broke your chest.', block: 'chest' },
+      ]);
+    }
   });
 
   it('an old damage payload without actor maps and presents exactly as before', () => {

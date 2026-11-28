@@ -10,7 +10,7 @@ export {
   validateObservationPayload,
   validateProvenance,
 } from './generated/validators.js';
-export { observationSentence } from './observation.ts';
+export { observationSentence, observedActorName } from './observation.ts';
 export {
   provenanceBreakSubject,
   provenanceCombatSubject,

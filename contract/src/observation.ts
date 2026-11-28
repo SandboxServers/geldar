@@ -34,7 +34,7 @@ export interface ObservationSentenceInput {
   count?: unknown;
   block?: unknown;
   target?: unknown;
-  actor?: ObservationSentenceActor | undefined;
+  actor?: ObservationSentenceActor | null | undefined;
 }
 
 /** The generic sentence, also the fallback when a built sentence would carry a marker word. */
@@ -43,21 +43,27 @@ const GENERIC = 'Something happened.';
 /** The subject used when the actor may not be named. */
 const SOMEONE = 'Someone';
 
+/** A life id as a name: `ag_` and a short handle, then a count of two or more digits. */
+const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
+
 /**
- * The name the sentence may show: a Minecraft name with a valid basis and no marker word, else
- * undefined. Without a basis the actor is never named (decision 0450, item 1).
+ * The actor's name the sentence and the player line may show: a Minecraft name with a valid basis,
+ * no digit, no life-id shape and no marker word; else undefined. A non-object actor counts as absent.
+ * Without a basis the actor is never named (decision 0450, item 1), and agents never see ids or
+ * numbers beyond the count (decision 0450).
  */
-function namedActor(actor: ObservationSentenceActor | undefined): string | undefined {
-  if (actor === undefined || typeof actor.name !== 'string' || typeof actor.basis !== 'string') {
-    return undefined;
-  }
-  if (!BASES.includes(actor.basis) || !ACTOR_NAME.test(actor.name)) return undefined;
-  return markedWords(actor.name).length === 0 ? actor.name : undefined;
+export function observedActorName(actor: unknown): string | undefined {
+  if (typeof actor !== 'object' || actor === null) return undefined;
+  const { name, basis } = actor as ObservationSentenceActor;
+  if (typeof name !== 'string' || typeof basis !== 'string') return undefined;
+  if (!BASES.includes(basis) || !ACTOR_NAME.test(name)) return undefined;
+  if (LIFE_ID.test(name) || /[0-9]/.test(name)) return undefined;
+  return markedWords(name).length === 0 ? name : undefined;
 }
 
 /** One sentence per observation kind; anything unrecognised gives the generic sentence. */
 export function observationSentence(input: ObservationSentenceInput): string {
-  const who = namedActor(input.actor) ?? SOMEONE;
+  const who = observedActorName(input.actor) ?? SOMEONE;
   let sentence = GENERIC;
   if (
     input.kind === 'gift_received' &&

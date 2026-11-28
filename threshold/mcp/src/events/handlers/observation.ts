@@ -1,4 +1,4 @@
-import { markedWords, observationSentence } from '@geldar/contract';
+import { markedWords, observationSentence, observedActorName } from '@geldar/contract';
 import { defineMindHandler } from './types.ts';
 
 /** A Minecraft player name (the golem's observed-actor pattern). */
@@ -36,7 +36,8 @@ interface ObservationFields {
 
 /**
  * An observation (AN-24) becomes one sim event: the fixed sentence from `observationSentence`, and the
- * visible actor's name when it passes `visibleActorName`. The life id and the key never reach the player.
+ * actor's name only when `observedActorName` gives one (a valid basis and a name the player may see).
+ * The life id and the key never reach the player.
  */
 export const observationHandler = defineMindHandler('observation', (event, base) => {
   const p: ObservationFields = event.payload;
@@ -47,7 +48,7 @@ export const observationHandler = defineMindHandler('observation', (event, base)
     p.kind === 'container_taken'
       ? p.kind
       : undefined;
-  const actor = visibleActorName(p.actor?.name);
+  const actor = observedActorName(p.actor);
   const item = visibleField(p.item);
   const count = typeof p.count === 'number' ? p.count : undefined;
   const block = visibleField(p.block);
