@@ -204,6 +204,23 @@ environment of the compose command that starts it. Unset or blank, the host star
   prints `1` when the host has the variable set and non-empty, `0` when it does not. Then, in SigNoz, Body metric series with a
   `service.instance.id` for that host appear after its first push. No series means the host runs with telemetry off.
 
+## Compose on the node (not copied by the CD)
+
+The CD never copies `compose/`. `deploy/colo-cd-plan.sh` lists `compose` among the folders it skips (plugin, compose, caddy and
+nats are not refreshed), so a repo change to `compose/colo.yml` reaches the running stack only by hand. Facts, read 2026-11-28:
+
+- **No refresh verb.** The entrypoint takes `run plan|deploy|status` only. Nothing in the pipeline copies a compose file.
+- **Each deploy says so.** `colo-cd.sh` prints `needs manual` for `compose` on every deploy until the node's copy is recorded.
+- **By hand.** The node's operator account copies the file into the `src` extract (`$GELDAR_COLO_ROOT`), and then runs
+  `sh deploy/colo-cd.sh --record-applied` from that extract. `--record-applied` records all four folders at once, so run it only
+  when the `plugin`, `caddy` and `nats` folders there match `origin/main` too. The record is an operator's statement; do not make it
+  for a `compose` folder that differs from main.
+- **The node's `colo.yml` is hand-patched.** Its file sha256 starts `ebca19fc` (2026-11-28). It has settings the repo does not, and
+  lacks settings the repo has (the drift is in [colo-compose-drift.md](colo-compose-drift.md)). **Do not overwrite it with a repo copy**
+  until the reconcile card [COLO-COMPOSE-RECONCILE](../analysis/harness/work-packets-colo-compose-reconcile.md) has landed and its
+  render proof has passed. Paper limits and restarts need owner approval.
+- Nothing in this runbook applies a compose change. The reconcile card is prescriptive: it changes nothing on the node by itself.
+
 ## Rollback
 
 Two ways, and the first is the usual one:
