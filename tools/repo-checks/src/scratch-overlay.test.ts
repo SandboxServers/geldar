@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { type CollectionTag, parse } from 'yaml';
-import { SCRIPT } from './scratch-harness.js';
+import { GATE_SCRIPT, SCRIPT } from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch.yml`, 'utf8');
@@ -172,7 +172,7 @@ describe('scratch script: text', () => {
   });
 
   it('reads free disk on the Docker data root as well as the repo', () => {
-    expect(SCRIPT).toContain('{{.DockerRootDir}}');
+    expect(`${SCRIPT}${GATE_SCRIPT}`).toContain('{{.DockerRootDir}}');
   });
 
   it('sets the compose variables first, then checks NATS, the gate and the jars, before compose up', () => {

@@ -106,6 +106,60 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     expect(started(run)).toBe(false);
   });
 
+  // Docker Desktop on Windows reports a root inside its Linux VM: not a directory on the host, so the repo drive stands in.
+  const vmRoot = (base: string) => ({ STUB_DOCKER_ROOT: slash(join(base, 'vm-root')) });
+
+  it('reads the disk from the repo checkout when the Docker root is not a host path, and says so', () => {
+    const run = runScript(['up'], (base) => ({ ...AUTH, ...vmRoot(base) }), JARS);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(
+      /gate: disk figure from the repo checkout .* \(docker root .*vm-root is not a host path\)/,
+    );
+    expect(run.stdout).toContain('free disk 47.7 GB (need 20 GB, the repo checkout');
+    expect(started(run)).toBe(true);
+  });
+
+  it('refuses on the repo disk figure in the fallback when it is below 20 GB, before any compose call', () => {
+    const run = runScript(['up'], (base) => ({ ...AUTH, ...vmRoot(base), STUB_DISK_KB: '1000' }));
+    expect(run.status).toBe(3);
+    expect(run.stdout).toContain('gate: disk figure from the repo checkout');
+    expect(run.stderr).toContain('gate failed');
+    expect(started(run)).toBe(false);
+  });
+
+  it.each([
+    ['the RAM figure', { STUB_RAM_KB: 'abc' }],
+    ['the repo disk figure', { STUB_DISK_KB: 'abc' }],
+  ])(
+    'with the Docker root not a host path and %s unreadable, refuses as before, with no fallback line',
+    (_name, stub) => {
+      const run = runScript(['up'], (base) => ({ ...AUTH, ...vmRoot(base), ...stub }));
+      expect(run.status).toBe(3);
+      expect(run.stderr).toContain(
+        "could not read free RAM or free disk as numbers (Docker root: '",
+      );
+      expect(run.stdout).not.toContain('disk figure from');
+      expect(started(run)).toBe(false);
+    },
+  );
+
+  it('with the Docker root a real directory, prints the usual gate line and no fallback line', () => {
+    const run = runScript(['up'], AUTH, JARS);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(
+      /gate: free RAM 19\.1 GB \(need 10 GB\), free disk 47\.7 GB \(need 20 GB, the smaller of .* and Docker root .*docker-root\)/,
+    );
+    expect(run.stdout).not.toContain('disk figure from');
+  });
+
+  it('with the Docker root a real directory and its figure unreadable, refuses and does not fall back to the repo disk', () => {
+    const run = runScript(['up'], { ...AUTH, STUB_DOCKER_KB: 'abc' });
+    expect(run.status).toBe(3);
+    expect(run.stderr).toContain('could not read free RAM or free disk as numbers');
+    expect(run.stdout).not.toContain('disk figure from');
+    expect(started(run)).toBe(false);
+  });
+
   it('up lists leftover containers with docker ps by the project label, before compose up, never with compose ps', () => {
     const run = runScript(['up'], AUTH, JARS);
     expect(run.status).toBe(0);

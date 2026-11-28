@@ -58,6 +58,14 @@ Stop, change nothing else, and report if any of these happens:
 7. The shard file loads with a different `shard` or `mind.agent.username` than the target names.
 8. Any failure of the test that is not one of its own assertions (a `checkRow` or `checkXp` message), such as a connection error to NATS, Postgres or RCON. Stop and report the message.
 
+## Observed on the desktop run
+
+Passed for ops, as recorded by the operator:
+
+- Step 1 (the plugin jar), step 2 (the NATS auth directory), step 3 (the shard file), and `sh deploy/scratch/scratch.sh config item2`.
+- The ports `config item2` rendered: NATS 14222, NATS monitor 18222, RCON 35575 on 127.0.0.1, Postgres 15432, Minecraft 35565.
+- Step 4 `up item2` exited 3 at the gate. The fallback in step 4 fixes that case; the run has not been repeated after the fix.
+
 ## Commands, in order
 
 Run from the worktree root. Use the account that owns the desktop stack; do not run as an account that owns a live stack. The scratch script is POSIX `sh`: the runbook is written for a Linux node. Running it from Windows needs Git Bash or WSL. **Unverified** on this desktop.
@@ -89,16 +97,20 @@ cd ..
 
 ```powershell
 $exp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('item2-export-' + [guid]::NewGuid()))
-git archive HEAD | tar -x -C $exp.FullName     # a clean export with no .git
+git archive -o (Join-Path $env:TEMP 'item2-export.tar') HEAD   # a clean archive with no .git (geldar.ps1 names this form)
+tar -xf (Join-Path $env:TEMP 'item2-export.tar') -C $exp.FullName
 Push-Location $exp.FullName
-./geldar.ps1 shard nats-auth phase0 --scratch
+./geldar.ps1 shard nats-auth phase0 --scratch                  # writes into compose/secrets/ of the export, not the export root
 Pop-Location
+$secrets = Join-Path $exp.FullName 'compose/secrets'           # where the six files are copied from
 $authDir = Join-Path $env:TEMP ('item2-nats-' + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $authDir | Out-Null
-Copy-Item (Join-Path $exp.FullName 'nats-auth.conf'),(Join-Path $exp.FullName 'nats-paper.txt'),(Join-Path $exp.FullName 'nats-velocity.txt'),(Join-Path $exp.FullName 'nats-eventsink.txt'),(Join-Path $exp.FullName 'nats-seed.txt'),(Join-Path $exp.FullName 'nats-body.txt') $authDir
+New-Item -ItemType Directory -Path $authDir | Out-Null         # where they are copied to: the SCRATCH_NATS_AUTH_DIR of step 4
+Copy-Item (Join-Path $secrets 'nats-auth.conf'),(Join-Path $secrets 'nats-paper.txt'),(Join-Path $secrets 'nats-velocity.txt'),(Join-Path $secrets 'nats-eventsink.txt'),(Join-Path $secrets 'nats-seed.txt'),(Join-Path $secrets 'nats-body.txt') $authDir
 ```
 
-**Unverified:** the output location of `nats-auth` in an export, and whether `nats-body.txt` is written by the generator. The probe list says it is; the generator was not read. Check with `Get-ChildItem $authDir` before step 4. Keep `$authDir` and the export for teardown.
+The generator (`geldar.ps1`, `shard nats-auth`) writes each NATS user to `compose/secrets/nats-<user>.txt` and the server config to `compose/secrets/nats-auth.conf`, so the copy source is `compose/secrets/`. Step 4 reads the five `NATS_FILES` from `$authDir`; step 6 reads `nats-body.txt` from it. Step 2 passed on the desktop as ops ran it (see "Observed"); the copy source above is the corrected one.
+
+**Unverified:** whether the generator writes `nats-body.txt` for `phase0` (the probe list says it does). If it is missing from `compose/secrets/`, the `Copy-Item` fails: stop and report; do not write the file by hand. Check with `Get-ChildItem $authDir` before step 4. Keep `$authDir` and the export for teardown.
 
 ### 3. Create the shard file (untracked, deleted at teardown)
 
@@ -116,6 +128,10 @@ sh deploy/scratch/scratch.sh status item2
 ```
 
 `up` checks the NATS files, creates the secrets directory under the per-user state root, and starts the stack. Stop at any refusal (stop list item 2 or 3).
+
+`up` runs the gate first (`gate()` in `deploy/scratch/scratch.sh`): free RAM at least 10 GB and free disk at least 20 GB, the smaller of the repo drive and the Docker root. On Docker Desktop for Windows the Docker root from `docker info` is a path inside the Linux VM, not a host path. The gate then reads the disk figure from the repo checkout and prints `gate: disk figure from the repo checkout <repo> (docker root <root> is not a host path)`. The thresholds do not change, and a Linux host whose Docker root is a real directory keeps the old output. If neither figure can be read, the gate refuses as before, exit 3.
+
+Desktop figures as ops reported them: C: free 29.6 GB; the RAM gate read 10.6 GB against the 10 GB minimum, a margin of 0.6 GB. The repo rule is to keep C: above 20 GB free, so the disk side has a 9.6 GB margin. Before the fix, `up item2` exited 3 with `gate: could not read free RAM or free disk as numbers (Docker root: '/var/lib/docker'); nothing started`, and nothing was started.
 
 **Unverified:** the `up` run on this desktop; the state root path (`$XDG_STATE_HOME` or `$HOME/.local/state`, `docs/runbooks/scratch-stack.md`) on Windows; the uid check the runbook describes for accounts whose uid differs from the image's (`SCRATCH_RUN_UID`).
 
