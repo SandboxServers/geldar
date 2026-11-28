@@ -31,6 +31,15 @@ const ADDED_FILES = [
   'mcp-token-pepper.txt',
 ];
 
+/**
+ * Folds pwsh's error view into plain text for a match: strips ANSI colour escapes, then turns each line break with the
+ * whitespace and '|' gutter after it into one space, so a message wrapped by the console matches as one line.
+ */
+function normalisePwshError(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ANSI colour escape is the input this strips
+  return text.replace(/\u001b\[[0-9;]*m/g, '').replace(/\r?\n[\s|]*/g, ' ');
+}
+
 describe.skipIf(!hasPwsh)('NF NATS set: the upgrade path from the ten-file node', () => {
   let r: Rendered;
   let secrets: string;
@@ -85,11 +94,13 @@ describe.skipIf(!hasPwsh)('NF NATS set: the upgrade path from the ten-file node'
     const again = runGenerator();
     expect(again.status).not.toBe(0);
     // pwsh wraps the error view at the console width (80 columns on CI), so the list may break after a comma with a gutter
-    // ("| ") in front of the next name. Only that line break is allowed between the names; the names, order and wording are exact.
-    expect(again.stderr).toMatch(
-      /nats-auth\.conf exists but nats-human\.txt,[\s|]+nats-mcp\.txt,[\s|]+nats-ranger\.txt is missing/,
+    // ("| ") in front of the next name, and CI colours the view with ANSI escapes. pwsh's error text is folded before matching;
+    // the names, order and wording are exact.
+    const error = normalisePwshError(again.stderr);
+    expect(error).toMatch(
+      /nats-auth\.conf exists but nats-human\.txt, nats-mcp\.txt, nats-ranger\.txt is missing/,
     );
-    expect(again.stderr).toMatch(/Nothing was written/);
+    expect(error).toMatch(/Nothing was written/);
     for (const f of ADDED_FILES) expect(existsSync(join(secrets, f)), f).toBe(false);
     expect(snapshot()).toEqual(before);
   }, 60_000);
@@ -120,4 +131,24 @@ describe.skipIf(!hasPwsh)('NF NATS set: the upgrade path from the ten-file node'
       );
     }
   }, 60_000);
+});
+
+// The refusal's match runs without pwsh: CI's wrapped, ANSI-coloured error view goes through the normaliser to the strict regex.
+describe('normalisePwshError on the CI error view', () => {
+  const pattern =
+    /nats-auth\.conf exists but nats-human\.txt, nats-mcp\.txt, nats-ranger\.txt is missing/;
+  const ciStderr =
+    '\u001b[31;1mException: \u001b[0mcompose/secrets-nf/nats-auth.conf exists but nats-human.txt,\u001b[0m\n' +
+    '\u001b[31;1m\u001b[0m\u001b[36;1m     | \u001b[31;1mnats-mcp.txt, nats-ranger.txt is missing, so the config would not match\u001b[0m';
+
+  it('matches the exact names, order and wording after the wrap and the colour are folded', () => {
+    expect(normalisePwshError(ciStderr)).toMatch(pattern);
+  });
+
+  it('does not match when the names are out of order', () => {
+    const reordered = ciStderr
+      .replace('nats-human.txt,', 'nats-mcp.txt,')
+      .replace('nats-mcp.txt, nats-ranger', 'nats-human.txt, nats-ranger');
+    expect(normalisePwshError(reordered)).not.toMatch(pattern);
+  });
 });

@@ -281,6 +281,12 @@ function runGenerator(dir: string, flags: string[] = ['--live', '--local']) {
   );
 }
 
+/** Folds pwsh's wrapped, ANSI-coloured error view into plain text: colour escapes go, and a line break with its gutter becomes a space. */
+function normalisePwshError(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ANSI colour escape is the input this strips
+  return text.replace(/\u001b\[[0-9;]*m/g, '').replace(/\r?\n[\s|]*/g, ' ');
+}
+
 describe('NATS subject matching (the test helper)', () => {
   it.each([
     ['a.>', 'a', false],
@@ -313,7 +319,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: refusals write nothing', () => {
       const r = renderGenerator('nf', { flags, checkout });
       made.push(r.dir);
       expect(r.status).not.toBe(0);
-      expect(r.stderr).toMatch(message);
+      expect(normalisePwshError(r.stderr)).toMatch(message);
       expect(existsSync(join(r.dir, 'compose', 'secrets-nf'))).toBe(false);
       expect(existsSync(join(r.dir, 'compose', 'secrets'))).toBe(false);
     },
@@ -338,7 +344,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the
     const dir = seeded('nats-seed.txt', '');
     const r = runGenerator(dir);
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toMatch(/nats-seed\.txt is empty/);
+    expect(normalisePwshError(r.stderr)).toMatch(/nats-seed\.txt is empty/);
     expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
   }, 60_000);
   it.each([
@@ -350,7 +356,7 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the
       const dir = seeded('nats-sink.txt', text);
       const r = runGenerator(dir);
       expect(r.status).not.toBe(0);
-      expect(r.stderr).toMatch(/double quote or a line break/);
+      expect(normalisePwshError(r.stderr)).toMatch(/double quote or a line break/);
       expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
     },
     60_000,
@@ -557,7 +563,7 @@ describe.skipIf(!hasPwsh)(
         writeFileSync(path, '');
         const again = runGenerator(r.dir);
         expect(again.status, f).not.toBe(0);
-        expect(again.stderr, f).toContain(`${f} is empty`);
+        expect(normalisePwshError(again.stderr), f).toContain(`${f} is empty`);
         writeFileSync(path, kept);
       }
     }, 60_000);
@@ -567,7 +573,7 @@ describe.skipIf(!hasPwsh)(
       rmSync(join(dirOf(), 'nats-seed.txt'));
       const again = runGenerator(r.dir);
       expect(again.status).not.toBe(0);
-      expect(again.stderr).toMatch(/nats-seed\.txt is missing/);
+      expect(normalisePwshError(again.stderr)).toMatch(/nats-seed\.txt is missing/);
       expect(existsSync(join(dirOf(), 'nats-seed.txt'))).toBe(false);
       expect(readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8')).toBe(before);
     }, 60_000);
