@@ -15,7 +15,7 @@ export interface GolemConfig {
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
 /** The colo compose service names a container may reach. Accepted only with GELDAR_IN_NETWORK_HOSTS=1 (decision 0131). */
-const IN_NETWORK_HOSTS = new Set(['nats', 'postgres', 'paper', 'velocity']);
+const IN_NETWORK_HOSTS = new Set(['nats', 'postgres', 'paper', 'velocity', 'neoforge']);
 const SHARD_UP_HINT = 'run ./geldar.ps1 shard secrets phase0';
 
 /**
@@ -100,7 +100,7 @@ function parseRconHost(raw: string | undefined, env: Record<string, string | und
   if (raw === undefined || raw === '') return '127.0.0.1';
   if (!hostAllowed(raw, env)) {
     throw new Error(
-      `GELDAR_RCON_HOST must be 127.0.0.1 or localhost (or a colo service name with GELDAR_IN_NETWORK_HOSTS=1), got '${raw}'`,
+      `GELDAR_RCON_HOST must be 127.0.0.1 or localhost (or a colo service name such as paper or neoforge with GELDAR_IN_NETWORK_HOSTS=1), got '${raw}'`,
     );
   }
   return raw;
